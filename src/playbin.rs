@@ -1,6 +1,6 @@
-use anyhow::{Error, Result};
+use anyhow::{Context, Error, Result};
 use glib::object::ObjectExt;
-use gstreamer::ElementExtManual;
+use gstreamer::{ElementExt, ElementExtManual, State};
 
 pub struct Playbin(gstreamer::Element);
 
@@ -22,20 +22,31 @@ impl Playbin {
 
         Ok(Playbin(playbin))
     }
+
+    pub fn get_bus(&self) -> Result<gstreamer::Bus> {
+        self.0.get_bus().ok_or(Error::msg("playbin has no bus"))
+    }
+
+    pub fn set_state(&self, state: State) -> Result<()> {
+        self.0.set_state(state).context(format!(
+            "Unable to set the playbin to the `{:?}` state",
+            state
+        ))?;
+        Ok(())
+    }
+
+    pub fn set_url(&self, url: &str) -> Result<()> {
+        self.set_state(State::Null)?;
+        self.0
+            .set_property("uri", &glib::Value::from(url))
+            .context(format!("Unable to set the playbin url to `{}`", url))
+    }
 }
 
 impl Drop for Playbin {
     fn drop(&mut self) {
-        if let Err(_) = self.0.set_state(gstreamer::State::Null) {
-            println!("Unable to set the pipeline to the `Null` state");
+        if let Err(err) = self.set_state(State::Null) {
+            eprintln!("{}", err);
         }
-    }
-}
-
-impl std::ops::Deref for Playbin {
-    type Target = gstreamer::Element;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
     }
 }

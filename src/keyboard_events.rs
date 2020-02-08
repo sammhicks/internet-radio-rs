@@ -1,13 +1,10 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
+use crossterm::event::{Event, EventStream, KeyCode, KeyEvent};
 use futures::StreamExt;
-use glib::object::ObjectExt;
-use gstreamer::{Element, ElementExtManual};
 
-pub async fn main(playbin: &Element) -> Result<()> {
-    use crossterm::event::{Event, EventStream, KeyCode, KeyEvent};
+use super::command::{Command, CommandSender};
 
-    let mut is_playing = true;
-
+pub async fn main(channel: CommandSender) -> Result<()> {
     let mut events = EventStream::new();
     while let Some(event) = events.next().await {
         match event? {
@@ -19,43 +16,19 @@ pub async fn main(playbin: &Element) -> Result<()> {
                 code: KeyCode::Char(' '),
                 modifiers: _,
             }) => {
-                is_playing = if is_playing {
-                    playbin
-                        .set_state(gstreamer::State::Paused)
-                        .context("Unable to set the pipeline to the `Paused` state")?;
-                    false
-                } else {
-                    playbin
-                        .set_state(gstreamer::State::Playing)
-                        .context("Unable to set the pipeline to the `Playing` state")?;
-                    true
+                if let Err(_) = channel.send(Command::PlayPause) {
+                    break;
                 }
             }
             Event::Key(KeyEvent {
-                code: KeyCode::Char('1'),
+                code: KeyCode::Char(c),
                 modifiers: _,
-            }) => {
-                playbin
-                    .set_state(gstreamer::State::Null)
-                    .context("Unable to set the pipeline to the `Null` state")?;
-                playbin.set_property("uri", &glib::Value::from("https://open.live.bbc.co.uk/mediaselector/6/redir/version/2.0/mediaset/audio-nondrm-download/proto/https/vpid/p0824ptq.mp3"))?;
-                playbin
-                    .set_state(gstreamer::State::Playing)
-                    .context("Unable to set the pipeline to the `Playing` state")?;
+            }) if c.is_ascii_digit() => {
+                if let Err(_) = channel.send(Command::SetChannel(c.to_digit(10).unwrap() as u8)) {
+                    break;
+                }
             }
-            Event::Key(KeyEvent {
-                code: KeyCode::Char('2'),
-                modifiers: _,
-            }) => {
-                playbin
-                    .set_state(gstreamer::State::Null)
-                    .context("Unable to set the pipeline to the `Null` state")?;
-                playbin.set_property("uri", &glib::Value::from("https://www.freedesktop.org/software/gstreamer-sdk/data/media/sintel_trailer-480p.webm"))?;
-                playbin
-                    .set_state(gstreamer::State::Playing)
-                    .context("Unable to set the pipeline to the `Playing` state")?;
-            }
-            e => println!("{:?}", e),
+            e => eprintln!("Unhandled key: {:?}", e),
         }
     }
 
