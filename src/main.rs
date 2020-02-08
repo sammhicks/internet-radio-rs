@@ -4,6 +4,7 @@ use gstreamer::ElementExt;
 mod keyboard_events;
 mod message_handler;
 mod playbin;
+mod print_value;
 
 fn main() -> Result<()> {
     gstreamer::init()?;
