@@ -92,7 +92,7 @@ fn main() -> Result<()> {
                                     is_playing = true;
                                 }),
                         );
-                        event::Event::NewChannel(index)
+                        event::Event::NewChannel(channel.clone())
                     }
                     None => event::Event::ChannelNotFound(index),
                 };

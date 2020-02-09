@@ -1,4 +1,4 @@
-use super::channel::ChannelIndex;
+use super::channel::{Channel, ChannelIndex};
 
 #[derive(Debug)]
 pub struct Percent(pub u8);
@@ -12,7 +12,7 @@ pub enum Event {
     Tag(super::tag::Tag),
     PartialChannel(ChannelIndex),
     ChannelCancelled,
-    NewChannel(ChannelIndex),
+    NewChannel(Channel),
     ChannelNotFound(ChannelIndex),
     Error(String),
 }
