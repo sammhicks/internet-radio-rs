@@ -3,10 +3,10 @@ use futures::StreamExt;
 use glib::value::SendValue;
 use gstreamer::{GstObjectExt, MessageView, State};
 
-use super::error_handler::ErrorHandler;
-use super::event::{Event, EventSender, Percent};
-use super::print_value::value_to_string;
-use super::tag::Tag;
+use crate::error_handler::ErrorHandler;
+use crate::event::{Event, EventSender, Percent};
+use crate::print_value::value_to_string;
+use crate::tag::Tag;
 
 fn get_tag(name: &str, value: SendValue) -> Result<Tag> {
     match name {

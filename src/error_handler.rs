@@ -1,6 +1,6 @@
 use anyhow::{Error, Result};
 
-use super::event::{Event, EventSender};
+use crate::event::{Event, EventSender};
 
 pub struct ErrorHandler {
     channel: EventSender,

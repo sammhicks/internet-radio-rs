@@ -8,8 +8,8 @@ use futures::{
 };
 use tokio::time::{delay_until, Duration, Instant};
 
-use super::channel::ChannelIndex;
-use super::command::{Command, CommandSender};
+use crate::channel::ChannelIndex;
+use crate::command::{Command, CommandSender};
 
 #[derive(Clone, Copy, Debug)]
 struct CurrentNumberEntry {

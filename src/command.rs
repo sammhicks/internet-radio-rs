@@ -1,4 +1,4 @@
-use super::channel::ChannelIndex;
+use crate::channel::ChannelIndex;
 
 #[derive(Debug)]
 pub enum Command {

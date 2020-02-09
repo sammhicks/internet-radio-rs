@@ -1,4 +1,4 @@
-use super::channel::{Channel, ChannelIndex};
+use crate::channel::{Channel, ChannelIndex};
 
 #[derive(Debug)]
 pub struct Percent(pub u8);
@@ -9,7 +9,7 @@ pub enum Event {
     Paused,
     EndOfStream,
     Buffering(Percent),
-    Tag(super::tag::Tag),
+    Tag(crate::tag::Tag),
     PartialChannel(ChannelIndex),
     ChannelCancelled,
     NewChannel(Channel),
