@@ -48,17 +48,21 @@ fn main() -> Result<()> {
         tokio::time::Duration::from_millis(config.input_timeout_ms),
     ));
 
-    let mut is_playing = false;
-
     while let Some(command) = rt.block_on(commands_rx.recv()) {
         match command {
             Command::PlayPause => {
-                error_handler.handle(playbin.set_state(if is_playing {
-                    State::Paused
-                } else {
-                    State::Playing
-                }));
-                is_playing = !is_playing;
+                if let Some(new_state) =
+                    error_handler
+                        .handle(playbin.get_state())
+                        .and_then(|current_state| match current_state {
+                            State::Ready => Some(State::Playing),
+                            State::Paused => Some(State::Playing),
+                            State::Playing => Some(State::Paused),
+                            _ => None,
+                        })
+                {
+                    error_handler.handle(playbin.set_state(new_state));
+                }
             }
             Command::PartialChannel(c) => {
                 error_handler.handle(events_tx.send(event::Event::PartialChannel(c)));
@@ -72,10 +76,7 @@ fn main() -> Result<()> {
                         error_handler.handle(
                             playbin
                                 .set_url(&channel.url)
-                                .and_then(|()| playbin.set_state(State::Playing))
-                                .map(|()| {
-                                    is_playing = true;
-                                }),
+                                .and_then(|()| playbin.set_state(State::Playing)),
                         );
                         event::Event::NewChannel(channel.clone())
                     }
