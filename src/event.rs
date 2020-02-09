@@ -14,6 +14,7 @@ pub enum Event {
     ChannelCancelled,
     NewChannel(Channel),
     ChannelNotFound(ChannelIndex),
+    ResourceNotFound(String),
     Error(String),
 }
 

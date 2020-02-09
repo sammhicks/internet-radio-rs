@@ -1,7 +1,9 @@
-use anyhow::{Error, Result};
+use std::string::ToString;
+
+use anyhow::Result;
 use futures::StreamExt;
 use glib::value::SendValue;
-use gstreamer::{GstObjectExt, MessageView, State};
+use gstreamer::{MessageView, State};
 use log::debug;
 
 use crate::error_handler::ErrorHandler;
@@ -10,6 +12,7 @@ use crate::print_value::value_to_string;
 use crate::tag::Tag;
 
 fn get_tag(name: &str, value: SendValue) -> Result<Tag> {
+    use anyhow::Error;
     match name {
         "title" => value.get()?.ok_or(Error::msg("No Value")).map(Tag::Title),
         "artist" => value.get()?.ok_or(Error::msg("No Value")).map(Tag::Artist),
@@ -20,6 +23,20 @@ fn get_tag(name: &str, value: SendValue) -> Result<Tag> {
             value: value_to_string(&value)?,
         }),
     }
+}
+
+fn handle_gstreamer_error(err: gstreamer::message::Error) -> Event {
+    let glib_err = err.get_error();
+
+    if glib_err.is::<gstreamer::ResourceError>() {
+        return Event::ResourceNotFound(err.get_error().to_string());
+    }
+
+    Event::Error(format!(
+        "Unknown Error: {} ({:?})",
+        err.get_error(),
+        err.get_debug()
+    ))
 }
 
 pub async fn main(bus: gstreamer::Bus, channel: EventSender) -> Result<()> {
@@ -65,14 +82,7 @@ pub async fn main(bus: gstreamer::Bus, channel: EventSender) -> Result<()> {
             MessageView::StreamStatus(_) => (),
             MessageView::Element(_) => (),
             MessageView::Qos(_) => (),
-            MessageView::Error(err) => {
-                channel.send(Event::Error(format!(
-                    "Error from {:?}: {} (({:?}))",
-                    err.get_src().map(|s| s.get_path_string()),
-                    err.get_error(),
-                    err.get_debug()
-                )))?;
-            }
+            MessageView::Error(err) => channel.send(handle_gstreamer_error(err))?,
             msg => channel.send(Event::Error(format!("Unknown Message: {:?}", msg)))?,
         }
     }

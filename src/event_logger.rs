@@ -10,6 +10,7 @@ pub async fn main(mut channel: EventReciever) {
             Event::Tag(Tag::Unknown { .. }) => Level::Debug,
             Event::PartialChannel(..) => Level::Debug,
             Event::ChannelCancelled => Level::Debug,
+            Event::ResourceNotFound(..) => Level::Error,
             Event::Error(..) => Level::Error,
             _ => Level::Info,
         };
