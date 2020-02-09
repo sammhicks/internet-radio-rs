@@ -8,7 +8,7 @@ edition = "2018"
 
 [dependencies]
 anyhow = "1.0"
-crossterm =  { version = "0.15", features = ["event-stream"] }
+crossterm =  { version = "0.16", features = ["event-stream"] }
 futures = "0.3"
 glib = "0.9"
 gstreamer = "0.15"
