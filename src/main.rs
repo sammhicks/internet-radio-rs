@@ -1,50 +1,35 @@
-#![allow(dead_code)]
+use std::io::stdout;
+
 use anyhow::Result;
 use gstreamer::State;
 
 mod channel;
 mod command;
+mod config;
 mod error_handler;
 mod event;
+mod event_logger;
 mod keyboard_events;
+mod logger;
 mod message_handler;
 mod playbin;
 mod print_value;
+mod raw_mode;
 mod tag;
 
 use command::Command;
-
-fn default_input_timeout_ms() -> u64 {
-    2000
-}
-
-#[derive(Default, serde::Serialize, serde::Deserialize)]
-struct Config {
-    #[serde(rename = "Input Timeout ms", default = "default_input_timeout_ms")]
-    input_timeout_ms: u64,
-    #[serde(rename = "Station")]
-    station: Vec<channel::Channel>,
-}
-
-fn load_config() -> Result<Config> {
-    let file = std::fs::read_to_string("config.toml")?;
-    Ok(toml::from_str(&file)?)
-}
-
-async fn print_events(mut channel: event::EventReciever) {
-    while let Some(event) = channel.recv().await {
-        println!("Event: {:?}", event);
-    }
-    println!("print_events done");
-}
+use logger::Logger;
 
 fn main() -> Result<()> {
-    let config = load_config().unwrap_or_else(|err| {
-        eprintln!("Failed to load config file: {}", err);
-        Config::default()
-    });
+    log::set_boxed_logger(Logger::new(stdout()))?;
+    log::set_max_level(log::LevelFilter::Trace);
+
+    let config = config::load_config();
+
+    log::set_max_level(log::LevelFilter::Info);
 
     gstreamer::init()?;
+    let raw_mode = raw_mode::RawMode::new()?;
 
     let playbin = playbin::Playbin::new()?;
     let bus = playbin.get_bus()?;
@@ -57,7 +42,7 @@ fn main() -> Result<()> {
     let mut rt = tokio::runtime::Runtime::new()?;
 
     rt.spawn(message_handler::main(bus, events_tx.clone()));
-    rt.spawn(print_events(events_rx));
+    rt.spawn(event_logger::main(events_rx));
     let keyboard_task = rt.spawn(keyboard_events::main(
         commands_tx,
         tokio::time::Duration::from_millis(config.input_timeout_ms),
@@ -104,6 +89,8 @@ fn main() -> Result<()> {
     drop(events_tx);
 
     let keyboard_result = rt.block_on(keyboard_task)?;
+
+    drop(raw_mode);
 
     keyboard_result
 }

@@ -1,6 +1,7 @@
 use anyhow::{Context, Error, Result};
 use glib::object::ObjectExt;
 use gstreamer::{ElementExt, ElementExtManual, State};
+use log::error;
 
 pub struct Playbin(gstreamer::Element);
 
@@ -46,7 +47,7 @@ impl Playbin {
 impl Drop for Playbin {
     fn drop(&mut self) {
         if let Err(err) = self.set_state(State::Null) {
-            eprintln!("{}", err);
+            error!("{}", err);
         }
     }
 }

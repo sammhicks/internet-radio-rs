@@ -2,6 +2,7 @@ use anyhow::{Error, Result};
 use futures::StreamExt;
 use glib::value::SendValue;
 use gstreamer::{GstObjectExt, MessageView, State};
+use log::debug;
 
 use crate::error_handler::ErrorHandler;
 use crate::event::{Event, EventSender, Percent};
@@ -75,6 +76,8 @@ pub async fn main(bus: gstreamer::Bus, channel: EventSender) -> Result<()> {
             msg => channel.send(Event::Error(format!("Unknown Message: {:?}", msg)))?,
         }
     }
+
+    debug!("message_handler finished");
 
     Ok(())
 }

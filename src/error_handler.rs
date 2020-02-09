@@ -1,4 +1,5 @@
 use anyhow::{Error, Result};
+use log::error;
 
 use crate::event::{Event, EventSender};
 
@@ -17,7 +18,7 @@ impl ErrorHandler {
             Err(err) => {
                 let err: Error = err.into();
                 if self.channel.send(Event::Error(err.to_string())).is_err() {
-                    eprintln!("Failed to send error: {}", err);
+                    error!("Failed to send error: {}", err);
                 }
                 None
             }

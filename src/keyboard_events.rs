@@ -6,6 +6,7 @@ use futures::{
     future::{select, Either},
     StreamExt,
 };
+use log::debug;
 use tokio::time::{delay_until, Duration, Instant};
 
 use crate::channel::ChannelIndex;
@@ -92,9 +93,11 @@ pub async fn main(channel: CommandSender, station_index_timeout_duration: Durati
                     }
                 };
             }
-            e => eprintln!("Unhandled key: {:?}", e),
+            e => debug!("Unhandled key: {:?}", e),
         }
     }
+
+    debug!("keyboard_events finished");
 
     Ok(())
 }
