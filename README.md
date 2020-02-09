@@ -14,7 +14,7 @@ Options:
   + Default: `2000`
   + Channels are two digits. This is the timeout is milliseconds between the first digit and the second.
 + log_level
-  + Default: `"Off"`
+  + Default: `"Error"`
   + Options:
     + `"Off"`
     + `"Error"`

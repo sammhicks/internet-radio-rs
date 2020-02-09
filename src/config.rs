@@ -30,7 +30,7 @@ fn default_input_timeout_ms() -> u64 {
 }
 
 fn default_log_level() -> LevelFilter {
-    LevelFilter::Off
+    LevelFilter::Error
 }
 
 fn parse_log_level<'de, D: Deserializer<'de>>(deserializer: D) -> Result<LevelFilter, D::Error> {
