@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Error, Result};
 
 use super::event::{Event, EventSender};
 
@@ -11,11 +11,12 @@ impl ErrorHandler {
         ErrorHandler { channel }
     }
 
-    pub fn handle<T>(&mut self, result: Result<T>) -> Option<T> {
+    pub fn handle<T, E: std::convert::Into<Error>>(&mut self, result: Result<T, E>) -> Option<T> {
         match result {
             Ok(value) => Some(value),
             Err(err) => {
-                if let Err(_) = self.channel.send(Event::Error(err.to_string())) {
+                let err: Error = err.into();
+                if self.channel.send(Event::Error(err.to_string())).is_err() {
                     eprintln!("Failed to send error: {}", err);
                 }
                 None

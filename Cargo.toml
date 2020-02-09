@@ -13,5 +13,5 @@ futures = "0.3"
 glib = "0.9"
 gstreamer = "0.15"
 serde = { version = "1.0", features = ["derive"] }
-tokio = { version = "0.2", features = [ "macros", "rt-threaded", "sync"] }
+tokio = { version = "0.2", features = [ "macros", "rt-threaded", "sync", "time"] }
 toml = "0.5"

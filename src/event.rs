@@ -1,3 +1,5 @@
+use super::channel::ChannelIndex;
+
 #[derive(Debug)]
 pub struct Percent(pub u8);
 
@@ -8,6 +10,10 @@ pub enum Event {
     EndOfStream,
     Buffering(Percent),
     Tag(super::tag::Tag),
+    PartialChannel(ChannelIndex),
+    ChannelCancelled,
+    NewChannel(ChannelIndex),
+    ChannelNotFound(ChannelIndex),
     Error(String),
 }
 

@@ -3,6 +3,8 @@ use super::channel::ChannelIndex;
 #[derive(Debug)]
 pub enum Command {
     PlayPause,
+    PartialChannel(ChannelIndex),
+    ChannelCancelled,
     SetChannel(ChannelIndex),
 }
 

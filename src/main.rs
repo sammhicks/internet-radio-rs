@@ -14,8 +14,14 @@ mod tag;
 
 use command::Command;
 
+fn default_input_timeout_ms() -> u64 {
+    2000
+}
+
 #[derive(Default, serde::Serialize, serde::Deserialize)]
 struct Config {
+    #[serde(rename = "Input Timeout ms", default = "default_input_timeout_ms")]
+    input_timeout_ms: u64,
     #[serde(rename = "Station")]
     station: Vec<channel::Channel>,
 }
@@ -50,9 +56,12 @@ fn main() -> Result<()> {
 
     let mut rt = tokio::runtime::Runtime::new()?;
 
-    rt.spawn(message_handler::main(bus, events_tx));
+    rt.spawn(message_handler::main(bus, events_tx.clone()));
     rt.spawn(print_events(events_rx));
-    let keyboard_task = rt.spawn(keyboard_events::main(commands_tx));
+    let keyboard_task = rt.spawn(keyboard_events::main(
+        commands_tx,
+        tokio::time::Duration::from_millis(config.input_timeout_ms),
+    ));
 
     let mut is_playing = false;
 
@@ -66,9 +75,15 @@ fn main() -> Result<()> {
                 }));
                 is_playing = !is_playing;
             }
+            Command::PartialChannel(c) => {
+                error_handler.handle(events_tx.send(event::Event::PartialChannel(c)));
+            }
+            Command::ChannelCancelled => {
+                error_handler.handle(events_tx.send(event::Event::ChannelCancelled));
+            }
             Command::SetChannel(index) => {
-                for channel in config.station.iter() {
-                    if channel.index == index {
+                let event = match config.station.iter().find(|c| c.index == index) {
+                    Some(channel) => {
                         error_handler.handle(
                             playbin
                                 .set_url(&channel.url)
@@ -77,11 +92,16 @@ fn main() -> Result<()> {
                                     is_playing = true;
                                 }),
                         );
+                        event::Event::NewChannel(index)
                     }
-                }
+                    None => event::Event::ChannelNotFound(index),
+                };
+                error_handler.handle(events_tx.send(event));
             }
         }
     }
+
+    drop(events_tx);
 
     let keyboard_result = rt.block_on(keyboard_task)?;
 
