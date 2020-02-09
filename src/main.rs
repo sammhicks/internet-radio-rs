@@ -26,7 +26,7 @@ fn main() -> Result<()> {
 
     let config = config::load_config();
 
-    log::set_max_level(log::LevelFilter::Info);
+    log::set_max_level(config.log_level);
 
     gstreamer::init()?;
     let raw_mode = raw_mode::RawMode::new()?;
