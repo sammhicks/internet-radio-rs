@@ -9,8 +9,8 @@ use futures::{
 use log::debug;
 use tokio::time::{delay_until, Duration, Instant};
 
-use crate::channel::ChannelIndex;
-use crate::command::{Command, CommandSender};
+use crate::channel;
+use crate::command::{self, Command};
 
 #[derive(Clone, Copy, Debug)]
 struct CurrentNumberEntry {
@@ -18,7 +18,10 @@ struct CurrentNumberEntry {
     timeout: Instant,
 }
 
-pub async fn main(channel: CommandSender, station_index_timeout_duration: Duration) -> Result<()> {
+pub async fn main(
+    channel: command::Sender,
+    station_index_timeout_duration: Duration,
+) -> Result<()> {
     let mut events = EventStream::new();
 
     let mut station_index_timeout = None;
@@ -31,9 +34,7 @@ pub async fn main(channel: CommandSender, station_index_timeout_duration: Durati
             }) => match select(events.next(), delay_until(timeout)).await {
                 Either::Left((event, _)) => (event, Some(previous_digit)),
                 Either::Right(_) => {
-                    if channel.send(Command::ChannelCancelled).is_err() {
-                        break;
-                    }
+                    debug!("Channel entry cancelled");
 
                     station_index_timeout = None;
                     continue;
@@ -49,12 +50,11 @@ pub async fn main(channel: CommandSender, station_index_timeout_duration: Durati
 
         match event {
             Event::Key(KeyEvent {
-                code: KeyCode::Esc,
-                modifiers: _,
+                code: KeyCode::Esc, ..
             }) => break,
             Event::Key(KeyEvent {
                 code: KeyCode::Char(' '),
-                modifiers: _,
+                ..
             }) => {
                 if channel.send(Command::PlayPause).is_err() {
                     break;
@@ -62,14 +62,15 @@ pub async fn main(channel: CommandSender, station_index_timeout_duration: Durati
             }
             Event::Key(KeyEvent {
                 code: KeyCode::Char(c),
-                modifiers: _,
+                ..
             }) if c.is_ascii_digit() => {
+                debug!("ASCII entry: {}", c);
                 station_index_timeout = match current_digit {
                     Some(current_digit) => {
-                        let station_index_str = String::from_iter([current_digit, c].into_iter());
+                        let station_index_str = String::from_iter([current_digit, c].iter());
 
                         let station_index =
-                            ChannelIndex::from_str_radix(&station_index_str, 10).unwrap();
+                            channel::Index::from_str_radix(&station_index_str, 10).unwrap();
 
                         if channel.send(Command::SetChannel(station_index)).is_err() {
                             break;
@@ -77,20 +78,10 @@ pub async fn main(channel: CommandSender, station_index_timeout_duration: Durati
 
                         None
                     }
-                    None => {
-                        if channel
-                            .send(Command::PartialChannel(
-                                c.to_digit(10).unwrap() as ChannelIndex
-                            ))
-                            .is_err()
-                        {
-                            break;
-                        }
-                        Some(CurrentNumberEntry {
-                            previous_digit: c,
-                            timeout: Instant::now() + station_index_timeout_duration,
-                        })
-                    }
+                    None => Some(CurrentNumberEntry {
+                        previous_digit: c,
+                        timeout: Instant::now() + station_index_timeout_duration,
+                    }),
                 };
             }
             e => debug!("Unhandled key: {:?}", e),

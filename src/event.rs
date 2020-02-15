@@ -1,4 +1,4 @@
-use crate::channel::{Channel, ChannelIndex};
+use crate::channel;
 
 #[derive(Debug)]
 pub struct Percent(pub u8);
@@ -10,13 +10,11 @@ pub enum Event {
     EndOfStream,
     Buffering(Percent),
     Tag(crate::tag::Tag),
-    PartialChannel(ChannelIndex),
-    ChannelCancelled,
-    NewChannel(Channel),
-    ChannelNotFound(ChannelIndex),
+    NewChannel(channel::Channel),
+    ChannelNotFound(channel::Index),
     ResourceNotFound(String),
     Error(String),
 }
 
-pub type EventSender = tokio::sync::mpsc::UnboundedSender<Event>;
-pub type EventReciever = tokio::sync::mpsc::UnboundedReceiver<Event>;
+pub type Sender = tokio::sync::mpsc::UnboundedSender<Event>;
+pub type Reciever = tokio::sync::mpsc::UnboundedReceiver<Event>;

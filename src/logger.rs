@@ -1,3 +1,4 @@
+#![allow(clippy::print_with_newline)]
 use std::{io::Write, sync::Mutex};
 
 use crossterm::{
@@ -10,7 +11,7 @@ pub struct Logger<W>(Mutex<W>);
 
 impl<W> Logger<W> {
     pub fn new(writer: W) -> Box<Self> {
-        Box::new(Logger(Mutex::new(writer)))
+        Box::new(Self(Mutex::new(writer)))
     }
 }
 

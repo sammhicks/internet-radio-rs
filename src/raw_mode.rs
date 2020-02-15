@@ -8,7 +8,7 @@ impl RawMode {
     pub fn new() -> Result<Self> {
         enable_raw_mode()?;
 
-        Ok(RawMode)
+        Ok(Self)
     }
 }
 

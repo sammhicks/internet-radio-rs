@@ -17,7 +17,7 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Config {
+        Self {
             input_timeout_ms: default_input_timeout_ms(),
             log_level: default_log_level(),
             station: Vec::new(),
@@ -25,11 +25,11 @@ impl Default for Config {
     }
 }
 
-fn default_input_timeout_ms() -> u64 {
+const fn default_input_timeout_ms() -> u64 {
     2000
 }
 
-fn default_log_level() -> LevelFilter {
+const fn default_log_level() -> LevelFilter {
     LevelFilter::Error
 }
 
@@ -62,7 +62,7 @@ impl<'de> de::Visitor<'de> for LogLevelParser {
     }
 }
 
-pub fn load_config() -> Config {
+pub fn load() -> Config {
     let config = match read_to_string("config.toml") {
         Ok(config) => config,
         Err(err) => {
@@ -74,7 +74,7 @@ pub fn load_config() -> Config {
         Ok(config) => config,
         Err(err) => {
             error!("Failed to parse config file: {}", err);
-            return Config::default();
+            Config::default()
         }
     }
 }

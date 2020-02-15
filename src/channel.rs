@@ -1,4 +1,4 @@
-pub type ChannelIndex = u8;
+pub type Index = u8;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Channel {

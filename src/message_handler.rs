@@ -1,31 +1,42 @@
 use std::string::ToString;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use futures::StreamExt;
 use glib::value::SendValue;
 use gstreamer::{MessageView, State};
 use log::debug;
 
 use crate::error_handler::ErrorHandler;
-use crate::event::{Event, EventSender, Percent};
+use crate::event::{self, Event, Percent};
 use crate::print_value::value_to_string;
 use crate::tag::Tag;
 
-fn get_tag(name: &str, value: SendValue) -> Result<Tag> {
+fn get_value<'v, T, F>(value: &'v SendValue, builder: F) -> Result<Tag>
+where
+    T: glib::value::FromValueOptional<'v>,
+    F: FnOnce(T) -> Tag,
+{
     use anyhow::Error;
+    value
+        .get()?
+        .ok_or_else(|| Error::msg("No Value"))
+        .map(builder)
+}
+
+fn get_tag(name: &str, value: &SendValue) -> Result<Tag> {
     match name {
-        "title" => value.get()?.ok_or(Error::msg("No Value")).map(Tag::Title),
-        "artist" => value.get()?.ok_or(Error::msg("No Value")).map(Tag::Artist),
-        "album" => value.get()?.ok_or(Error::msg("No Value")).map(Tag::Album),
-        "genre" => value.get()?.ok_or(Error::msg("No Value")).map(Tag::Genre),
+        "title" => get_value(value, Tag::Title),
+        "artist" => get_value(value, Tag::Artist),
+        "album" => get_value(value, Tag::Album),
+        "genre" => get_value(value, Tag::Genre),
         _ => Ok(Tag::Unknown {
             name: name.into(),
-            value: value_to_string(&value)?,
+            value: value_to_string(value)?,
         }),
     }
 }
 
-fn handle_gstreamer_error(err: gstreamer::message::Error) -> Event {
+fn handle_gstreamer_error(err: &gstreamer::message::Error) -> Event {
     let glib_err = err.get_error();
 
     if glib_err.is::<gstreamer::ResourceError>() {
@@ -39,35 +50,40 @@ fn handle_gstreamer_error(err: gstreamer::message::Error) -> Event {
     ))
 }
 
-pub async fn main(bus: gstreamer::Bus, channel: EventSender) -> Result<()> {
+pub async fn main(playbin: crate::playbin::Playbin, channel: event::Sender) -> Result<()> {
     let mut error_handler = ErrorHandler::new(channel.clone());
+
+    let bus = playbin.get_bus()?;
 
     let mut messages = gstreamer::BusStream::new(&bus);
 
-    let mut previous_state_change = None;
-
     while let Some(message) = messages.next().await {
+        #[allow(clippy::match_same_arms)]
         match message.view() {
             MessageView::Buffering(b) => {
-                channel.send(Event::Buffering(Percent(b.get_percent() as u8)))?
+                use std::convert::TryFrom;
+                let percent = b.get_percent();
+                if let Some(percent) = error_handler.handle(
+                    u8::try_from(percent).context(format!("Trying to convert {} into u8", percent)),
+                ) {
+                    channel.send(Event::Buffering(Percent(percent)))?;
+                }
             }
             MessageView::Tag(tag) => {
                 for (name, value) in tag.get_tags().as_ref().iter() {
-                    if let Some(tag) = error_handler.handle(get_tag(name, value)) {
-                        channel.send(Event::Tag(tag))?
+                    if let Some(tag) = error_handler.handle(get_tag(name, &value)) {
+                        channel.send(Event::Tag(tag))?;
                     }
                 }
             }
             MessageView::StateChanged(state_change) => {
-                let new_state = state_change.get_current();
-
-                if previous_state_change != Some(new_state) {
-                    match new_state {
+                use gstreamer::MiniObject;
+                if playbin.is_src(unsafe { *state_change.as_ptr() }) {
+                    match state_change.get_current() {
                         State::Playing => channel.send(Event::Playing)?,
                         State::Paused => channel.send(Event::Paused)?,
                         _ => (),
                     };
-                    previous_state_change = Some(new_state);
                 }
             }
             MessageView::Eos(_) => channel.send(Event::EndOfStream)?,
@@ -82,7 +98,7 @@ pub async fn main(bus: gstreamer::Bus, channel: EventSender) -> Result<()> {
             MessageView::StreamStatus(_) => (),
             MessageView::Element(_) => (),
             MessageView::Qos(_) => (),
-            MessageView::Error(err) => channel.send(handle_gstreamer_error(err))?,
+            MessageView::Error(err) => channel.send(handle_gstreamer_error(&err))?,
             msg => channel.send(Event::Error(format!("Unknown Message: {:?}", msg)))?,
         }
     }
