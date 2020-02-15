@@ -1,26 +1,28 @@
 use log::{error, LevelFilter};
 use serde::{de, Deserializer};
 
-use crate::channel::Channel;
-
 #[derive(serde::Deserialize)]
 pub struct Config {
+    #[serde(default = "default_channels_directory")]
+    pub channels_directory: String,
     #[serde(default = "default_input_timeout_ms")]
     pub input_timeout_ms: u64,
     #[serde(deserialize_with = "parse_log_level", default = "default_log_level")]
     pub log_level: LevelFilter,
-    #[serde(rename = "Station")]
-    pub station: Vec<Channel>,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
+            channels_directory: default_channels_directory(),
             input_timeout_ms: default_input_timeout_ms(),
             log_level: default_log_level(),
-            station: Vec::new(),
         }
     }
+}
+
+fn default_channels_directory() -> String {
+    String::from("channels")
 }
 
 const fn default_input_timeout_ms() -> u64 {

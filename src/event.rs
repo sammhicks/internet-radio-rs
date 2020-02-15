@@ -11,7 +11,6 @@ pub enum Event {
     Buffering(Percent),
     Tag(crate::tag::Tag),
     NewChannel(channel::Channel),
-    ChannelNotFound(channel::Index),
     ResourceNotFound(String),
     Error(String),
 }

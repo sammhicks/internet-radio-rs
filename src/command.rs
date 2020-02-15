@@ -1,9 +1,7 @@
-use crate::channel;
-
 #[derive(Debug)]
 pub enum Command {
     PlayPause,
-    SetChannel(channel::Index),
+    SetChannel(String),
 }
 
 pub type Sender = tokio::sync::mpsc::UnboundedSender<Command>;

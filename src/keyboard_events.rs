@@ -9,7 +9,6 @@ use futures::{
 use log::debug;
 use tokio::time::{delay_until, Duration, Instant};
 
-use crate::channel;
 use crate::command::{self, Command};
 
 #[derive(Clone, Copy, Debug)]
@@ -67,10 +66,7 @@ pub async fn main(
                 debug!("ASCII entry: {}", c);
                 station_index_timeout = match current_digit {
                     Some(current_digit) => {
-                        let station_index_str = String::from_iter([current_digit, c].iter());
-
-                        let station_index =
-                            channel::Index::from_str_radix(&station_index_str, 10).unwrap();
+                        let station_index = String::from_iter([current_digit, c].iter());
 
                         if channel.send(Command::SetChannel(station_index)).is_err() {
                             break;

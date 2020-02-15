@@ -6,4 +6,7 @@
 **/*.rs.bk
 
 # Radio configuration file
-config.toml
+/config.toml
+
+# Directory of Channels
+/channels

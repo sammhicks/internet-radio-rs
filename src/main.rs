@@ -15,6 +15,7 @@ mod keyboard_events;
 mod logger;
 mod message_handler;
 mod playbin;
+mod playlist;
 mod print_value;
 mod raw_mode;
 mod tag;
@@ -46,14 +47,22 @@ async fn process_commands(
                 }
             }
             Command::SetChannel(index) => {
-                let event = match config.station.iter().find(|c| c.index == index) {
-                    Some(channel) => {
-                        error_handler.handle(pipeline.set_url(&channel.url));
-                        event::Event::NewChannel(channel.clone())
+                if let Some(new_channel) =
+                    error_handler.handle(channel::load(&config.channels_directory, index))
+                {
+                    if error_handler
+                        .handle(
+                            new_channel
+                                .playlist
+                                .get(0)
+                                .ok_or_else(|| anyhow::Error::msg("Empty Playlist"))
+                                .and_then(|entry| pipeline.set_url(&entry.url)),
+                        )
+                        .is_some()
+                    {
+                        error_handler.handle(events.send(event::Event::NewChannel(new_channel)));
                     }
-                    None => event::Event::ChannelNotFound(index),
-                };
-                error_handler.handle(events.send(event));
+                }
             }
         }
     }
