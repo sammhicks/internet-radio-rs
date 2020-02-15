@@ -50,10 +50,10 @@ fn handle_gstreamer_error(err: &gstreamer::message::Error) -> Event {
     ))
 }
 
-pub async fn main(playbin: crate::playbin::Playbin, channel: event::Sender) -> Result<()> {
+pub async fn main(pipeline: crate::playbin::Playbin, channel: event::Sender) -> Result<()> {
     let mut error_handler = ErrorHandler::new(channel.clone());
 
-    let bus = playbin.get_bus()?;
+    let bus = pipeline.get_bus()?;
 
     let mut messages = gstreamer::BusStream::new(&bus);
 
@@ -78,7 +78,7 @@ pub async fn main(playbin: crate::playbin::Playbin, channel: event::Sender) -> R
             }
             MessageView::StateChanged(state_change) => {
                 use gstreamer::MiniObject;
-                if playbin.is_src(unsafe { *state_change.as_ptr() }) {
+                if pipeline.is_src_of(unsafe { *state_change.as_ptr() }) {
                     match state_change.get_current() {
                         State::Playing => channel.send(Event::Playing)?,
                         State::Paused => channel.send(Event::Paused)?,

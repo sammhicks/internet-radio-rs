@@ -22,6 +22,45 @@ mod tag;
 use command::Command;
 use logger::Logger;
 
+async fn process_commands(
+    config: config::Config,
+    pipeline: playbin::Playbin,
+    mut commands: command::Receiver,
+    events: event::Sender,
+) -> Result<()> {
+    let mut error_handler = error_handler::ErrorHandler::new(events.clone());
+
+    while let Some(command) = commands.recv().await {
+        match command {
+            Command::PlayPause => {
+                if let Some(new_state) =
+                    error_handler
+                        .handle(pipeline.get_state())
+                        .and_then(|current_state| match current_state {
+                            State::Paused => Some(State::Playing),
+                            State::Playing => Some(State::Paused),
+                            _ => None,
+                        })
+                {
+                    error_handler.handle(pipeline.set_state(new_state));
+                }
+            }
+            Command::SetChannel(index) => {
+                let event = match config.station.iter().find(|c| c.index == index) {
+                    Some(channel) => {
+                        error_handler.handle(pipeline.set_url(&channel.url));
+                        event::Event::NewChannel(channel.clone())
+                    }
+                    None => event::Event::ChannelNotFound(index),
+                };
+                error_handler.handle(events.send(event));
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn main() -> Result<()> {
     log::set_boxed_logger(Logger::new(stdout()))?;
     log::set_max_level(log::LevelFilter::Trace);
@@ -33,51 +72,22 @@ fn main() -> Result<()> {
     gstreamer::init()?;
     let raw_mode = raw_mode::RawMode::new()?;
 
-    let playbin = playbin::Playbin::new()?;
+    let pipeline = playbin::Playbin::new()?;
 
-    let (commands_tx, mut commands_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (commands_tx, commands_rx) = tokio::sync::mpsc::unbounded_channel();
     let (events_tx, events_rx) = tokio::sync::mpsc::unbounded_channel();
-
-    let mut error_handler = error_handler::ErrorHandler::new(events_tx.clone());
 
     let mut rt = tokio::runtime::Runtime::new()?;
 
-    rt.spawn(message_handler::main(playbin.clone(), events_tx.clone()));
+    rt.spawn(message_handler::main(pipeline.clone(), events_tx.clone()));
     rt.spawn(event_logger::main(events_rx));
     rt.spawn(keyboard_events::main(
         commands_tx,
         tokio::time::Duration::from_millis(config.input_timeout_ms),
     ));
 
-    while let Some(command) = rt.block_on(commands_rx.recv()) {
-        match command {
-            Command::PlayPause => {
-                if let Some(new_state) =
-                    error_handler
-                        .handle(playbin.get_state())
-                        .and_then(|current_state| match current_state {
-                            State::Paused => Some(State::Playing),
-                            State::Playing => Some(State::Paused),
-                            _ => None,
-                        })
-                {
-                    error_handler.handle(playbin.set_state(new_state));
-                }
-            }
-            Command::SetChannel(index) => {
-                let event = match config.station.iter().find(|c| c.index == index) {
-                    Some(channel) => {
-                        error_handler.handle(playbin.set_url(&channel.url));
-                        event::Event::NewChannel(channel.clone())
-                    }
-                    None => event::Event::ChannelNotFound(index),
-                };
-                error_handler.handle(events_tx.send(event));
-            }
-        }
-    }
+    rt.block_on(process_commands(config, pipeline, commands_rx, events_tx))?;
 
-    drop(events_tx);
     drop(raw_mode);
 
     Ok(())

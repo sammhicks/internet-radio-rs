@@ -1,5 +1,3 @@
-use std::fs::read_to_string;
-
 use log::{error, LevelFilter};
 use serde::{de, Deserializer};
 
@@ -63,7 +61,7 @@ impl<'de> de::Visitor<'de> for LogLevelParser {
 }
 
 pub fn load() -> Config {
-    let config = match read_to_string("config.toml") {
+    let config = match std::fs::read_to_string("config.toml") {
         Ok(config) => config,
         Err(err) => {
             error!("Failed to read config file: {}", err);

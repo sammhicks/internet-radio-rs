@@ -7,4 +7,4 @@ pub enum Command {
 }
 
 pub type Sender = tokio::sync::mpsc::UnboundedSender<Command>;
-// pub type CommandReciever = tokio::sync::mpsc::UnboundedReceiver<Command>;
+pub type Receiver = tokio::sync::mpsc::UnboundedReceiver<Command>;

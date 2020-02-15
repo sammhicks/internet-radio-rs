@@ -1,10 +1,10 @@
 #![allow(clippy::match_same_arms)]
 use log::{debug, Level};
 
-use crate::event::{Event, Reciever};
+use crate::event::{Event, Receiver};
 use crate::tag::Tag;
 
-pub async fn main(mut channel: Reciever) {
+pub async fn main(mut channel: Receiver) {
     while let Some(event) = channel.recv().await {
         let level = match event {
             Event::Buffering(..) => Level::Debug,

@@ -17,4 +17,4 @@ pub enum Event {
 }
 
 pub type Sender = tokio::sync::mpsc::UnboundedSender<Event>;
-pub type Reciever = tokio::sync::mpsc::UnboundedReceiver<Event>;
+pub type Receiver = tokio::sync::mpsc::UnboundedReceiver<Event>;

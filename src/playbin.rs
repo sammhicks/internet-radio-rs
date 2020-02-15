@@ -53,7 +53,7 @@ impl Playbin {
         Ok(())
     }
 
-    pub fn is_src(&self, message: gstreamer_sys::GstMessage) -> bool {
+    pub fn is_src_of(&self, message: gstreamer_sys::GstMessage) -> bool {
         use glib::translate::ToGlibPtr;
         use gstreamer_sys::GstElement;
         let playbin_ptr: *const GstElement = self.0.to_glib_none().0;
