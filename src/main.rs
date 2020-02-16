@@ -11,7 +11,7 @@ mod config;
 mod error_handler;
 mod event;
 mod event_logger;
-mod keyboard_events;
+mod keyboard_commands;
 mod logger;
 mod message_handler;
 mod playbin;
@@ -96,7 +96,7 @@ fn main() -> Result<()> {
 
     rt.spawn(message_handler::main(pipeline.clone(), events_tx.clone()));
     rt.spawn(event_logger::main(events_rx));
-    rt.spawn(keyboard_events::main(
+    rt.spawn(keyboard_commands::main(
         commands_tx,
         tokio::time::Duration::from_millis(config.input_timeout_ms),
     ));
