@@ -4,7 +4,6 @@ use anyhow::{Context, Result};
 use futures::StreamExt;
 use glib::value::SendValue;
 use gstreamer::{MessageView, State};
-use log::debug;
 
 use crate::error_handler::ErrorHandler;
 use crate::event::{self, Event, Percent};
@@ -102,8 +101,6 @@ pub async fn main(pipeline: crate::playbin::Playbin, channel: event::Sender) -> 
             msg => channel.send(Event::Error(format!("Unknown Message: {:?}", msg)))?,
         }
     }
-
-    debug!("message_handler finished");
 
     Ok(())
 }

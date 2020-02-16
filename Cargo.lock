@@ -251,7 +251,7 @@ dependencies = [
 
 [[package]]
 name = "internet-radio"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow 1.0.26 (registry+https://github.com/rust-lang/crates.io-index)",
  "crossterm 0.16.0 (registry+https://github.com/rust-lang/crates.io-index)",

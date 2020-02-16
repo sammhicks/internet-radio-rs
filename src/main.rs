@@ -4,6 +4,7 @@ use std::io::stdout;
 
 use anyhow::Result;
 use gstreamer::State;
+use tokio::runtime::Runtime;
 
 mod channel;
 mod command;
@@ -18,10 +19,12 @@ mod playbin;
 mod playlist;
 mod print_value;
 mod raw_mode;
+mod spawn_task;
 mod tag;
 
 use command::Command;
 use logger::Logger;
+use spawn_task::TaskSpawner;
 
 async fn process_commands(
     config: config::Config,
@@ -92,14 +95,22 @@ fn main() -> Result<()> {
     let (commands_tx, commands_rx) = tokio::sync::mpsc::unbounded_channel();
     let (events_tx, events_rx) = tokio::sync::mpsc::unbounded_channel();
 
-    let mut rt = tokio::runtime::Runtime::new()?;
+    let mut rt = Runtime::new()?;
 
-    rt.spawn(message_handler::main(pipeline.clone(), events_tx.clone()));
-    rt.spawn(event_logger::main(events_rx));
-    rt.spawn(keyboard_commands::main(
-        commands_tx,
-        tokio::time::Duration::from_millis(config.input_timeout_ms),
-    ));
+    rt.spawn_named(
+        "keyboard_commands",
+        keyboard_commands::main(
+            commands_tx,
+            tokio::time::Duration::from_millis(config.input_timeout_ms),
+        ),
+    );
+
+    rt.spawn_named(
+        "message_handler",
+        message_handler::main(pipeline.clone(), events_tx.clone()),
+    );
+
+    rt.spawn_named("event_logger", event_logger::main(events_rx));
 
     rt.block_on(process_commands(config, pipeline, commands_rx, events_tx))?;
 

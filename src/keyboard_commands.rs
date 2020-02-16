@@ -42,38 +42,27 @@ pub async fn main(
             None => (events.next().await, None),
         };
 
-        let event = match event {
-            Some(event) => event?,
-            None => break,
-        };
-
-        match event {
+        match event.ok_or_else(|| anyhow::Error::msg("Keyboard event closed"))?? {
             Event::Key(KeyEvent {
                 code: KeyCode::Esc, ..
-            }) => break,
+            }) => return Ok(()),
             Event::Key(KeyEvent {
                 code: KeyCode::Char(' '),
                 ..
             }) => {
-                if channel.send(Command::PlayPause).is_err() {
-                    break;
-                }
+                channel.send(Command::PlayPause)?;
             }
             Event::Key(KeyEvent {
                 code: KeyCode::Char('*'),
                 ..
             }) => {
-                if channel.send(Command::VolumeUp).is_err() {
-                    break;
-                }
+                channel.send(Command::VolumeUp)?;
             }
             Event::Key(KeyEvent {
                 code: KeyCode::Char('/'),
                 ..
             }) => {
-                if channel.send(Command::VolumeDown).is_err() {
-                    break;
-                }
+                channel.send(Command::VolumeDown)?;
             }
             Event::Key(KeyEvent {
                 code: KeyCode::Char(c),
@@ -84,9 +73,7 @@ pub async fn main(
                     Some(current_digit) => {
                         let station_index = String::from_iter([current_digit, c].iter());
 
-                        if channel.send(Command::SetChannel(station_index)).is_err() {
-                            break;
-                        }
+                        channel.send(Command::SetChannel(station_index))?;
 
                         None
                     }
@@ -99,8 +86,4 @@ pub async fn main(
             e => debug!("Unhandled key: {:?}", e),
         }
     }
-
-    debug!("keyboard_events finished");
-
-    Ok(())
 }

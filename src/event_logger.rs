@@ -1,5 +1,5 @@
 #![allow(clippy::match_same_arms)]
-use log::{debug, Level};
+use log::Level;
 
 use crate::event::{Event, Receiver};
 use crate::tag::Tag;
@@ -16,6 +16,4 @@ pub async fn main(mut channel: Receiver) {
 
         log::log!(level, "Event: {:?}", event);
     }
-
-    debug!("event_logger finished");
 }
