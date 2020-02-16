@@ -1,7 +1,7 @@
 use crate::channel;
 
 #[derive(Debug)]
-pub struct Percent(pub u8);
+pub struct Percent(pub i32);
 
 #[derive(Debug)]
 pub enum Event {

@@ -44,6 +44,14 @@ impl Playbin {
         Ok(())
     }
 
+    pub fn play_pause(&self) -> Result<()> {
+        match self.get_state()? {
+            State::Paused => self.set_state(State::Playing),
+            State::Playing => self.set_state(State::Paused),
+            _ => Ok(()),
+        }
+    }
+
     pub fn set_url(&self, url: &str) -> Result<()> {
         self.set_state(State::Null)?;
         self.0

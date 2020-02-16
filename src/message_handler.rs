@@ -1,6 +1,6 @@
 use std::string::ToString;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use futures::StreamExt;
 use glib::value::SendValue;
 use gstreamer::{MessageView, State};
@@ -60,13 +60,7 @@ pub async fn main(pipeline: crate::playbin::Playbin, channel: event::Sender) -> 
         #[allow(clippy::match_same_arms)]
         match message.view() {
             MessageView::Buffering(b) => {
-                use std::convert::TryFrom;
-                let percent = b.get_percent();
-                if let Some(percent) = error_handler.handle(
-                    u8::try_from(percent).context(format!("Trying to convert {} into u8", percent)),
-                ) {
-                    channel.send(Event::Buffering(Percent(percent)))?;
-                }
+                channel.send(Event::Buffering(Percent(b.get_percent())))?
             }
             MessageView::Tag(tag) => {
                 for (name, value) in tag.get_tags().as_ref().iter() {

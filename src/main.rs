@@ -3,7 +3,6 @@
 use std::io::stdout;
 
 use anyhow::Result;
-use gstreamer::State;
 use tokio::runtime::Runtime;
 
 mod channel;
@@ -42,38 +41,23 @@ async fn process_commands(
     let mut current_state = None;
 
     while let Some(command) = commands.recv().await {
-        match command {
-            Command::PlayPause => {
-                if let Some(new_state) =
-                    error_handler
-                        .handle(pipeline.get_state())
-                        .and_then(|current_state| match current_state {
-                            State::Paused => Some(State::Playing),
-                            State::Playing => Some(State::Paused),
-                            _ => None,
+        error_handler.handle(match command {
+            Command::PlayPause => pipeline.play_pause(),
+            Command::SetChannel(index) => channel::load(&config.channels_directory, index)
+                .and_then(|new_channel| match new_channel.playlist.get(0) {
+                    Some(entry) => {
+                        current_state = Some(ChannelState {
+                            channel: new_channel.clone(),
+                            index: 0,
+                        });
+                        pipeline.set_url(&entry.url).and_then(|_| {
+                            events
+                                .send(event::Event::NewChannel(new_channel.clone()))
+                                .map_err(anyhow::Error::new)
                         })
-                {
-                    error_handler.handle(pipeline.set_state(new_state));
-                }
-            }
-            Command::SetChannel(index) => {
-                error_handler.handle(channel::load(&config.channels_directory, index).and_then(
-                    |new_channel| match new_channel.playlist.get(0) {
-                        Some(entry) => {
-                            current_state = Some(ChannelState {
-                                channel: new_channel.clone(),
-                                index: 0,
-                            });
-                            pipeline.set_url(&entry.url).and_then(|_| {
-                                events
-                                    .send(event::Event::NewChannel(new_channel.clone()))
-                                    .map_err(anyhow::Error::new)
-                            })
-                        }
-                        None => Err(anyhow::Error::msg("Empty Playlist")),
-                    },
-                ));
-            }
+                    }
+                    None => Err(anyhow::Error::msg("Empty Playlist")),
+                }),
             Command::PreviousItem => {
                 if let Some(current_state) = &mut current_state {
                     current_state.index = if current_state.index == 0 {
@@ -82,14 +66,14 @@ async fn process_commands(
                         current_state.index - 1
                     };
 
-                    error_handler.handle(
-                        current_state
-                            .channel
-                            .playlist
-                            .get(current_state.index)
-                            .ok_or_else(|| anyhow::Error::msg("Failed to get playlist item"))
-                            .and_then(|entry| pipeline.set_url(&entry.url)),
-                    );
+                    current_state
+                        .channel
+                        .playlist
+                        .get(current_state.index)
+                        .ok_or_else(|| anyhow::Error::msg("Failed to get playlist item"))
+                        .and_then(|entry| pipeline.set_url(&entry.url))
+                } else {
+                    Ok(())
                 }
             }
             Command::NextItem => {
@@ -99,23 +83,19 @@ async fn process_commands(
                         current_state.index = 0;
                     }
 
-                    error_handler.handle(
-                        current_state
-                            .channel
-                            .playlist
-                            .get(current_state.index)
-                            .ok_or_else(|| anyhow::Error::msg("Failed to get playlist item"))
-                            .and_then(|entry| pipeline.set_url(&entry.url)),
-                    );
+                    current_state
+                        .channel
+                        .playlist
+                        .get(current_state.index)
+                        .ok_or_else(|| anyhow::Error::msg("Failed to get playlist item"))
+                        .and_then(|entry| pipeline.set_url(&entry.url))
+                } else {
+                    Ok(())
                 }
             }
-            Command::VolumeUp => {
-                error_handler.handle(pipeline.change_volume(config.volume_offset_percent));
-            }
-            Command::VolumeDown => {
-                error_handler.handle(pipeline.change_volume(-config.volume_offset_percent));
-            }
-        }
+            Command::VolumeUp => pipeline.change_volume(config.volume_offset_percent),
+            Command::VolumeDown => pipeline.change_volume(-config.volume_offset_percent),
+        });
     }
 
     Ok(())
