@@ -60,6 +60,22 @@ pub async fn main(
                 }
             }
             Event::Key(KeyEvent {
+                code: KeyCode::Char('*'),
+                ..
+            }) => {
+                if channel.send(Command::VolumeUp).is_err() {
+                    break;
+                }
+            }
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('/'),
+                ..
+            }) => {
+                if channel.send(Command::VolumeDown).is_err() {
+                    break;
+                }
+            }
+            Event::Key(KeyEvent {
                 code: KeyCode::Char(c),
                 ..
             }) if c.is_ascii_digit() => {

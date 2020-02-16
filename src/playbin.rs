@@ -1,7 +1,7 @@
 use anyhow::{Context, Error, Result};
 use glib::object::ObjectExt;
 use gstreamer::{ElementExt, ElementExtManual, State, StateChangeError};
-use log::error;
+use log::{debug, error};
 
 #[derive(Clone)]
 pub struct Playbin(gstreamer::Element);
@@ -59,6 +59,22 @@ impl Playbin {
         let playbin_ptr: *const GstElement = self.0.to_glib_none().0;
         let message_src_ptr = message.src as *const GstElement;
         playbin_ptr == message_src_ptr
+    }
+
+    pub fn change_volume(&self, offset: i32) -> Result<()> {
+        #[allow(clippy::cast_possible_truncation)]
+        let current_volume = (100.0 * self.0.get_property("volume")?.get_some::<f64>()?) as i32;
+
+        debug!("Current Volume: {}", current_volume);
+
+        let new_volume = (current_volume + offset).max(0).min(1000);
+
+        debug!("New Volume: {}", new_volume);
+
+        self.0
+            .set_property("volume", &(f64::from(new_volume) / 100.0))?;
+
+        Ok(())
     }
 }
 

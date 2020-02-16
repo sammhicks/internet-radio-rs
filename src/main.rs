@@ -64,6 +64,12 @@ async fn process_commands(
                     }
                 }
             }
+            Command::VolumeUp => {
+                error_handler.handle(pipeline.change_volume(config.volume_offset_percent));
+            }
+            Command::VolumeDown => {
+                error_handler.handle(pipeline.change_volume(-config.volume_offset_percent));
+            }
         }
     }
 

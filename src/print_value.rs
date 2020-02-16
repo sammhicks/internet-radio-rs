@@ -12,6 +12,7 @@ pub fn value_to_string(value: &Value) -> Result<String> {
             .ok_or_else(|| Error::msg("No String"))
             .map(|s| format!("String: {}", s)),
         Type::U32 => Ok(format!("U32: {}", value.get_some::<u32>()?)),
+        Type::F64 => Ok(format!("F64: {}", value.get_some::<f64>()?)),
         t if t == gstreamer::DateTime::static_type() => value
             .get::<gstreamer::DateTime>()?
             .ok_or_else(|| Error::msg("No DateTime"))

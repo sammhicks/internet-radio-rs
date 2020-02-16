@@ -7,6 +7,8 @@ pub struct Config {
     pub channels_directory: String,
     #[serde(default = "default_input_timeout_ms")]
     pub input_timeout_ms: u64,
+    #[serde(default = "default_volume_offset_percent")]
+    pub volume_offset_percent: i32,
     #[serde(deserialize_with = "parse_log_level", default = "default_log_level")]
     pub log_level: LevelFilter,
 }
@@ -16,6 +18,7 @@ impl Default for Config {
         Self {
             channels_directory: default_channels_directory(),
             input_timeout_ms: default_input_timeout_ms(),
+            volume_offset_percent: default_volume_offset_percent(),
             log_level: default_log_level(),
         }
     }
@@ -27,6 +30,10 @@ fn default_channels_directory() -> String {
 
 const fn default_input_timeout_ms() -> u64 {
     2000
+}
+
+const fn default_volume_offset_percent() -> i32 {
+    10
 }
 
 const fn default_log_level() -> LevelFilter {

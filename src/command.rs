@@ -2,6 +2,8 @@
 pub enum Command {
     PlayPause,
     SetChannel(String),
+    VolumeUp,
+    VolumeDown,
 }
 
 pub type Sender = tokio::sync::mpsc::UnboundedSender<Command>;
