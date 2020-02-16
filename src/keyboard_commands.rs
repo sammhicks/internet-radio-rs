@@ -53,6 +53,18 @@ pub async fn main(
                 channel.send(Command::PlayPause)?;
             }
             Event::Key(KeyEvent {
+                code: KeyCode::Char('-'),
+                ..
+            }) => {
+                channel.send(Command::PreviousItem)?;
+            }
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('+'),
+                ..
+            }) => {
+                channel.send(Command::NextItem)?;
+            }
+            Event::Key(KeyEvent {
                 code: KeyCode::Char('*'),
                 ..
             }) => {

@@ -26,6 +26,11 @@ use command::Command;
 use logger::Logger;
 use spawn_task::TaskSpawner;
 
+struct ChannelState {
+    channel: channel::Channel,
+    index: usize,
+}
+
 async fn process_commands(
     config: config::Config,
     pipeline: playbin::Playbin,
@@ -33,6 +38,8 @@ async fn process_commands(
     events: event::Sender,
 ) -> Result<()> {
     let mut error_handler = error_handler::ErrorHandler::new(events.clone());
+
+    let mut current_state = None;
 
     while let Some(command) = commands.recv().await {
         match command {
@@ -50,21 +57,56 @@ async fn process_commands(
                 }
             }
             Command::SetChannel(index) => {
-                if let Some(new_channel) =
-                    error_handler.handle(channel::load(&config.channels_directory, index))
-                {
-                    if error_handler
-                        .handle(
-                            new_channel
-                                .playlist
-                                .get(0)
-                                .ok_or_else(|| anyhow::Error::msg("Empty Playlist"))
-                                .and_then(|entry| pipeline.set_url(&entry.url)),
-                        )
-                        .is_some()
-                    {
-                        error_handler.handle(events.send(event::Event::NewChannel(new_channel)));
+                error_handler.handle(channel::load(&config.channels_directory, index).and_then(
+                    |new_channel| match new_channel.playlist.get(0) {
+                        Some(entry) => {
+                            current_state = Some(ChannelState {
+                                channel: new_channel.clone(),
+                                index: 0,
+                            });
+                            pipeline.set_url(&entry.url).and_then(|_| {
+                                events
+                                    .send(event::Event::NewChannel(new_channel.clone()))
+                                    .map_err(anyhow::Error::new)
+                            })
+                        }
+                        None => Err(anyhow::Error::msg("Empty Playlist")),
+                    },
+                ));
+            }
+            Command::PreviousItem => {
+                if let Some(current_state) = &mut current_state {
+                    current_state.index = if current_state.index == 0 {
+                        current_state.channel.playlist.len() - 1
+                    } else {
+                        current_state.index - 1
+                    };
+
+                    error_handler.handle(
+                        current_state
+                            .channel
+                            .playlist
+                            .get(current_state.index)
+                            .ok_or_else(|| anyhow::Error::msg("Failed to get playlist item"))
+                            .and_then(|entry| pipeline.set_url(&entry.url)),
+                    );
+                }
+            }
+            Command::NextItem => {
+                if let Some(current_state) = &mut current_state {
+                    current_state.index += 1;
+                    if current_state.index == current_state.channel.playlist.len() {
+                        current_state.index = 0;
                     }
+
+                    error_handler.handle(
+                        current_state
+                            .channel
+                            .playlist
+                            .get(current_state.index)
+                            .ok_or_else(|| anyhow::Error::msg("Failed to get playlist item"))
+                            .and_then(|entry| pipeline.set_url(&entry.url)),
+                    );
                 }
             }
             Command::VolumeUp => {

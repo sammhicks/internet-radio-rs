@@ -2,6 +2,8 @@
 pub enum Command {
     PlayPause,
     SetChannel(String),
+    PreviousItem,
+    NextItem,
     VolumeUp,
     VolumeDown,
 }
