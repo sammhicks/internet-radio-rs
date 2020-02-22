@@ -63,7 +63,7 @@ fn parse_pls(path: impl AsRef<std::path::Path>) -> Result<Vec<Entry>> {
         .map_err(anyhow::Error::new)
 }
 
-pub fn parse(path: impl AsRef<std::path::Path> + Clone) -> Result<Vec<Entry>> {
+pub fn load(path: impl AsRef<std::path::Path> + Clone) -> Result<Vec<Entry>> {
     use std::ops::Deref;
     match path
         .as_ref()

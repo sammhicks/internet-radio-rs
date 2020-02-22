@@ -1,12 +1,13 @@
 [package]
 name = "internet-radio"
-version = "0.4.3"
+version = "0.5.0"
 authors = ["Samuel Hicks <SamMHicks@hotmail.co.uk>"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+actix = "0.9"
 anyhow = "1.0"
 crossterm =  { version = "0.16", features = ["event-stream"] }
 futures = "0.3"
@@ -17,5 +18,5 @@ log = { version = "0.4", features = ["std"] }
 m3u = "1.0"
 pls = "0.2"
 serde = { version = "1.0", features = ["derive"] }
-tokio = { version = "0.2", features = [ "macros", "rt-threaded", "sync", "time"] }
+tokio = { version = "0.2", features = [ "signal" ] }
 toml = "0.5"

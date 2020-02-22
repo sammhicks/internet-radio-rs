@@ -1,12 +1,18 @@
+use actix::clock::Duration;
+use anyhow::{Context, Result};
 use log::{error, LevelFilter};
 use serde::{de, Deserializer};
 
-#[derive(serde::Deserialize)]
+#[derive(Clone, serde::Deserialize)]
 pub struct Config {
     #[serde(default = "default_channels_directory")]
     pub channels_directory: String,
-    #[serde(default = "default_input_timeout_ms")]
-    pub input_timeout_ms: u64,
+    #[serde(
+        rename = "input_timeout_ms",
+        default = "default_input_timeout",
+        deserialize_with = "deserialize_duration_millis"
+    )]
+    pub input_timeout: Duration,
     #[serde(default = "default_volume_offset_percent")]
     pub volume_offset_percent: i32,
     #[serde(deserialize_with = "parse_log_level", default = "default_log_level")]
@@ -17,7 +23,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             channels_directory: default_channels_directory(),
-            input_timeout_ms: default_input_timeout_ms(),
+            input_timeout: default_input_timeout(),
             volume_offset_percent: default_volume_offset_percent(),
             log_level: default_log_level(),
         }
@@ -28,8 +34,35 @@ fn default_channels_directory() -> String {
     String::from("channels")
 }
 
-const fn default_input_timeout_ms() -> u64 {
-    2000
+const fn default_input_timeout() -> Duration {
+    Duration::from_millis(2000)
+}
+
+fn deserialize_duration_millis<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Duration, D::Error> {
+    deserializer.deserialize_u64(DurationMillisParser)
+}
+
+struct DurationMillisParser;
+
+impl<'de> de::Visitor<'de> for DurationMillisParser {
+    type Value = Duration;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(formatter, "a Duration in milliseconds")
+    }
+
+    fn visit_i64<E: de::Error>(self, v: i64) -> Result<Self::Value, E> {
+        use std::convert::TryFrom;
+        u64::try_from(v)
+            .map(Duration::from_millis)
+            .map_err(|_| de::Error::invalid_value(de::Unexpected::Signed(v), &self))
+    }
+
+    fn visit_u64<E: de::Error>(self, v: u64) -> Result<Self::Value, E> {
+        Ok(Duration::from_millis(v))
+    }
 }
 
 const fn default_volume_offset_percent() -> i32 {
@@ -70,18 +103,9 @@ impl<'de> de::Visitor<'de> for LogLevelParser {
 }
 
 pub fn load() -> Config {
-    let config = match std::fs::read_to_string("config.toml") {
-        Ok(config) => config,
-        Err(err) => {
-            error!("Failed to read config file: {}", err);
-            return Config::default();
-        }
-    };
-    match toml::from_str(&config) {
-        Ok(config) => config,
-        Err(err) => {
-            error!("Failed to parse config file: {}", err);
-            Config::default()
-        }
-    }
+    std::fs::read_to_string("config.toml")
+        .context("Failed to read config file")
+        .and_then(|config| toml::from_str(&config).context("Failed to parse config file"))
+        .map_err(|err| error!("{:?}", err))
+        .unwrap_or_default()
 }

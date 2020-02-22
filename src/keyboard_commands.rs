@@ -1,101 +1,121 @@
 use std::iter::FromIterator;
 
+use actix::prelude::*;
 use anyhow::Result;
 use crossterm::event::{Event, EventStream, KeyCode, KeyEvent};
-use futures::{
-    future::{select, Either},
-    StreamExt,
-};
-use log::debug;
-use tokio::time::{delay_until, Duration, Instant};
+use futures::stream::StreamExt;
+use log::{debug, error};
 
-use crate::command::{self, Command};
+use crate::message::Command;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 struct CurrentNumberEntry {
     previous_digit: char,
-    timeout: Instant,
+    timeout: SpawnHandle,
 }
 
-pub async fn main(
-    channel: command::Sender,
-    station_index_timeout_duration: Duration,
-) -> Result<()> {
-    let mut events = EventStream::new();
+pub struct KeyboardCommands {
+    command_handler: actix::Recipient<Command>,
+    channel_timeout_duration: actix::clock::Duration,
+    channel_timeout: Option<CurrentNumberEntry>,
+}
 
-    let mut station_index_timeout = None;
+impl KeyboardCommands {
+    pub fn new(
+        command_handler: actix::Recipient<Command>,
+        channel_timeout_duration: actix::clock::Duration,
+    ) -> Result<Self> {
+        crossterm::terminal::enable_raw_mode()?;
 
-    loop {
-        let (event, current_digit) = match station_index_timeout {
-            Some(CurrentNumberEntry {
-                previous_digit,
-                timeout,
-            }) => match select(events.next(), delay_until(timeout)).await {
-                Either::Left((event, _)) => (event, Some(previous_digit)),
-                Either::Right(_) => {
-                    debug!("Channel entry cancelled");
+        Ok(Self {
+            command_handler,
+            channel_timeout_duration,
+            channel_timeout: None,
+        })
+    }
 
-                    station_index_timeout = None;
-                    continue;
+    fn send_command(&mut self, command: Command) {
+        if self.command_handler.do_send(command).is_err() {
+            System::current().stop();
+        }
+    }
+}
+
+impl Actor for KeyboardCommands {
+    type Context = Context<Self>;
+
+    fn started(&mut self, ctx: &mut Self::Context) {
+        if let Err(err) = crossterm::terminal::enable_raw_mode() {
+            error!("Failed to enable raw mode: {:?}", err);
+            System::current().stop();
+            return;
+        }
+
+        Self::add_stream(
+            EventStream::new().filter_map(|event| {
+                async move {
+                    match event {
+                        Ok(Event::Key(KeyEvent { code, .. })) => Some(Ok(code)),
+                        Ok(..) => None,
+                        Err(err) => Some(Err(err)),
+                    }
                 }
-            },
-            None => (events.next().await, None),
+            }),
+            ctx,
+        );
+    }
+
+    fn stopped(&mut self, _ctx: &mut Self::Context) {
+        if let Err(err) = crossterm::terminal::disable_raw_mode() {
+            error!("Failed to disable raw mode: {:?}", err);
+            System::current().stop();
+            return;
+        }
+    }
+}
+
+impl StreamHandler<crossterm::Result<KeyCode>> for KeyboardCommands {
+    fn handle(&mut self, event: crossterm::Result<KeyCode>, ctx: &mut Self::Context) {
+        let event = match event {
+            Ok(event) => event,
+            Err(err) => {
+                error!("Crossterm error: {:?}", err);
+                return;
+            }
         };
 
-        match event.ok_or_else(|| anyhow::Error::msg("Keyboard event closed"))?? {
-            Event::Key(KeyEvent {
-                code: KeyCode::Esc, ..
-            }) => return Ok(()),
-            Event::Key(KeyEvent {
-                code: KeyCode::Char(' '),
-                ..
-            }) => {
-                channel.send(Command::PlayPause)?;
-            }
-            Event::Key(KeyEvent {
-                code: KeyCode::Char('-'),
-                ..
-            }) => {
-                channel.send(Command::PreviousItem)?;
-            }
-            Event::Key(KeyEvent {
-                code: KeyCode::Char('+'),
-                ..
-            }) => {
-                channel.send(Command::NextItem)?;
-            }
-            Event::Key(KeyEvent {
-                code: KeyCode::Char('*'),
-                ..
-            }) => {
-                channel.send(Command::VolumeUp)?;
-            }
-            Event::Key(KeyEvent {
-                code: KeyCode::Char('/'),
-                ..
-            }) => {
-                channel.send(Command::VolumeDown)?;
-            }
-            Event::Key(KeyEvent {
-                code: KeyCode::Char(c),
-                ..
-            }) if c.is_ascii_digit() => {
+        match event {
+            KeyCode::Esc => actix::System::current().stop(),
+            KeyCode::Char(' ') => self.send_command(Command::PlayPause),
+            KeyCode::Char('-') => self.send_command(Command::PreviousItem),
+            KeyCode::Char('+') => self.send_command(Command::NextItem),
+            KeyCode::Char('*') => self.send_command(Command::VolumeUp),
+            KeyCode::Char('/') => self.send_command(Command::VolumeDown),
+            KeyCode::Char(c) if c.is_ascii_digit() => {
                 debug!("ASCII entry: {}", c);
-                station_index_timeout = match current_digit {
-                    Some(current_digit) => {
-                        let station_index = String::from_iter([current_digit, c].iter());
-
-                        channel.send(Command::SetChannel(station_index))?;
-
-                        None
-                    }
-                    None => Some(CurrentNumberEntry {
+                if let Some(CurrentNumberEntry {
+                    previous_digit,
+                    timeout,
+                }) = self.channel_timeout.take()
+                {
+                    ctx.cancel_future(timeout);
+                    self.send_command(Command::SetChannel(String::from_iter(
+                        [previous_digit, c].iter(),
+                    )))
+                } else {
+                    self.channel_timeout = Some(CurrentNumberEntry {
                         previous_digit: c,
-                        timeout: Instant::now() + station_index_timeout_duration,
-                    }),
-                };
+                        timeout: ctx.run_later(
+                            self.channel_timeout_duration,
+                            |actor: &mut Self, _ctx: &mut Self::Context| {
+                                debug!("Channel entry timeout");
+                                actor.channel_timeout = None
+                            },
+                        ),
+                    });
+                }
             }
-            e => debug!("Unhandled key: {:?}", e),
+            code => debug!("Unhandled key: {:?}", code),
         }
     }
 }

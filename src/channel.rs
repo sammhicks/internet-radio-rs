@@ -2,12 +2,10 @@ use std::path::Path;
 
 use anyhow::Result;
 
-use crate::playlist::Entry;
-
 #[derive(Clone, Debug)]
 pub struct Channel {
     pub index: String,
-    pub playlist: Vec<Entry>,
+    pub playlist: Vec<crate::playlist::Entry>,
 }
 
 pub fn load(directory: impl AsRef<Path>, index: String) -> Result<Channel> {
@@ -19,7 +17,7 @@ pub fn load(directory: impl AsRef<Path>, index: String) -> Result<Channel> {
         if name.starts_with(&index) {
             return Ok(Channel {
                 index,
-                playlist: crate::playlist::parse(entry.path())?,
+                playlist: crate::playlist::load(entry.path())?,
             });
         }
     }

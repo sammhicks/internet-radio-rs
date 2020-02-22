@@ -1,6 +1,6 @@
 use anyhow::{Context, Error, Result};
 use glib::object::ObjectExt;
-use gstreamer::{ElementExt, ElementExtManual, State, StateChangeError};
+use gstreamer::{ElementExt, ElementExtManual, State};
 use log::{debug, error};
 
 #[derive(Clone)]
@@ -31,9 +31,10 @@ impl Playbin {
             .ok_or_else(|| Error::msg("playbin has no bus"))
     }
 
-    pub fn get_state(&self) -> Result<State, StateChangeError> {
+    pub fn get_state(&self) -> Result<State> {
         let (success, state, _) = self.0.get_state(gstreamer::ClockTime::none());
-        success.map(|_| state)
+        success.context("Unable to get state")?;
+        Ok(state)
     }
 
     pub fn set_state(&self, state: State) -> Result<()> {
