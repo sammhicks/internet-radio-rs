@@ -90,7 +90,7 @@ impl Playbin {
 impl Drop for Playbin {
     fn drop(&mut self) {
         if let Err(err) = self.set_state(State::Null) {
-            error!("{}", err);
+            error!("{:?}", err);
         }
     }
 }

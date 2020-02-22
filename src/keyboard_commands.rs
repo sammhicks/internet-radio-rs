@@ -45,12 +45,6 @@ impl Actor for KeyboardCommands {
     type Context = Context<Self>;
 
     fn started(&mut self, ctx: &mut Self::Context) {
-        if let Err(err) = crossterm::terminal::enable_raw_mode() {
-            error!("Failed to enable raw mode: {:?}", err);
-            System::current().stop();
-            return;
-        }
-
         Self::add_stream(
             EventStream::new().filter_map(|event| {
                 async move {
@@ -68,8 +62,6 @@ impl Actor for KeyboardCommands {
     fn stopped(&mut self, _ctx: &mut Self::Context) {
         if let Err(err) = crossterm::terminal::disable_raw_mode() {
             error!("Failed to disable raw mode: {:?}", err);
-            System::current().stop();
-            return;
         }
     }
 }

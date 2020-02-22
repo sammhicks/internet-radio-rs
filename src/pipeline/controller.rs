@@ -1,7 +1,7 @@
 use actix::prelude::*;
 use anyhow::Result;
-use gstreamer::{prelude::*, State};
-use log::{debug, error, info};
+use gstreamer::prelude::*;
+use log::{debug, error, info, warn};
 
 use super::playbin::Playbin;
 use crate::{channel::Channel, config::Config, message::Command, tag::Tag};
@@ -60,6 +60,14 @@ impl Controller {
         })
     }
 
+    fn play_pause(&mut self) -> Result<()> {
+        if self.current_channel.is_some() {
+            self.playbin.play_pause()
+        } else {
+            Ok(())
+        }
+    }
+
     fn goto_previous_track(&mut self) -> Result<()> {
         if let Some(current_channel) = &mut self.current_channel {
             current_channel.goto_previous_track(&self.playbin)
@@ -75,6 +83,15 @@ impl Controller {
             Ok(())
         }
     }
+
+    fn play_error(&mut self) {
+        self.current_channel = None;
+        if let Some(url) = &self.config.notifications.error {
+            if let Err(err) = self.playbin.set_url(&url) {
+                error!("{:?}", err);
+            }
+        }
+    }
 }
 
 impl Actor for Controller {
@@ -82,6 +99,12 @@ impl Actor for Controller {
 
     fn started(&mut self, ctx: &mut Self::Context) {
         Self::add_stream(gstreamer::BusStream::new(&self.bus), ctx);
+
+        if let Some(url) = &self.config.notifications.success {
+            if let Err(err) = self.playbin.set_url(&url) {
+                error!("{:?}", err);
+            }
+        }
     }
 }
 
@@ -91,8 +114,12 @@ impl Handler<Command> for Controller {
     fn handle(&mut self, command: Command, _ctx: &mut Self::Context) {
         if let Err(err) = match command {
             Command::SetChannel(index) => {
-                crate::channel::load(&self.config.channels_directory, index).and_then(
-                    |new_channel| match new_channel.playlist.get(0) {
+                if let Err(err) = Channel::load(&self.config.channels_directory, index)
+                    .map(|new_channel| {
+                        new_channel
+                            .start_with_notification(self.config.notifications.success.clone())
+                    })
+                    .and_then(|new_channel| match new_channel.playlist.get(0) {
                         Some(entry) => {
                             self.current_channel = Some(ChannelState {
                                 channel: new_channel.clone(),
@@ -103,10 +130,14 @@ impl Handler<Command> for Controller {
                                 .map(|()| info!("New Channel: {:?}", new_channel))
                         }
                         None => Err(anyhow::Error::msg("Empty Playlist")),
-                    },
-                )
+                    })
+                {
+                    warn!("{:?}", err);
+                    self.play_error();
+                };
+                Ok(())
             }
-            Command::PlayPause => self.playbin.play_pause(),
+            Command::PlayPause => self.play_pause(),
             Command::PreviousItem => self.goto_previous_track(),
             Command::NextItem => self.goto_next_track(),
             Command::VolumeUp => self
@@ -116,8 +147,7 @@ impl Handler<Command> for Controller {
                 .playbin
                 .change_volume(-self.config.volume_offset_percent),
         } {
-            error!("Error: {:?}", err);
-            System::current().stop();
+            error!("{:?}", err);
         }
     }
 }
@@ -136,17 +166,13 @@ impl StreamHandler<gstreamer::message::Message> for Controller {
             }
             MessageView::StateChanged(state_change) => {
                 if self.playbin.is_src_of(unsafe { *state_change.as_ptr() }) {
-                    match state_change.get_current() {
-                        State::Playing => info!("Playing"),
-                        State::Paused => info!("Paused"),
-                        _ => (),
-                    };
+                    info!("{:?}", state_change.get_current());
                 }
             }
             MessageView::Eos(..) => {
                 if let Err(err) = self.goto_next_track() {
                     error!("{:?}", err);
-                    System::current().stop();
+                    self.play_error();
                 }
             }
             MessageView::Error(err) => {
@@ -155,7 +181,8 @@ impl StreamHandler<gstreamer::message::Message> for Controller {
                     error!("Resource not found: {:?}", err.get_error().to_string());
                     return;
                 }
-                error!("Unknown Error: {} ({:?})", err.get_error(), err.get_debug());
+                error!("{} ({:?})", err.get_error(), err.get_debug());
+                self.play_error();
             }
             _ => (),
         }

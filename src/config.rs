@@ -3,7 +3,13 @@ use anyhow::{Context, Result};
 use log::{error, LevelFilter};
 use serde::{de, Deserializer};
 
-#[derive(Clone, serde::Deserialize)]
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct Notifications {
+    pub success: Option<String>,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
 pub struct Config {
     #[serde(default = "default_channels_directory")]
     pub channels_directory: String,
@@ -17,6 +23,8 @@ pub struct Config {
     pub volume_offset_percent: i32,
     #[serde(deserialize_with = "parse_log_level", default = "default_log_level")]
     pub log_level: LevelFilter,
+    #[serde(default, rename = "Notifications")]
+    pub notifications: Notifications,
 }
 
 impl Default for Config {
@@ -26,6 +34,7 @@ impl Default for Config {
             input_timeout: default_input_timeout(),
             volume_offset_percent: default_volume_offset_percent(),
             log_level: default_log_level(),
+            notifications: Notifications::default(),
         }
     }
 }

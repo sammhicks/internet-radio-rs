@@ -5,6 +5,11 @@
     input_timeout_ms = 1000
     log_level = "Info"
 
+    [Notifications]
+    success = "file:///usr/share/sounds/success.mp3"
+    error = "file:///usr/share/sounds/error.mp3"
+
+
 Options:
 + channels_directory
   + Default: `"channels"`
@@ -24,3 +29,6 @@ Options:
     + `"Info"`
     + `"Debug"`
     + `"Trace"`
++ Notifications
+  + Default: None
+  + Notification sounds to play on success or error
