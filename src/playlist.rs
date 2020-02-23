@@ -8,10 +8,9 @@ pub struct Entry {
 
 fn entry_url(entry: m3u::Entry) -> Result<String> {
     Ok(match entry {
-        m3u::Entry::Path(path) => String::from(
-            path.to_str()
-                .ok_or_else(|| anyhow::Error::msg("Bad Path"))?,
-        ),
+        m3u::Entry::Path(path) => {
+            String::from(path.to_str().context(format!("Bad Path: {:?}", path))?)
+        }
         m3u::Entry::Url(url) => url.into_string(),
     })
 }
@@ -60,7 +59,7 @@ fn parse_pls(path: impl AsRef<std::path::Path>) -> Result<Vec<Entry>> {
                 })
                 .collect()
         })
-        .map_err(anyhow::Error::new)
+        .map_err(Error::new)
 }
 
 pub fn load(path: impl AsRef<std::path::Path> + Clone) -> Result<Vec<Entry>> {
@@ -68,7 +67,7 @@ pub fn load(path: impl AsRef<std::path::Path> + Clone) -> Result<Vec<Entry>> {
     match path
         .as_ref()
         .extension()
-        .ok_or_else(|| Error::msg("No extension"))?
+        .context("File has no extension")?
         .to_string_lossy()
         .deref()
     {

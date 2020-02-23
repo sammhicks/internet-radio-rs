@@ -32,10 +32,11 @@ impl ChannelState {
     }
 
     fn update_url(&self, playbin: &Playbin) -> Result<()> {
+        use anyhow::Context;
         self.channel
             .playlist
             .get(self.index)
-            .ok_or_else(|| anyhow::Error::msg("Failed to get playlist item"))
+            .context("Failed to get playlist item")
             .and_then(|entry| playbin.set_url(&entry.url))
     }
 }

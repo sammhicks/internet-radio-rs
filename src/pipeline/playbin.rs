@@ -1,4 +1,4 @@
-use anyhow::{Context, Error, Result};
+use anyhow::{Context, Result};
 use glib::object::ObjectExt;
 use gstreamer::{ElementExt, ElementExtManual, State};
 use log::{debug, error};
@@ -11,24 +11,22 @@ impl Playbin {
         let playbin = gstreamer::ElementFactory::make("playbin", None)?;
 
         let flags = playbin.get_property("flags")?;
-        let flags_class = glib::FlagsClass::new(flags.type_())
-            .ok_or_else(|| Error::msg("Failed to create a flags class"))?;
+        let flags_class =
+            glib::FlagsClass::new(flags.type_()).context("Failed to create a flags class")?;
         let flags = flags_class
             .builder_with_value(flags)
             .unwrap()
             .unset_by_nick("text")
             .unset_by_nick("video")
             .build()
-            .ok_or_else(|| Error::msg("Failed to set flags"))?;
+            .context("Failed to set flags")?;
         playbin.set_property("flags", &flags)?;
 
         Ok(Self(playbin))
     }
 
     pub fn get_bus(&self) -> Result<gstreamer::Bus> {
-        self.0
-            .get_bus()
-            .ok_or_else(|| Error::msg("playbin has no bus"))
+        self.0.get_bus().context("Playbin has no bus")
     }
 
     pub fn get_state(&self) -> Result<State> {
