@@ -3,6 +3,8 @@ name = "internet-radio"
 version = "0.6.0"
 authors = ["Samuel Hicks <SamMHicks@hotmail.co.uk>"]
 edition = "2018"
+homepage = "https://github.com/sammhicks/internet-radio-rs"
+license-file = "LICENSE"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
