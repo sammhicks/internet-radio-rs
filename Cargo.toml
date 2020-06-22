@@ -3,8 +3,13 @@ name = "internet-radio"
 version = "0.6.1"
 authors = ["Samuel Hicks <SamMHicks@hotmail.co.uk>"]
 edition = "2018"
+description = "An internet radio with configurable two digit entry of stations"
+readme = "README.md"
 homepage = "https://github.com/sammhicks/internet-radio-rs"
+repository = "https://github.com/sammhicks/internet-radio-rs"
 license = "MIT"
+keywords = ["radio"]
+categories = ["audio", "internet"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
