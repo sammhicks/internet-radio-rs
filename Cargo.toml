@@ -1,6 +1,6 @@
 [package]
 name = "internet-radio"
-version = "0.7.1"
+version = "0.7.2"
 authors = ["Samuel Hicks <SamMHicks@hotmail.co.uk>"]
 edition = "2018"
 description = "An internet radio with configurable two digit entry of stations"

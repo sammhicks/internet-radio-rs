@@ -72,7 +72,7 @@ pub async fn run(
 
         let command = match next_code {
             KeyCode::Esc => break,
-            KeyCode::Char(' ') => Command::PlayPause,
+            KeyCode::Enter | KeyCode::Char(' ') => Command::PlayPause,
             KeyCode::Char('-') => Command::PreviousItem,
             KeyCode::Char('+') => Command::NextItem,
             KeyCode::Char('*') => Command::VolumeUp,
