@@ -7,7 +7,3 @@ pub enum Command {
     VolumeUp,
     VolumeDown,
 }
-
-impl actix::Message for Command {
-    type Result = ();
-}

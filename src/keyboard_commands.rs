@@ -1,113 +1,99 @@
 use std::iter::FromIterator;
 
-use actix::prelude::*;
 use anyhow::Result;
 use crossterm::event::{Event, EventStream, KeyCode, KeyEvent};
 use futures::stream::StreamExt;
-use log::{debug, error};
+use tokio::{
+    sync::mpsc,
+    time::{self, Duration},
+};
 
 use crate::message::Command;
 
-#[derive(Debug)]
-struct CurrentNumberEntry {
-    previous_digit: char,
-    timeout: SpawnHandle,
+struct RawMode {
+    is_enabled: bool,
 }
 
-pub struct KeyboardCommands {
-    command_handler: actix::Recipient<Command>,
-    channel_timeout_duration: actix::clock::Duration,
-    channel_timeout: Option<CurrentNumberEntry>,
-}
-
-impl KeyboardCommands {
-    pub fn new(
-        command_handler: actix::Recipient<Command>,
-        channel_timeout_duration: actix::clock::Duration,
-    ) -> Result<Self> {
-        crossterm::terminal::enable_raw_mode()?;
-
-        Ok(Self {
-            command_handler,
-            channel_timeout_duration,
-            channel_timeout: None,
-        })
+impl RawMode {
+    fn new() -> Result<Self> {
+        crossterm::terminal::enable_raw_mode()
+            .map(|()| Self { is_enabled: true })
+            .map_err(anyhow::Error::new)
     }
 
-    fn send_command(&mut self, command: Command) {
-        if self.command_handler.do_send(command).is_err() {
-            System::current().stop();
+    fn disable(&mut self) -> Result<()> {
+        if std::mem::replace(&mut self.is_enabled, false) {
+            crossterm::terminal::disable_raw_mode().map_err(anyhow::Error::new)
+        } else {
+            Ok(())
         }
     }
 }
 
-impl Actor for KeyboardCommands {
-    type Context = Context<Self>;
+impl std::ops::Drop for RawMode {
+    fn drop(&mut self) {
+        if let Some(err) = self.disable().err() {
+            log::error!("Failed to disable raw mode: {:?}", err);
+        }
+    }
+}
 
-    fn started(&mut self, ctx: &mut Self::Context) {
-        Self::add_stream(
-            EventStream::new().filter_map(|event| {
-                async move {
-                    match event {
-                        Ok(Event::Key(KeyEvent { code, .. })) => Some(Ok(code)),
-                        Ok(..) => None,
-                        Err(err) => Some(Err(err)),
-                    }
+pub async fn run(
+    commands: mpsc::UnboundedSender<Command>,
+    timeout_duration: Duration,
+) -> Result<()> {
+    let mut raw_mode = RawMode::new()?;
+
+    let mut keyboard_events = EventStream::new();
+
+    let mut current_number_entry: Option<char> = None;
+
+    loop {
+        let previous_digit;
+        let next_event;
+        if let Some(digit) = current_number_entry.take() {
+            if let Ok(event) = time::timeout(timeout_duration, keyboard_events.next()).await {
+                previous_digit = Some(digit);
+                next_event = event;
+            } else {
+                continue;
+            }
+        } else {
+            previous_digit = None;
+            next_event = keyboard_events.next().await;
+        }
+
+        let next_code = match next_event {
+            Some(Ok(Event::Key(KeyEvent { code, .. }))) => code,
+            Some(Ok(_)) => continue,
+            Some(Err(err)) => anyhow::bail!(err),
+            None => break,
+        };
+
+        let command = match next_code {
+            KeyCode::Esc => break,
+            KeyCode::Char(' ') => Command::PlayPause,
+            KeyCode::Char('-') => Command::PreviousItem,
+            KeyCode::Char('+') => Command::NextItem,
+            KeyCode::Char('*') => Command::VolumeUp,
+            KeyCode::Char('/') => Command::VolumeDown,
+            KeyCode::Char(c) if c.is_ascii_digit() => {
+                log::debug!("ASCII entry: {}", c);
+                if let Some(previous_digit) = previous_digit {
+                    Command::SetChannel(String::from_iter([previous_digit, c].iter()))
+                } else {
+                    current_number_entry = Some(c);
+                    continue;
                 }
-            }),
-            ctx,
-        );
-    }
-
-    fn stopped(&mut self, _ctx: &mut Self::Context) {
-        if let Err(err) = crossterm::terminal::disable_raw_mode() {
-            error!("Failed to disable raw mode: {:?}", err);
-        }
-    }
-}
-
-impl StreamHandler<crossterm::Result<KeyCode>> for KeyboardCommands {
-    fn handle(&mut self, event: crossterm::Result<KeyCode>, ctx: &mut Self::Context) {
-        let event = match event {
-            Ok(event) => event,
-            Err(err) => {
-                error!("Crossterm error: {:?}", err);
-                return;
+            }
+            code => {
+                log::debug!("Unhandled key: {:?}", code);
+                continue;
             }
         };
 
-        match event {
-            KeyCode::Esc => actix::System::current().stop(),
-            KeyCode::Char(' ') => self.send_command(Command::PlayPause),
-            KeyCode::Char('-') => self.send_command(Command::PreviousItem),
-            KeyCode::Char('+') => self.send_command(Command::NextItem),
-            KeyCode::Char('*') => self.send_command(Command::VolumeUp),
-            KeyCode::Char('/') => self.send_command(Command::VolumeDown),
-            KeyCode::Char(c) if c.is_ascii_digit() => {
-                debug!("ASCII entry: {}", c);
-                if let Some(CurrentNumberEntry {
-                    previous_digit,
-                    timeout,
-                }) = self.channel_timeout.take()
-                {
-                    ctx.cancel_future(timeout);
-                    self.send_command(Command::SetChannel(String::from_iter(
-                        [previous_digit, c].iter(),
-                    )))
-                } else {
-                    self.channel_timeout = Some(CurrentNumberEntry {
-                        previous_digit: c,
-                        timeout: ctx.run_later(
-                            self.channel_timeout_duration,
-                            |actor: &mut Self, _ctx: &mut Self::Context| {
-                                debug!("Channel entry timeout");
-                                actor.channel_timeout = None
-                            },
-                        ),
-                    });
-                }
-            }
-            code => debug!("Unhandled key: {:?}", code),
-        }
+        commands.send(command)?;
     }
+
+    raw_mode.disable()
 }

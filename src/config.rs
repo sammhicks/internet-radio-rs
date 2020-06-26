@@ -1,7 +1,7 @@
-use actix::clock::Duration;
 use anyhow::{Context, Result};
 use log::{error, LevelFilter};
 use serde::{de, Deserializer};
+use tokio::time::Duration;
 
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct Notifications {

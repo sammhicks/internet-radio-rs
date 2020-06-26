@@ -1,9 +1,9 @@
 #![warn(clippy::pedantic)]
 
-use std::io::stdout;
-
-use actix::prelude::*;
 use anyhow::Result;
+use futures::FutureExt;
+use std::io::stdout;
+use tokio::sync::mpsc;
 
 mod channel;
 mod config;
@@ -16,7 +16,8 @@ mod tag;
 
 use logger::Logger;
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     log::set_boxed_logger(Logger::new(stdout()))?;
     log::set_max_level(log::LevelFilter::Trace);
 
@@ -26,20 +27,12 @@ fn main() -> Result<()> {
 
     gstreamer::init()?;
 
-    let system = actix::System::new("internet-radio");
+    let (commands_tx, commands_rx) = mpsc::unbounded_channel();
 
-    let pipeline = pipeline::Controller::new(config.clone())?.start();
+    let keyboard_commands_task = keyboard_commands::run(commands_tx.clone(), config.input_timeout);
+    let pipeline_task = pipeline::run(config, commands_rx);
 
-    keyboard_commands::KeyboardCommands::new(pipeline.recipient(), config.input_timeout)?.start();
-
-    actix::Arbiter::spawn(async {
-        if let Err(err) = tokio::signal::ctrl_c().await {
-            log::error!("{:?}", err);
-        } else {
-            log::info!("interrupt received");
-        }
-        System::current().stop();
-    });
-
-    system.run().map_err(anyhow::Error::new)
+    futures::future::select_all(vec![keyboard_commands_task.boxed(), pipeline_task.boxed()])
+        .await
+        .0
 }

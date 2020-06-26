@@ -1,7 +1,6 @@
-use actix::prelude::*;
 use anyhow::Result;
 use gstreamer::prelude::*;
-use log::{debug, error, info, warn};
+use tokio::sync::mpsc;
 
 use super::playbin::Playbin;
 use crate::{channel::Channel, config::Config, message::Command, tag::Tag};
@@ -41,24 +40,19 @@ impl ChannelState {
     }
 }
 
-pub struct Controller {
+struct Controller {
     config: Config,
     playbin: Playbin,
-    bus: gstreamer::Bus,
     current_channel: Option<ChannelState>,
 }
 
 impl Controller {
-    pub fn new(config: Config) -> Result<Self> {
-        let playbin = Playbin::new()?;
-        let bus = playbin.get_bus()?;
-
-        Ok(Self {
+    fn new(config: Config, playbin: Playbin) -> Self {
+        Self {
             config,
             playbin,
-            bus,
             current_channel: None,
-        })
+        }
     }
 
     fn play_pause(&mut self) -> Result<()> {
@@ -89,30 +83,12 @@ impl Controller {
         self.current_channel = None;
         if let Some(url) = &self.config.notifications.error {
             if let Err(err) = self.playbin.set_url(&url) {
-                error!("{:?}", err);
+                log::error!("{:?}", err);
             }
         }
     }
-}
 
-impl Actor for Controller {
-    type Context = Context<Self>;
-
-    fn started(&mut self, ctx: &mut Self::Context) {
-        Self::add_stream(gstreamer::BusStream::new(&self.bus), ctx);
-
-        if let Some(url) = &self.config.notifications.success {
-            if let Err(err) = self.playbin.set_url(&url) {
-                error!("{:?}", err);
-            }
-        }
-    }
-}
-
-impl Handler<Command> for Controller {
-    type Result = ();
-
-    fn handle(&mut self, command: Command, _ctx: &mut Self::Context) {
+    fn handle_command(&mut self, command: Command) {
         if let Err(err) = match command {
             Command::SetChannel(index) => {
                 if let Err(err) = Channel::load(&self.config.channels_directory, index)
@@ -128,12 +104,12 @@ impl Handler<Command> for Controller {
                             });
                             self.playbin
                                 .set_url(&entry.url)
-                                .map(|()| info!("New Channel: {:?}", new_channel))
+                                .map(|()| log::info!("New Channel: {:?}", new_channel))
                         }
                         None => Err(anyhow::Error::msg("Empty Playlist")),
                     })
                 {
-                    warn!("{:?}", err);
+                    log::warn!("{:?}", err);
                     self.play_error();
                 };
                 Ok(())
@@ -148,44 +124,76 @@ impl Handler<Command> for Controller {
                 .playbin
                 .change_volume(-self.config.volume_offset_percent),
         } {
-            error!("{:?}", err);
+            log::error!("{:?}", err);
         }
     }
-}
 
-impl StreamHandler<gstreamer::message::Message> for Controller {
-    fn handle(&mut self, message: gstreamer::message::Message, _ctx: &mut Self::Context) {
+    fn handle_gstreamer_message(&mut self, message: &gstreamer::Message) {
         use gstreamer::MessageView;
         match message.view() {
             MessageView::Buffering(b) => {
-                debug!("Buffering: {}", b.get_percent());
+                log::debug!("Buffering: {}", b.get_percent());
             }
             MessageView::Tag(tag) => {
                 for (name, value) in tag.get_tags().as_ref().iter() {
-                    debug!("Tag: {:?}", Tag::from_value(name, &value));
+                    log::debug!("Tag: {:?}", Tag::from_value(name, &value));
                 }
             }
             MessageView::StateChanged(state_change) => {
                 if self.playbin.is_src_of(unsafe { *state_change.as_ptr() }) {
-                    info!("{:?}", state_change.get_current());
+                    log::info!("{:?}", state_change.get_current());
                 }
             }
             MessageView::Eos(..) => {
                 if let Err(err) = self.goto_next_track() {
-                    error!("{:?}", err);
+                    log::error!("{:?}", err);
                     self.play_error();
                 }
             }
             MessageView::Error(err) => {
                 let glib_err = err.get_error();
                 if glib_err.is::<gstreamer::ResourceError>() {
-                    error!("Resource not found: {:?}", err.get_error().to_string());
-                    return;
+                    log::error!("Resource not found: {:?}", err.get_error().to_string());
                 }
-                error!("{} ({:?})", err.get_error(), err.get_debug());
+                log::error!("{} ({:?})", err.get_error(), err.get_debug());
                 self.play_error();
             }
             _ => (),
         }
     }
+}
+
+enum Message {
+    Command(Command),
+    GStreamerMessage(gstreamer::Message),
+}
+
+pub async fn run(config: Config, commands: mpsc::UnboundedReceiver<Command>) -> Result<()> {
+    use tokio::stream::StreamExt;
+
+    let playbin = Playbin::new()?;
+    let bus = playbin.get_bus()?;
+
+    if let Some(url) = &config.notifications.success {
+        if let Some(err) = playbin.set_url(url).err() {
+            log::error!("{:?}", err);
+        }
+    }
+
+    let mut controller = Controller::new(config, playbin);
+
+    let commands = commands.map(Message::Command);
+
+    let bus_stream = gstreamer::BusStream::new(&bus).map(Message::GStreamerMessage);
+
+    let mut messages = commands.merge(bus_stream);
+
+    while let Some(message) = messages.next().await {
+        match message {
+            Message::Command(command) => controller.handle_command(command),
+            Message::GStreamerMessage(message) => controller.handle_gstreamer_message(&message),
+        }
+    }
+
+    Ok(())
 }
