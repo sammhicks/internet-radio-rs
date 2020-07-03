@@ -136,7 +136,11 @@ impl Controller {
             }
             MessageView::Tag(tag) => {
                 for (name, value) in tag.get_tags().as_ref().iter() {
-                    log::debug!("Tag: {:?}", Tag::from_value(name, &value));
+                    log::debug!(
+                        target: concat!(module_path!(), "::tag"),
+                        "{:?}",
+                        Tag::from_value(name, &value)
+                    );
                 }
             }
             MessageView::StateChanged(state_change) => {

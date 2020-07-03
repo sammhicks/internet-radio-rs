@@ -2,28 +2,25 @@
 
 use anyhow::Result;
 use futures::FutureExt;
-use std::io::stdout;
 use tokio::sync::mpsc;
 
 mod channel;
 mod config;
 mod keyboard_commands;
-mod logger;
 mod message;
 mod pipeline;
 mod playlist;
 mod tag;
 
-use logger::Logger;
-
 #[tokio::main]
 async fn main() -> Result<()> {
-    log::set_boxed_logger(Logger::new(stdout()))?;
-    log::set_max_level(log::LevelFilter::Trace);
+    let mut logger = flexi_logger::Logger::with_str("error")
+        .format(log_format)
+        .start()?;
 
     let config = config::load();
 
-    log::set_max_level(config.log_level);
+    logger.parse_new_spec(&config.log_level);
 
     gstreamer::init()?;
 
@@ -35,4 +32,36 @@ async fn main() -> Result<()> {
     futures::future::select_all(vec![keyboard_commands_task.boxed(), pipeline_task.boxed()])
         .await
         .0
+        .map(|()| {
+            logger.shutdown();
+        })
+}
+
+fn log_format(
+    w: &mut dyn std::io::Write,
+    _now: &mut flexi_logger::DeferredNow,
+    record: &log::Record,
+) -> Result<(), std::io::Error> {
+    use crossterm::style::{style, Attribute, Color};
+    use log::Level;
+
+    let color = match record.level() {
+        Level::Trace => Color::Magenta,
+        Level::Debug => Color::Blue,
+        Level::Info => Color::Green,
+        Level::Warn => Color::Yellow,
+        Level::Error => Color::Red,
+    };
+
+    let level = style(record.level()).with(color);
+
+    let target = record.target();
+
+    let args = match record.level() {
+        Level::Trace => style(record.args()).with(Color::DarkGrey),
+        Level::Debug | Level::Info => style(record.args()),
+        Level::Warn | Level::Error => style(record.args()).with(color).attribute(Attribute::Bold),
+    };
+
+    write!(w, "{:<5} [{}] {}\r", level, target, args)
 }

@@ -21,8 +21,8 @@ pub struct Config {
     pub input_timeout: Duration,
     #[serde(default = "default_volume_offset_percent")]
     pub volume_offset_percent: i32,
-    #[serde(deserialize_with = "parse_log_level", default = "default_log_level")]
-    pub log_level: LevelFilter,
+    #[serde(default = "default_log_level")]
+    pub log_level: String,
     #[serde(default, rename = "Notifications")]
     pub notifications: Notifications,
 }
@@ -78,12 +78,8 @@ const fn default_volume_offset_percent() -> i32 {
     10
 }
 
-const fn default_log_level() -> LevelFilter {
-    LevelFilter::Error
-}
-
-fn parse_log_level<'de, D: Deserializer<'de>>(deserializer: D) -> Result<LevelFilter, D::Error> {
-    deserializer.deserialize_str(LogLevelParser)
+fn default_log_level() -> String {
+    String::from("Warn")
 }
 
 struct LogLevelParser;

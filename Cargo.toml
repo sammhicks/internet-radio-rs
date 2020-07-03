@@ -1,6 +1,6 @@
 [package]
 name = "internet-radio"
-version = "0.7.2"
+version = "0.8.0"
 authors = ["Samuel Hicks <SamMHicks@hotmail.co.uk>"]
 edition = "2018"
 description = "An internet radio with configurable two digit entry of stations"
@@ -16,6 +16,7 @@ categories = ["audio", "internet"]
 [dependencies]
 anyhow = "1.0"
 crossterm =  { version = "0.16", features = ["event-stream"] }
+flexi_logger = { version = "0.15", default_features = false, features = ["textfilter"] }
 futures = "0.3"
 glib = "0.9"
 gstreamer = "0.15"

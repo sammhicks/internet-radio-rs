@@ -21,7 +21,7 @@ Options:
   + Default: `2000`
   + Channels are two digits. This is the timeout is milliseconds between the first digit and the second.
 + log_level
-  + Default: `"Error"`
+  + Default: `"Warn"`
   + Options:
     + `"Off"`
     + `"Error"`
@@ -29,6 +29,7 @@ Options:
     + `"Info"`
     + `"Debug"`
     + `"Trace"`
+  + You can also specify per-module logging, using the same format as passed to [env_logger](https://docs.rs/env_logger/*/env_logger/)
 + Notifications
   + Default: None
   + Notification sounds to play on success or error
