@@ -1,6 +1,7 @@
 use anyhow::Result;
 use gstreamer::prelude::*;
-use tokio::sync::mpsc;
+use std::sync::Arc;
+use tokio::sync::{mpsc, watch};
 
 use super::playbin::Playbin;
 use crate::{channel::Channel, config::Config, message::Command, tag::Tag};
@@ -40,21 +41,21 @@ impl ChannelState {
     }
 }
 
+#[derive(Clone, Debug, Default, serde::Serialize)]
+pub struct PlayerState {
+    pub pipeline_state: Arc<String>,
+    pub volume: i32,
+}
+
 struct Controller {
     config: Config,
     playbin: Playbin,
     current_channel: Option<ChannelState>,
+    current_state: PlayerState,
+    new_state_tx: Option<watch::Sender<PlayerState>>,
 }
 
 impl Controller {
-    fn new(config: Config, playbin: Playbin) -> Self {
-        Self {
-            config,
-            playbin,
-            current_channel: None,
-        }
-    }
-
     fn play_pause(&mut self) -> Result<()> {
         if self.current_channel.is_some() {
             self.playbin.play_pause()
@@ -88,6 +89,19 @@ impl Controller {
         }
     }
 
+    fn broadcast_state_change(&mut self) {
+        if let Some(new_state_tx) = &self.new_state_tx {
+            if new_state_tx.broadcast(self.current_state.clone()).is_err() {
+                self.new_state_tx = None;
+            }
+        }
+    }
+
+    fn handle_volume_change(&mut self, new_volume: i32) {
+        self.current_state.volume = new_volume;
+        self.broadcast_state_change();
+    }
+
     fn handle_command(&mut self, command: Command) {
         if let Err(err) = match command {
             Command::SetChannel(index) => {
@@ -119,10 +133,16 @@ impl Controller {
             Command::NextItem => self.goto_next_track(),
             Command::VolumeUp => self
                 .playbin
-                .change_volume(self.config.volume_offset_percent),
+                .change_volume(self.config.volume_offset_percent)
+                .map(|new_volume| self.handle_volume_change(new_volume)),
             Command::VolumeDown => self
                 .playbin
-                .change_volume(-self.config.volume_offset_percent),
+                .change_volume(-self.config.volume_offset_percent)
+                .map(|new_volume| self.handle_volume_change(new_volume)),
+            Command::SetVolume(volume) => self
+                .playbin
+                .set_volume(volume)
+                .map(|new_volume| self.handle_volume_change(new_volume)),
         } {
             log::error!("{:?}", err);
         }
@@ -145,7 +165,13 @@ impl Controller {
             }
             MessageView::StateChanged(state_change) => {
                 if self.playbin.is_src_of(unsafe { *state_change.as_ptr() }) {
-                    log::info!("{:?}", state_change.get_current());
+                    let new_state = state_change.get_current();
+
+                    self.current_state.pipeline_state = Arc::new(format!("{:?}", new_state));
+
+                    self.broadcast_state_change();
+
+                    log::info!("{:?}", new_state);
                 }
             }
             MessageView::Eos(..) => {
@@ -172,9 +198,13 @@ enum Message {
     GStreamerMessage(gstreamer::Message),
 }
 
-pub async fn run(config: Config, commands: mpsc::UnboundedReceiver<Command>) -> Result<()> {
-    use tokio::stream::StreamExt;
-
+pub fn run(
+    config: Config,
+    commands: mpsc::UnboundedReceiver<Command>,
+) -> Result<(
+    impl std::future::Future<Output = Result<(), anyhow::Error>>,
+    watch::Receiver<PlayerState>,
+)> {
     let playbin = Playbin::new()?;
     let bus = playbin.get_bus()?;
 
@@ -184,20 +214,39 @@ pub async fn run(config: Config, commands: mpsc::UnboundedReceiver<Command>) -> 
         }
     }
 
-    let mut controller = Controller::new(config, playbin);
+    let current_state = PlayerState::default();
 
-    let commands = commands.map(Message::Command);
+    let (new_state_tx, new_state_rx) = watch::channel(current_state.clone());
 
-    let bus_stream = gstreamer::BusStream::new(&bus).map(Message::GStreamerMessage);
+    let mut controller = Controller {
+        config,
+        playbin,
+        current_channel: None,
+        current_state,
+        new_state_tx: Some(new_state_tx),
+    };
 
-    let mut messages = commands.merge(bus_stream);
+    Ok((
+        async move {
+            use tokio::stream::StreamExt;
 
-    while let Some(message) = messages.next().await {
-        match message {
-            Message::Command(command) => controller.handle_command(command),
-            Message::GStreamerMessage(message) => controller.handle_gstreamer_message(&message),
-        }
-    }
+            let commands = commands.map(Message::Command);
 
-    Ok(())
+            let bus_stream = gstreamer::BusStream::new(&bus).map(Message::GStreamerMessage);
+
+            let mut messages = commands.merge(bus_stream);
+
+            while let Some(message) = messages.next().await {
+                match message {
+                    Message::Command(command) => controller.handle_command(command),
+                    Message::GStreamerMessage(message) => {
+                        controller.handle_gstreamer_message(&message)
+                    }
+                }
+            }
+
+            Ok(())
+        },
+        new_state_rx,
+    ))
 }

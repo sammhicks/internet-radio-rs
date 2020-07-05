@@ -1,4 +1,4 @@
 mod controller;
 mod playbin;
 
-pub use controller::run;
+pub use controller::{run, PlayerState};

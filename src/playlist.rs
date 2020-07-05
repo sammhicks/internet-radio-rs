@@ -63,13 +63,12 @@ fn parse_pls(path: impl AsRef<std::path::Path>) -> Result<Vec<Entry>> {
 }
 
 pub fn load(path: impl AsRef<std::path::Path> + Clone) -> Result<Vec<Entry>> {
-    use std::ops::Deref;
     match path
         .as_ref()
         .extension()
         .context("File has no extension")?
         .to_string_lossy()
-        .deref()
+        .as_ref()
     {
         "m3u" => parse_m3u(path),
         "pls" => parse_pls(path),

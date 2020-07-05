@@ -11,6 +11,7 @@ mod message;
 mod pipeline;
 mod playlist;
 mod tag;
+mod web_interface;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -27,14 +28,19 @@ async fn main() -> Result<()> {
     let (commands_tx, commands_rx) = mpsc::unbounded_channel();
 
     let keyboard_commands_task = keyboard_commands::run(commands_tx.clone(), config.input_timeout);
-    let pipeline_task = pipeline::run(config, commands_rx);
+    let (pipeline_task, player_state_rx) = pipeline::run(config, commands_rx)?;
+    let web_interface_task = web_interface::run(commands_tx.clone(), player_state_rx);
 
-    futures::future::select_all(vec![keyboard_commands_task.boxed(), pipeline_task.boxed()])
-        .await
-        .0
-        .map(|()| {
-            logger.shutdown();
-        })
+    futures::future::select_all(vec![
+        keyboard_commands_task.boxed(),
+        pipeline_task.boxed(),
+        web_interface_task.boxed(),
+    ])
+    .await
+    .0
+    .map(|()| {
+        logger.shutdown();
+    })
 }
 
 fn log_format(

@@ -6,4 +6,10 @@ pub enum Command {
     NextItem,
     VolumeUp,
     VolumeDown,
+    SetVolume(i32),
+}
+
+#[derive(Debug)]
+pub enum StateChange {
+    VolumeChanged(i32),
 }

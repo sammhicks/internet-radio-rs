@@ -68,20 +68,28 @@ impl Playbin {
         playbin_ptr == message_src_ptr
     }
 
-    pub fn change_volume(&self, offset: i32) -> Result<()> {
+    pub fn get_volume(&self) -> Result<i32> {
         #[allow(clippy::cast_possible_truncation)]
         let current_volume = (100.0 * self.0.get_property("volume")?.get_some::<f64>()?) as i32;
 
         debug!("Current Volume: {}", current_volume);
 
-        let new_volume = (current_volume + offset).max(0).min(1000);
+        Ok(current_volume)
+    }
 
-        debug!("New Volume: {}", new_volume);
+    pub fn set_volume(&self, volume: i32) -> Result<i32> {
+        debug!("New Volume: {}", volume);
 
         self.0
-            .set_property("volume", &(f64::from(new_volume) / 100.0))?;
+            .set_property("volume", &(f64::from(volume) / 100.0))?;
 
-        Ok(())
+        Ok(volume)
+    }
+
+    pub fn change_volume(&self, offset: i32) -> Result<i32> {
+        let new_volume = (self.get_volume()? + offset).max(0).min(1000);
+
+        self.set_volume(new_volume)
     }
 }
 
