@@ -4,7 +4,12 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, watch};
 
 use super::playbin::Playbin;
-use crate::{channel::Channel, config::Config, message::Command, tag::Tag};
+use crate::{
+    channel::Channel,
+    config::Config,
+    message::{Command, PlayerState},
+    tag::Tag,
+};
 
 struct ChannelState {
     channel: Channel,
@@ -39,12 +44,6 @@ impl ChannelState {
             .context("Failed to get playlist item")
             .and_then(|entry| playbin.set_url(&entry.url))
     }
-}
-
-#[derive(Clone, Debug, Default, serde::Serialize)]
-pub struct PlayerState {
-    pub pipeline_state: Arc<String>,
-    pub volume: i32,
 }
 
 struct Controller {
@@ -152,7 +151,13 @@ impl Controller {
         use gstreamer::MessageView;
         match message.view() {
             MessageView::Buffering(b) => {
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+
                 log::debug!("Buffering: {}", b.get_percent());
+
+                self.current_state.buffering = b.get_percent() as u8;
+
+                self.broadcast_state_change();
             }
             MessageView::Tag(tag) => {
                 for (name, value) in tag.get_tags().as_ref().iter() {
@@ -206,7 +211,7 @@ pub fn run(
     watch::Receiver<PlayerState>,
 )> {
     let playbin = Playbin::new()?;
-    let bus = playbin.get_bus()?;
+    let bus = playbin.bus()?;
 
     if let Some(url) = &config.notifications.success {
         if let Some(err) = playbin.set_url(url).err() {
@@ -214,7 +219,7 @@ pub fn run(
         }
     }
 
-    let current_state = PlayerState::default();
+    let current_state = playbin.state();
 
     let (new_state_tx, new_state_rx) = watch::channel(current_state.clone());
 

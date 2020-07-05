@@ -1,3 +1,5 @@
+#![macro_use]
+
 use tokio::sync::{mpsc, watch};
 use warp::{
     reject::Reject,
@@ -5,7 +7,18 @@ use warp::{
     Filter,
 };
 
-use crate::{message::Command, pipeline::PlayerState};
+macro_rules! check_for_change {
+    ($messages:ident, $current_state:ident, $new_state:ident, $field:ident) => {
+        if Some(&$new_state.$field) != $current_state.as_ref().map(|state| &state.$field) {
+            $messages.push((
+                warp::sse::event(std::stringify!($field)),
+                warp::sse::data($new_state.$field.to_string()),
+            ));
+        }
+    };
+}
+
+use crate::message::{Command, PlayerState};
 
 type Commands = mpsc::UnboundedSender<Command>;
 
@@ -24,9 +37,17 @@ pub async fn run(
     player_state: watch::Receiver<PlayerState>,
 ) -> anyhow::Result<()> {
     let handle_play_pause = warp::path!("play_pause").map(|| Command::PlayPause);
+    let handle_previous_item = warp::path!("previous_item").map(|| Command::PreviousItem);
+    let handle_next_item = warp::path!("next_item").map(|| Command::NextItem);
     let handle_set_volume = warp::path!("set_volume" / i32).map(Command::SetVolume);
 
-    let handle_commands = handle_play_pause.or(handle_set_volume).unify();
+    let handle_commands = handle_play_pause
+        .or(handle_previous_item)
+        .unify()
+        .or(handle_next_item)
+        .unify()
+        .or(handle_set_volume)
+        .unify();
 
     let command_response = handle_commands.map(move |command| match commands.send(command) {
         Ok(()) => "OK".into_response(),
@@ -39,10 +60,27 @@ pub async fn run(
 
     let state_changes = warp::path!("state_changes").map(move || {
         use futures::StreamExt;
+
+        let mut current_state: Option<PlayerState> = None;
+
         warp::sse::reply(
-            warp::sse::keep_alive().stream(player_state.clone().map(|new_state| {
-                Ok::<_, std::convert::Infallible>(warp::sse::data(format!("{:?}", new_state)))
-            })),
+            warp::sse::keep_alive().stream(
+                player_state
+                    .clone()
+                    .map(move |new_state: PlayerState| {
+                        let mut messages = Vec::new();
+
+                        check_for_change!(messages, current_state, new_state, pipeline_state);
+                        check_for_change!(messages, current_state, new_state, volume);
+                        check_for_change!(messages, current_state, new_state, buffering);
+
+                        current_state = Some(new_state);
+
+                        futures::stream::iter(messages)
+                    })
+                    .flatten()
+                    .map(Ok::<_, std::convert::Infallible>),
+            ),
         )
     });
 

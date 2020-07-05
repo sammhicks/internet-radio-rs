@@ -3,6 +3,8 @@ use glib::object::ObjectExt;
 use gstreamer::{ElementExt, ElementExtManual, State};
 use log::{debug, error};
 
+use crate::message::PlayerState;
+
 #[derive(Clone)]
 pub struct Playbin(gstreamer::Element);
 
@@ -25,38 +27,38 @@ impl Playbin {
         Ok(Self(playbin))
     }
 
-    pub fn get_bus(&self) -> Result<gstreamer::Bus> {
+    pub fn bus(&self) -> Result<gstreamer::Bus> {
         self.0.get_bus().context("Playbin has no bus")
     }
 
-    pub fn get_state(&self) -> Result<State> {
+    pub fn pipeline_state(&self) -> Result<State> {
         let (success, state, _) = self.0.get_state(gstreamer::ClockTime::none());
         success.context("Unable to get state")?;
         Ok(state)
     }
 
-    pub fn set_state(&self, state: State) -> Result<()> {
+    pub fn set_pipeline_state(&self, state: State) -> Result<()> {
         self.0.set_state(state).context(format!(
-            "Unable to set the playbin to the `{:?}` state",
+            "Unable to set the playbin pipeline to the `{:?}` state",
             state
         ))?;
         Ok(())
     }
 
     pub fn play_pause(&self) -> Result<()> {
-        match self.get_state()? {
-            State::Paused => self.set_state(State::Playing),
-            State::Playing => self.set_state(State::Paused),
+        match self.pipeline_state()? {
+            State::Paused => self.set_pipeline_state(State::Playing),
+            State::Playing => self.set_pipeline_state(State::Paused),
             _ => Ok(()),
         }
     }
 
     pub fn set_url(&self, url: &str) -> Result<()> {
-        self.set_state(State::Null)?;
+        self.set_pipeline_state(State::Null)?;
         self.0
             .set_property("uri", &glib::Value::from(url))
             .context(format!("Unable to set the playbin url to `{}`", url))?;
-        self.set_state(State::Playing)?;
+        self.set_pipeline_state(State::Playing)?;
         Ok(())
     }
 
@@ -68,7 +70,7 @@ impl Playbin {
         playbin_ptr == message_src_ptr
     }
 
-    pub fn get_volume(&self) -> Result<i32> {
+    pub fn volume(&self) -> Result<i32> {
         #[allow(clippy::cast_possible_truncation)]
         let current_volume = (100.0 * self.0.get_property("volume")?.get_some::<f64>()?) as i32;
 
@@ -87,15 +89,31 @@ impl Playbin {
     }
 
     pub fn change_volume(&self, offset: i32) -> Result<i32> {
-        let new_volume = (self.get_volume()? + offset).max(0).min(1000);
+        let new_volume = (self.volume()? + offset).max(0).min(1000);
 
         self.set_volume(new_volume)
+    }
+
+    pub fn state(&self) -> PlayerState {
+        let pipeline_state = std::sync::Arc::new(
+            self.pipeline_state()
+                .map(|state| format!("{:?}", state))
+                .unwrap_or_default(),
+        );
+
+        let volume = self.volume().unwrap_or_default();
+
+        PlayerState {
+            pipeline_state,
+            volume,
+            buffering: 0,
+        }
     }
 }
 
 impl Drop for Playbin {
     fn drop(&mut self) {
-        if let Err(err) = self.set_state(State::Null) {
+        if let Err(err) = self.set_pipeline_state(State::Null) {
             error!("{:?}", err);
         }
     }

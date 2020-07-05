@@ -10,9 +10,13 @@
 </head>
 
 <body>
-    <button id="play_pause">Play/Pause</button>
+    <p id="lost_connection">Lost Connection</p>
+    <button onclick="fetch('/play_pause')">Play/Pause</button>
+    <button onclick="fetch('/previous_item')">Previous Track</button>
+    <button onclick="fetch('/next_item')">Next Track</button>
+    <output id="pipeline_state"></output>
     <label>Volume:<input id="set_volume" type="range" min="0" max="100" step="5"></label>
-    <output id="player_state"></output>
+    <label>Buffering:<progress id="buffering" max="100"></progress></label>
 </body>
 
 </html>
