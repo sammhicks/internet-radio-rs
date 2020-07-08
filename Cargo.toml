@@ -16,6 +16,7 @@ categories = ["audio", "internet"]
 [dependencies]
 anyhow = "1.0"
 base64 = "0.12"
+bytes = "0.5"
 crossterm =  { version = "0.16", features = ["event-stream"] }
 flexi_logger = { version = "0.15", default_features = false, features = ["textfilter"] }
 futures = "0.3"

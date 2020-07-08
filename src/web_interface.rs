@@ -2,10 +2,12 @@
 
 use tokio::sync::{mpsc, watch};
 use warp::{
-    reject::Reject,
+    reject::{Reject, Rejection},
     reply::{self, Reply},
     Filter,
 };
+
+use crate::message::{Command, PlayerState};
 
 macro_rules! check_for_arc_change {
     ($messages:ident, $current_state:ident, $new_state:ident, $field:ident) => {
@@ -53,9 +55,28 @@ macro_rules! check_for_change {
     };
 }
 
-use crate::message::{Command, PlayerState};
+#[derive(Debug)]
+enum ParseError<E: std::fmt::Debug + Sized + Send + Sync + 'static> {
+    NotUtf8(std::str::Utf8Error),
+    FromStrErr(E),
+}
 
-type Commands = mpsc::UnboundedSender<Command>;
+impl<E: std::fmt::Debug + Sized + Send + Sync + 'static> Reject for ParseError<E> {}
+
+fn body<T>() -> impl Filter<Extract = (T,), Error = Rejection> + Copy
+where
+    T: std::str::FromStr + Send,
+    T::Err: std::fmt::Debug + Sized + Send + Sync + 'static,
+{
+    warp::filters::body::bytes().and_then(|body_bytes: bytes::Bytes| async move {
+        let body_str = std::str::from_utf8(body_bytes.as_ref())
+            .map_err(|err| warp::reject::custom(ParseError::NotUtf8::<T::Err>(err)))?;
+
+        body_str
+            .parse()
+            .map_err(|err| warp::reject::custom(ParseError::FromStrErr(err)))
+    })
+}
 
 struct SendError(mpsc::error::SendError<Command>);
 
@@ -68,21 +89,23 @@ impl std::fmt::Debug for SendError {
 impl Reject for SendError {}
 
 pub async fn run(
-    commands: Commands,
+    commands: mpsc::UnboundedSender<Command>,
     player_state: watch::Receiver<PlayerState>,
 ) -> anyhow::Result<()> {
     let handle_play_pause = warp::path!("play_pause").map(|| Command::PlayPause);
     let handle_previous_item = warp::path!("previous_item").map(|| Command::PreviousItem);
     let handle_next_item = warp::path!("next_item").map(|| Command::NextItem);
-    let handle_set_volume = warp::path!("set_volume" / i32).map(Command::SetVolume);
+    let handle_set_volume = warp::path!("volume").and(body()).map(Command::SetVolume);
 
-    let handle_commands = handle_play_pause
-        .or(handle_previous_item)
-        .unify()
-        .or(handle_next_item)
-        .unify()
-        .or(handle_set_volume)
-        .unify();
+    let handle_commands = warp::post().and(
+        handle_play_pause
+            .or(handle_previous_item)
+            .unify()
+            .or(handle_next_item)
+            .unify()
+            .or(handle_set_volume)
+            .unify(),
+    );
 
     let command_response = handle_commands.map(move |command| match commands.send(command) {
         Ok(()) => "OK".into_response(),

@@ -1,3 +1,16 @@
+function post(url, body) {
+    let params = {
+        method: "POST",
+    };
+
+    if (body !== undefined) {
+        params.headers = { "Content-Type": "application/json" };
+        params.body = body;
+    }
+
+    fetch(url, params).catch(console.error);
+}
+
 let lost_connection_message = document.getElementById("lost_connection");
 
 let pipeline_state = document.getElementById("pipeline_state");
@@ -10,7 +23,7 @@ let current_track_album = document.getElementById("track_album");
 let current_track_genre = document.getElementById("track_genre");
 let current_track_image = document.getElementById("track_image");
 
-volume_slider.addEventListener("input", (ev) => fetch("/set_volume/" + ev.target.value));
+volume_slider.addEventListener("input", (ev) => post("/volume", ev.target.value));
 
 let player_state_display = document.getElementById("player_state");
 
