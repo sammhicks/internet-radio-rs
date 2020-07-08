@@ -95,16 +95,20 @@ impl Playbin {
     }
 
     pub fn state(&self) -> PlayerState {
-        let pipeline_state = std::sync::Arc::new(
+        use std::sync::Arc;
+        let pipeline_state = Arc::new(
             self.pipeline_state()
                 .map(|state| format!("{:?}", state))
                 .unwrap_or_default(),
         );
 
+        let current_track = Arc::new(None);
+
         let volume = self.volume().unwrap_or_default();
 
         PlayerState {
             pipeline_state,
+            current_track,
             volume,
             buffering: 0,
         }

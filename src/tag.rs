@@ -7,6 +7,7 @@ pub enum Tag {
     Artist(String),
     Album(String),
     Genre(String),
+    Image(String),
     Unknown { name: String, value: String },
 }
 
@@ -17,6 +18,25 @@ impl Tag {
             "artist" => get_value(value, Self::Artist),
             "album" => get_value(value, Self::Album),
             "genre" => get_value(value, Self::Genre),
+            "image" => {
+                let image = value.get::<gstreamer::Sample>()?.context("No Value")?;
+
+                let image_buffer = image.get_buffer().context("No Buffer")?;
+                let all_mem = image_buffer
+                    .get_all_memory()
+                    .context("Cannot get all memory")?;
+                let readable_mem = all_mem.map_readable().context("Cannot read buffer")?;
+
+                let caps = image.get_caps().context("No Caps")?;
+
+                let mime_type = caps.get_structure(0).context("No Cap 0")?.get_name();
+
+                Ok(Self::Image(format!(
+                    "data:{};base64,{}",
+                    mime_type,
+                    base64::encode(readable_mem.as_slice())
+                )))
+            }
             _ => Ok(Self::Unknown {
                 name: name.into(),
                 value: value_to_string(value)?,
@@ -51,9 +71,7 @@ pub fn value_to_string(value: &Value) -> Result<String> {
             .map(|dt| format!("DateTime: {}", dt)),
         t if t == gstreamer::sample::Sample::static_type() => Ok(format!(
             "Sample: {:?}",
-            value
-                .get::<gstreamer::sample::Sample>()?
-                .context("No Sample")?
+            value.get::<gstreamer::Sample>()?.context("No Sample")?
         )),
         t => Ok(format!("Value of unhandled type {}: {:?}", t, value)),
     }

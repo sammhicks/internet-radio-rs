@@ -65,18 +65,18 @@ impl Controller {
 
     fn goto_previous_track(&mut self) -> Result<()> {
         if let Some(current_channel) = &mut self.current_channel {
-            current_channel.goto_previous_track(&self.playbin)
-        } else {
-            Ok(())
+            current_channel.goto_previous_track(&self.playbin)?;
+            self.broadcast_new_track();
         }
+        Ok(())
     }
 
     fn goto_next_track(&mut self) -> Result<()> {
         if let Some(current_channel) = &mut self.current_channel {
-            current_channel.goto_next_track(&self.playbin)
-        } else {
-            Ok(())
+            current_channel.goto_next_track(&self.playbin)?;
+            self.broadcast_new_track();
         }
+        Ok(())
     }
 
     fn play_error(&mut self) {
@@ -86,6 +86,11 @@ impl Controller {
                 log::error!("{:?}", err);
             }
         }
+    }
+
+    fn broadcast_new_track(&mut self) {
+        self.current_state.current_track = Arc::new(None);
+        self.broadcast_state_change();
     }
 
     fn broadcast_state_change(&mut self) {
@@ -115,6 +120,8 @@ impl Controller {
                                 channel: new_channel.clone(),
                                 index: 0,
                             });
+                            self.current_state.current_track = Arc::new(None);
+                            self.broadcast_state_change();
                             self.playbin
                                 .set_url(&entry.url)
                                 .map(|()| log::info!("New Channel: {:?}", new_channel))
@@ -160,12 +167,41 @@ impl Controller {
                 self.broadcast_state_change();
             }
             MessageView::Tag(tag) => {
-                for (name, value) in tag.get_tags().as_ref().iter() {
+                let mut new_tags = crate::message::TrackTags::default();
+                for (i, (name, value)) in tag.get_tags().as_ref().iter().enumerate() {
+                    let tag = Tag::from_value(name, &value);
+
                     log::debug!(
                         target: concat!(module_path!(), "::tag"),
-                        "{:?}",
-                        Tag::from_value(name, &value)
+                        "{} - {:?}",
+                        i,
+                        tag
                     );
+
+                    match tag {
+                        Ok(Tag::Title(title)) => new_tags.title = Some(title),
+                        Ok(Tag::Artist(artist)) => new_tags.artist = Some(artist),
+                        Ok(Tag::Album(album)) => new_tags.album = Some(album),
+                        Ok(Tag::Genre(genre)) => new_tags.genre = Some(genre),
+                        Ok(Tag::Image(image)) => new_tags.image = Some(Arc::new(image)),
+                        Ok(Tag::Unknown { .. }) => (),
+                        Err(err) => log::error!("{:?}", err),
+                    }
+                }
+                let should_display_tags = self
+                    .current_channel
+                    .as_ref()
+                    .and_then(|channel| {
+                        channel
+                            .channel
+                            .playlist
+                            .get(channel.index)
+                            .map(|entry| !entry.is_notification)
+                    })
+                    .unwrap_or(false);
+                if should_display_tags && new_tags != crate::message::TrackTags::default() {
+                    self.current_state.current_track = Arc::new(Some(new_tags));
+                    self.broadcast_state_change();
                 }
             }
             MessageView::StateChanged(state_change) => {

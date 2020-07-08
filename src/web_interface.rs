@@ -7,13 +7,48 @@ use warp::{
     Filter,
 };
 
+macro_rules! check_for_arc_change {
+    ($messages:ident, $current_state:ident, $new_state:ident, $field:ident) => {
+        if $current_state.as_ref().map_or(true, |state| {
+            !std::sync::Arc::ptr_eq(&state.$field, &$new_state.$field)
+        }) {
+            $messages.push(
+                (
+                    warp::sse::event(std::stringify!($field)),
+                    warp::sse::data($new_state.$field.to_string()),
+                )
+                    .boxed(),
+            );
+        }
+    };
+}
+
+macro_rules! check_for_json_arc_change {
+    ($messages:ident, $current_state:ident, $new_state:ident, $field:ident) => {
+        if $current_state.as_ref().map_or(true, |state| {
+            !std::sync::Arc::ptr_eq(&state.$field, &$new_state.$field)
+        }) {
+            $messages.push(
+                (
+                    warp::sse::event(std::stringify!($field)),
+                    warp::sse::json($new_state.$field.clone()),
+                )
+                    .boxed(),
+            );
+        }
+    };
+}
+
 macro_rules! check_for_change {
     ($messages:ident, $current_state:ident, $new_state:ident, $field:ident) => {
         if Some(&$new_state.$field) != $current_state.as_ref().map(|state| &state.$field) {
-            $messages.push((
-                warp::sse::event(std::stringify!($field)),
-                warp::sse::data($new_state.$field.to_string()),
-            ));
+            $messages.push(
+                (
+                    warp::sse::event(std::stringify!($field)),
+                    warp::sse::data($new_state.$field.to_string()),
+                )
+                    .boxed(),
+            );
         }
     };
 }
@@ -68,9 +103,16 @@ pub async fn run(
                 player_state
                     .clone()
                     .map(move |new_state: PlayerState| {
+                        use warp::sse::ServerSentEvent;
                         let mut messages = Vec::new();
 
-                        check_for_change!(messages, current_state, new_state, pipeline_state);
+                        check_for_arc_change!(messages, current_state, new_state, pipeline_state);
+                        check_for_json_arc_change!(
+                            messages,
+                            current_state,
+                            new_state,
+                            current_track
+                        );
                         check_for_change!(messages, current_state, new_state, volume);
                         check_for_change!(messages, current_state, new_state, buffering);
 

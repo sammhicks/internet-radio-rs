@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 #[derive(Debug)]
 pub enum Command {
     SetChannel(String),
@@ -9,9 +11,19 @@ pub enum Command {
     SetVolume(i32),
 }
 
+#[derive(Clone, Debug, Default, serde::Serialize, PartialEq)]
+pub struct TrackTags {
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub genre: Option<String>,
+    pub image: Option<Arc<String>>,
+}
+
 #[derive(Clone, Debug)]
 pub struct PlayerState {
-    pub pipeline_state: std::sync::Arc<String>,
+    pub pipeline_state: Arc<String>,
+    pub current_track: Arc<Option<TrackTags>>,
     pub volume: i32,
     pub buffering: u8,
 }

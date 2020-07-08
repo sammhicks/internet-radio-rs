@@ -4,6 +4,7 @@ use anyhow::{Context, Error, Result};
 pub struct Entry {
     pub title: Option<String>,
     pub url: String,
+    pub is_notification: bool,
 }
 
 fn entry_url(entry: m3u::Entry) -> Result<String> {
@@ -25,6 +26,7 @@ fn parse_m3u(path: impl AsRef<std::path::Path> + Clone) -> Result<Vec<Entry>> {
                 Ok(Entry {
                     title: Some(entry.extinf.name),
                     url: entry_url(entry.entry)?,
+                    is_notification: false,
                 })
             })
             .collect(),
@@ -37,6 +39,7 @@ fn parse_m3u(path: impl AsRef<std::path::Path> + Clone) -> Result<Vec<Entry>> {
                     Ok(Entry {
                         title: None,
                         url: entry_url(entry?)?,
+                        is_notification: false,
                     })
                 })
                 .collect()
@@ -56,6 +59,7 @@ fn parse_pls(path: impl AsRef<std::path::Path>) -> Result<Vec<Entry>> {
                 .map(|entry| Entry {
                     title: entry.title,
                     url: entry.path,
+                    is_notification: false,
                 })
                 .collect()
         })
