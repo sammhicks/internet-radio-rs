@@ -6,7 +6,7 @@ use crate::playlist::Entry;
 
 #[derive(Clone, Debug)]
 pub struct Channel {
-    pub index: String,
+    pub index: Option<String>,
     pub playlist: Vec<Entry>,
 }
 
@@ -19,7 +19,7 @@ impl Channel {
 
             if name.starts_with(&index) {
                 return Ok(Self {
-                    index,
+                    index: Some(index),
                     playlist: crate::playlist::load(entry.path())?,
                 });
             }
@@ -28,7 +28,7 @@ impl Channel {
         Err(anyhow::Error::msg(format!("Channel {} not found", index)))
     }
 
-    pub fn start_with_notification(mut self, url: Option<String>) -> Self {
+    pub fn start_with_notification(&mut self, url: Option<String>) {
         if let Some(url) = url {
             self.playlist.insert(
                 0,
@@ -39,6 +39,5 @@ impl Channel {
                 },
             )
         };
-        self
     }
 }

@@ -106,28 +106,30 @@ impl Controller {
         self.broadcast_state_change();
     }
 
+    fn play_channel(&mut self, mut new_channel: Channel) -> Result<()> {
+        new_channel.start_with_notification(self.config.notifications.success.clone());
+
+        match new_channel.playlist.get(0) {
+            Some(entry) => {
+                self.current_channel = Some(ChannelState {
+                    channel: new_channel.clone(),
+                    index: 0,
+                });
+                self.current_state.current_track = Arc::new(None);
+                self.broadcast_state_change();
+                self.playbin
+                    .set_url(&entry.url)
+                    .map(|()| log::info!("New Channel: {:?}", new_channel))
+            }
+            None => Err(anyhow::Error::msg("Empty Playlist")),
+        }
+    }
+
     fn handle_command(&mut self, command: Command) {
         if let Err(err) = match command {
             Command::SetChannel(index) => {
                 if let Err(err) = Channel::load(&self.config.channels_directory, index)
-                    .map(|new_channel| {
-                        new_channel
-                            .start_with_notification(self.config.notifications.success.clone())
-                    })
-                    .and_then(|new_channel| match new_channel.playlist.get(0) {
-                        Some(entry) => {
-                            self.current_channel = Some(ChannelState {
-                                channel: new_channel.clone(),
-                                index: 0,
-                            });
-                            self.current_state.current_track = Arc::new(None);
-                            self.broadcast_state_change();
-                            self.playbin
-                                .set_url(&entry.url)
-                                .map(|()| log::info!("New Channel: {:?}", new_channel))
-                        }
-                        None => Err(anyhow::Error::msg("Empty Playlist")),
-                    })
+                    .and_then(|new_channel| self.play_channel(new_channel))
                 {
                     log::warn!("{:?}", err);
                     self.play_error();
@@ -149,6 +151,14 @@ impl Controller {
                 .playbin
                 .set_volume(volume)
                 .map(|new_volume| self.handle_volume_change(new_volume)),
+            Command::PlayUrl(url) => self.play_channel(Channel {
+                index: None,
+                playlist: vec![crate::playlist::Entry {
+                    is_notification: false,
+                    title: None,
+                    url,
+                }],
+            }),
         } {
             log::error!("{:?}", err);
         }

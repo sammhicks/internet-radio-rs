@@ -9,6 +9,7 @@ pub enum Command {
     VolumeUp,
     VolumeDown,
     SetVolume(i32),
+    PlayUrl(String),
 }
 
 #[derive(Clone, Debug, Default, serde::Serialize, PartialEq)]

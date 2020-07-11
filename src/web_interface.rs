@@ -96,6 +96,7 @@ pub async fn run(
     let handle_previous_item = warp::path!("previous_item").map(|| Command::PreviousItem);
     let handle_next_item = warp::path!("next_item").map(|| Command::NextItem);
     let handle_set_volume = warp::path!("volume").and(body()).map(Command::SetVolume);
+    let handle_play_url = warp::path!("play_url").and(body()).map(Command::PlayUrl);
 
     let handle_commands = warp::post().and(
         handle_play_pause
@@ -104,6 +105,8 @@ pub async fn run(
             .or(handle_next_item)
             .unify()
             .or(handle_set_volume)
+            .unify()
+            .or(handle_play_url)
             .unify(),
     );
 
