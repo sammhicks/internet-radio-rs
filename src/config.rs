@@ -107,8 +107,8 @@ impl<'de> de::Visitor<'de> for LogLevelParser {
     }
 }
 
-pub fn load() -> Config {
-    std::fs::read_to_string("config.toml")
+pub fn load(path: impl AsRef<std::path::Path>) -> Config {
+    std::fs::read_to_string(path)
         .context("Failed to read config file")
         .and_then(|config| toml::from_str(&config).context("Failed to parse config file"))
         .map_err(|err| error!("{:?}", err))

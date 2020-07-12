@@ -1,6 +1,6 @@
 #![warn(clippy::pedantic)]
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use futures::FutureExt;
 use tokio::sync::mpsc;
 
@@ -18,7 +18,24 @@ async fn main() -> Result<()> {
         .format(log_format)
         .start()?;
 
-    let config = config::load();
+    let mut config_path = String::from("config.toml");
+
+    let mut args = std::env::args().skip(1);
+
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "-c" | "--config" => {
+                config_path = args.next().context("No config specified")?;
+            }
+            "-V" | "--version" => {
+                println!("Version: {}", env!("CARGO_PKG_VERSION"));
+                return Ok(());
+            }
+            _ => return Err(anyhow::Error::msg(format!("Unhandled argument {:?}", arg))),
+        }
+    }
+
+    let config = config::load(config_path);
 
     logger.parse_new_spec(&config.log_level);
 
