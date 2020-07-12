@@ -1,4 +1,5 @@
 #![warn(clippy::pedantic)]
+#![allow(clippy::used_underscore_binding)]
 
 use anyhow::{Context, Result};
 use futures::FutureExt;

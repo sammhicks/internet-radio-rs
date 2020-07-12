@@ -30,13 +30,8 @@ impl Channel {
 
     pub fn start_with_notification(mut self, url: Option<String>) -> Self {
         if let Some(url) = url {
-            self.playlist.insert(
-                0,
-                crate::playlist::Entry {
-                    title: None,
-                    url: url.clone(),
-                },
-            )
+            self.playlist
+                .insert(0, crate::playlist::Entry { title: None, url })
         };
         self
     }

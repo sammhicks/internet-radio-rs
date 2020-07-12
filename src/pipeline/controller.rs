@@ -1,5 +1,4 @@
 use anyhow::Result;
-use gstreamer::prelude::*;
 use tokio::sync::mpsc;
 
 use super::playbin::Playbin;
@@ -188,7 +187,7 @@ pub async fn run(config: Config, commands: mpsc::UnboundedReceiver<Command>) -> 
 
     let commands = commands.map(Message::Command);
 
-    let bus_stream = gstreamer::BusStream::new(&bus).map(Message::GStreamerMessage);
+    let bus_stream = bus.stream().map(Message::GStreamerMessage);
 
     let mut messages = commands.merge(bus_stream);
 
