@@ -29,7 +29,7 @@ async fn main() -> Result<()> {
                 config_path = args.next().context("No config specified")?;
             }
             "-V" | "--version" => {
-                println!("Version: {}", env!("CARGO_PKG_VERSION"));
+                println!("{} v{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
                 return Ok(());
             }
             _ => return Err(anyhow::Error::msg(format!("Unhandled argument {:?}", arg))),
