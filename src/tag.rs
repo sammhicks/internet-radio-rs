@@ -1,13 +1,34 @@
 use anyhow::{Context, Result};
 use glib::{value::SendValue, StaticType, Type, Value};
 
+pub struct Image(String);
+
+impl Image {
+    fn new(mime_type: &str, image_data: &[u8]) -> Self {
+        Self(format!(
+            "data:{};base64,{}",
+            mime_type,
+            base64::encode(image_data)
+        ))
+    }
+
+    pub fn unwrap(self) -> String {
+        self.0
+    }
+}
+
+impl std::fmt::Debug for Image {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("<image>")
+    }
+}
 #[derive(Debug)]
 pub enum Tag {
     Title(String),
     Artist(String),
     Album(String),
     Genre(String),
-    Image(String),
+    Image(Image),
     Unknown { name: String, value: String },
 }
 
@@ -31,11 +52,7 @@ impl Tag {
 
                 let mime_type = caps.get_structure(0).context("No Cap 0")?.get_name();
 
-                Ok(Self::Image(format!(
-                    "data:{};base64,{}",
-                    mime_type,
-                    base64::encode(readable_mem.as_slice())
-                )))
+                Ok(Self::Image(Image::new(mime_type, readable_mem.as_slice())))
             }
             _ => Ok(Self::Unknown {
                 name: name.into(),

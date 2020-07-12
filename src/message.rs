@@ -18,7 +18,7 @@ pub struct TrackTags {
     pub artist: Option<String>,
     pub album: Option<String>,
     pub genre: Option<String>,
-    pub image: Option<Arc<String>>,
+    pub image: Option<String>,
 }
 
 #[derive(Clone, Debug)]

@@ -193,7 +193,7 @@ impl Controller {
                         Ok(Tag::Artist(artist)) => new_tags.artist = Some(artist),
                         Ok(Tag::Album(album)) => new_tags.album = Some(album),
                         Ok(Tag::Genre(genre)) => new_tags.genre = Some(genre),
-                        Ok(Tag::Image(image)) => new_tags.image = Some(Arc::new(image)),
+                        Ok(Tag::Image(image)) => new_tags.image = Some(image.unwrap()),
                         Ok(Tag::Unknown { .. }) => (),
                         Err(err) => log::error!("{:?}", err),
                     }
