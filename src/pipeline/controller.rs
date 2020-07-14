@@ -147,10 +147,12 @@ impl Controller {
                 .playbin
                 .change_volume(-self.config.volume_offset_percent)
                 .map(|new_volume| self.handle_volume_change(new_volume)),
+            #[cfg(feature = "web_interface")]
             Command::SetVolume(volume) => self
                 .playbin
                 .set_volume(volume)
                 .map(|new_volume| self.handle_volume_change(new_volume)),
+            #[cfg(feature = "web_interface")]
             Command::PlayUrl(url) => self.play_channel(Channel {
                 index: None,
                 playlist: vec![crate::playlist::Entry {

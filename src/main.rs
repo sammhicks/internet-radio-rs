@@ -11,6 +11,8 @@ mod message;
 mod pipeline;
 mod playlist;
 mod tag;
+
+#[cfg(feature = "web_interface")]
 mod web_interface;
 
 #[tokio::main]
@@ -29,11 +31,17 @@ async fn main() -> Result<()> {
 
     let keyboard_commands_task = keyboard_commands::run(commands_tx.clone(), config.input_timeout);
     let (pipeline_task, player_state_rx) = pipeline::run(config, commands_rx)?;
+
+    #[cfg(feature = "web_interface")]
     let web_interface_task = web_interface::run(commands_tx.clone(), player_state_rx);
+
+    #[cfg(not(feature = "web_interface"))]
+    drop(player_state_rx);
 
     futures::future::select_all(vec![
         keyboard_commands_task.boxed(),
         pipeline_task.boxed(),
+        #[cfg(feature = "web_interface")]
         web_interface_task.boxed(),
     ])
     .await

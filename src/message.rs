@@ -8,7 +8,9 @@ pub enum Command {
     NextItem,
     VolumeUp,
     VolumeDown,
+    #[cfg(feature = "web_interface")]
     SetVolume(i32),
+    #[cfg(feature = "web_interface")]
     PlayUrl(String),
 }
 
