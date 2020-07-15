@@ -88,6 +88,47 @@ impl std::fmt::Debug for SendError {
 
 impl Reject for SendError {}
 
+#[cfg(feature = "embed_static_web_content")]
+macro_rules! mime_type {
+    (html) => { "text/html; charset=utf-8" };
+    (css) => { "text/css" };
+    (js) => { "application/javascript" };
+}
+
+#[cfg(feature = "embed_static_web_content")]
+macro_rules! static_item_with_filter {
+    ($path_filter:expr, $file_name:expr, $file_type:ident) => {
+        $path_filter.map(|| warp::reply::with_header(include_str!(concat!("../static/", $file_name)), warp::http::header::CONTENT_TYPE, mime_type!($file_type)))
+    };
+}
+
+#[cfg(not(feature = "embed_static_web_content"))]
+macro_rules! static_item_with_filter {
+    ($path_filter:expr, $file_name:expr, $file_type_unused:ident) => {
+        $path_filter.and(warp::fs::file(concat!("static/", $file_name)))
+    };
+}
+
+macro_rules! static_item {
+    ($item:expr, $file_type:ident) => {
+        static_item_with_filter!(warp::path($item).and(warp::path::end()), $item, $file_type)
+    }
+}
+
+macro_rules! static_page {
+    ($item:expr) => {
+        static_item!(concat!($item, ".html"), html)
+        .or(static_item!(concat!($item, ".css"), css))
+        .or(static_item!(concat!($item, ".js"), js))
+    };
+}
+
+macro_rules! static_pages {
+    [$($item:expr),*] => {
+        static_item_with_filter!(warp::path::end(), "index.html", html) $(.or(static_page!($item)))*
+    };
+}
+
 pub async fn run(
     commands: mpsc::UnboundedSender<Command>,
     player_state: watch::Receiver<PlayerState>,
@@ -152,8 +193,7 @@ pub async fn run(
         )
     });
 
-    let static_content =
-        warp::fs::dir("static").or(warp::path::end().and(warp::fs::file("static/index.html")));
+    let static_content = static_pages!["index", "podcasts"].or(static_item!("common.js", js));
 
     let routes = command_response.or(state_changes).or(static_content);
 
