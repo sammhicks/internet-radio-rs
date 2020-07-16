@@ -91,15 +91,27 @@ impl Reject for SendError {}
 
 #[cfg(feature = "embed_static_web_content")]
 macro_rules! mime_type {
-    (html) => { "text/html; charset=utf-8" };
-    (css) => { "text/css" };
-    (js) => { "application/javascript" };
+    (html) => {
+        "text/html; charset=utf-8"
+    };
+    (css) => {
+        "text/css"
+    };
+    (js) => {
+        "application/javascript"
+    };
 }
 
 #[cfg(feature = "embed_static_web_content")]
 macro_rules! static_item_with_filter {
     ($path_filter:expr, $file_name:expr, $file_type:ident) => {
-        $path_filter.map(|| warp::reply::with_header(include_str!(concat!("../static/", $file_name)), warp::http::header::CONTENT_TYPE, mime_type!($file_type)))
+        $path_filter.map(|| {
+            warp::reply::with_header(
+                include_str!(concat!("../static/", $file_name)),
+                warp::http::header::CONTENT_TYPE,
+                mime_type!($file_type),
+            )
+        })
     };
 }
 
@@ -113,14 +125,14 @@ macro_rules! static_item_with_filter {
 macro_rules! static_item {
     ($item:expr, $file_type:ident) => {
         static_item_with_filter!(warp::path($item).and(warp::path::end()), $item, $file_type)
-    }
+    };
 }
 
 macro_rules! static_page {
     ($item:expr) => {
         static_item!(concat!($item, ".html"), html)
-        .or(static_item!(concat!($item, ".css"), css))
-        .or(static_item!(concat!($item, ".js"), js))
+            .or(static_item!(concat!($item, ".css"), css))
+            .or(static_item!(concat!($item, ".js"), js))
     };
 }
 
@@ -130,6 +142,26 @@ macro_rules! static_pages {
     };
 }
 
+async fn handle_rejection(err: Rejection) -> Result<impl Reply, std::convert::Infallible> {
+    use warp::http::StatusCode;
+
+    log::error!("{:?}", err);
+
+    let code;
+
+    if err.is_not_found() {
+        code = StatusCode::NOT_FOUND;
+    } else if err.find::<ParseError<std::num::ParseIntError>>().is_some(){
+        code = StatusCode::BAD_REQUEST;
+    } else if err.find::<warp::reject::MethodNotAllowed>().is_some() {
+        code = StatusCode::METHOD_NOT_ALLOWED;
+    } else {
+        code = StatusCode::INTERNAL_SERVER_ERROR;
+    }
+
+    Ok(warp::reply::with_status(code.to_string(), code))
+}
+
 pub async fn run(
     commands: mpsc::UnboundedSender<Command>,
     player_state: watch::Receiver<PlayerState>,
@@ -137,20 +169,19 @@ pub async fn run(
     let handle_play_pause = warp::path!("play_pause").map(|| Command::PlayPause);
     let handle_previous_item = warp::path!("previous_item").map(|| Command::PreviousItem);
     let handle_next_item = warp::path!("next_item").map(|| Command::NextItem);
-    let handle_set_volume = warp::path!("volume").and(body()).map(Command::SetVolume);
-    let handle_play_url = warp::path!("play_url").and(body()).map(Command::PlayUrl);
+    let handle_set_volume = warp::path!("volume").and(warp::post()).and(body()).map(Command::SetVolume);
+    let handle_play_url = warp::path!("play_url").and(warp::post()).and(body()).map(Command::PlayUrl);
 
-    let handle_commands = warp::post().and(
-        handle_play_pause
-            .or(handle_previous_item)
-            .unify()
-            .or(handle_next_item)
-            .unify()
-            .or(handle_set_volume)
-            .unify()
-            .or(handle_play_url)
-            .unify(),
-    );
+    let handle_commands = handle_play_pause
+        .or(handle_previous_item)
+        .unify()
+        .or(handle_next_item)
+        .unify()
+        .or(handle_set_volume)
+        .unify()
+        .or(handle_play_url)
+        .unify()
+        .and(warp::post());
 
     let command_response = handle_commands.map(move |command| match commands.send(command) {
         Ok(()) => "OK".into_response(),
@@ -196,7 +227,10 @@ pub async fn run(
 
     let static_content = static_pages!["index", "podcasts"].or(static_item!("common.js", js));
 
-    let routes = command_response.or(state_changes).or(static_content);
+    let routes = command_response
+        .or(state_changes)
+        .or(static_content)
+        .recover(handle_rejection);
 
     #[cfg(feature = "production_web_server")]
     let addr = (std::net::Ipv4Addr::UNSPECIFIED, 80);
