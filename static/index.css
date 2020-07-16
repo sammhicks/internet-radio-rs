@@ -1,0 +1,9 @@
+body>* {
+    display: block;
+}
+
+label {
+    display: flex;
+    flex-flow: row nowrap;
+    align-items: center;
+}

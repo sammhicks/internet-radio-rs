@@ -4,13 +4,15 @@ use anyhow::{Context, Error, Result};
 pub struct Entry {
     pub title: Option<String>,
     pub url: String,
+    pub is_notification: bool,
 }
 
 fn entry_url(entry: m3u::Entry) -> Result<String> {
     Ok(match entry {
-        m3u::Entry::Path(path) => {
-            String::from(path.to_str().context(format!("Bad Path: {:?}", path))?)
-        }
+        m3u::Entry::Path(path) => String::from(
+            path.to_str()
+                .with_context(|| format!("Bad Path: {:?}", path))?,
+        ),
         m3u::Entry::Url(url) => url.into_string(),
     })
 }
@@ -25,6 +27,7 @@ fn parse_m3u(path: impl AsRef<std::path::Path> + Clone) -> Result<Vec<Entry>> {
                 Ok(Entry {
                     title: Some(entry.extinf.name),
                     url: entry_url(entry.entry)?,
+                    is_notification: false,
                 })
             })
             .collect(),
@@ -37,6 +40,7 @@ fn parse_m3u(path: impl AsRef<std::path::Path> + Clone) -> Result<Vec<Entry>> {
                     Ok(Entry {
                         title: None,
                         url: entry_url(entry?)?,
+                        is_notification: false,
                     })
                 })
                 .collect()
@@ -56,6 +60,7 @@ fn parse_pls(path: impl AsRef<std::path::Path>) -> Result<Vec<Entry>> {
                 .map(|entry| Entry {
                     title: entry.title,
                     url: entry.path,
+                    is_notification: false,
                 })
                 .collect()
         })
