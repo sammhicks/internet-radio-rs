@@ -23,9 +23,30 @@ pub struct TrackTags {
     pub image: Option<String>,
 }
 
+#[derive(Copy, Clone, PartialEq)]
+pub struct PipelineState(gstreamer::State);
+
+impl std::fmt::Debug for PipelineState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl std::fmt::Display for PipelineState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self, f)
+    }
+}
+
+impl std::convert::From<gstreamer::State> for PipelineState {
+    fn from(state: gstreamer::State) -> Self {
+        Self(state)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct PlayerState {
-    pub pipeline_state: Arc<String>,
+    pub pipeline_state: PipelineState,
     pub current_track: Arc<Option<TrackTags>>,
     pub volume: i32,
     pub buffering: u8,

@@ -38,10 +38,12 @@ impl Playbin {
     }
 
     pub fn set_pipeline_state(&self, state: State) -> Result<()> {
-        self.0.set_state(state).context(format!(
-            "Unable to set the playbin pipeline to the `{:?}` state",
-            state
-        ))?;
+        self.0.set_state(state).with_context(|| {
+            format!(
+                "Unable to set the playbin pipeline to the `{:?}` state",
+                state
+            )
+        })?;
         Ok(())
     }
 
@@ -57,7 +59,7 @@ impl Playbin {
         self.set_pipeline_state(State::Null)?;
         self.0
             .set_property("uri", &glib::Value::from(url))
-            .context(format!("Unable to set the playbin url to `{}`", url))?;
+            .with_context(|| format!("Unable to set the playbin url to `{}`", url))?;
         self.set_pipeline_state(State::Playing)?;
         Ok(())
     }
@@ -96,11 +98,10 @@ impl Playbin {
 
     pub fn state(&self) -> PlayerState {
         use std::sync::Arc;
-        let pipeline_state = Arc::new(
-            self.pipeline_state()
-                .map(|state| format!("{:?}", state))
-                .unwrap_or_default(),
-        );
+        let pipeline_state = self
+            .pipeline_state()
+            .unwrap_or(gstreamer::State::Null)
+            .into();
 
         let current_track = Arc::new(None);
 

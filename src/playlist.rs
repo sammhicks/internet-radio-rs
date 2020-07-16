@@ -9,9 +9,10 @@ pub struct Entry {
 
 fn entry_url(entry: m3u::Entry) -> Result<String> {
     Ok(match entry {
-        m3u::Entry::Path(path) => {
-            String::from(path.to_str().context(format!("Bad Path: {:?}", path))?)
-        }
+        m3u::Entry::Path(path) => String::from(
+            path.to_str()
+                .with_context(|| format!("Bad Path: {:?}", path))?,
+        ),
         m3u::Entry::Url(url) => url.into_string(),
     })
 }

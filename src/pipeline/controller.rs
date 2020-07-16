@@ -220,7 +220,7 @@ impl Controller {
                 if self.playbin.is_src_of(unsafe { *state_change.as_ptr() }) {
                     let new_state = state_change.get_current();
 
-                    self.current_state.pipeline_state = Arc::new(format!("{:?}", new_state));
+                    self.current_state.pipeline_state = new_state.into();
 
                     self.broadcast_state_change();
 

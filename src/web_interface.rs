@@ -9,6 +9,7 @@ use warp::{
 
 use crate::message::{Command, PlayerState};
 
+#[allow(unused_macros)]
 macro_rules! check_for_arc_change {
     ($messages:ident, $current_state:ident, $new_state:ident, $field:ident) => {
         if $current_state.as_ref().map_or(true, |state| {
@@ -173,7 +174,7 @@ pub async fn run(
                         use warp::sse::ServerSentEvent;
                         let mut messages = Vec::new();
 
-                        check_for_arc_change!(messages, current_state, new_state, pipeline_state);
+                        check_for_change!(messages, current_state, new_state, pipeline_state);
                         check_for_json_arc_change!(
                             messages,
                             current_state,
