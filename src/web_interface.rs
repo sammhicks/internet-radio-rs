@@ -198,7 +198,13 @@ pub async fn run(
 
     let routes = command_response.or(state_changes).or(static_content);
 
-    warp::serve(routes).run(([127, 0, 0, 1], 3030)).await;
+    #[cfg(feature = "production_web_server")]
+    let addr = (std::net::Ipv4Addr::UNSPECIFIED, 80);
+
+    #[cfg(not(feature = "production_web_server"))]
+    let addr = (std::net::Ipv4Addr::LOCALHOST, 3030);
+
+    warp::serve(routes).run(addr).await;
 
     Ok(())
 }

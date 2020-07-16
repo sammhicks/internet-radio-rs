@@ -16,6 +16,7 @@ categories = ["audio", "internet"]
 [features]
 web_interface = [ "bytes", "warp"]
 embed_static_web_content = []
+production_web_server = []
 
 [dependencies]
 anyhow = "1.0"
