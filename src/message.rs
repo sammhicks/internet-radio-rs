@@ -8,6 +8,7 @@ pub enum Command {
     NextItem,
     VolumeUp,
     VolumeDown,
+    DebugPipeline,
     #[cfg(feature = "web_interface")]
     SetVolume(i32),
     #[cfg(feature = "web_interface")]

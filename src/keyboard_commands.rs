@@ -77,6 +77,7 @@ pub async fn run(
             KeyCode::Char('+') => Command::NextItem,
             KeyCode::Char('*') => Command::VolumeUp,
             KeyCode::Char('/') => Command::VolumeDown,
+            KeyCode::Char('d') => Command::DebugPipeline,
             KeyCode::Char(c) if c.is_ascii_digit() => {
                 log::debug!("ASCII entry: {}", c);
                 if let Some(previous_digit) = previous_digit {

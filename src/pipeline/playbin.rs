@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
 use glib::object::ObjectExt;
-use gstreamer::{ElementExt, ElementExtManual, State};
+use gstreamer::{prelude::*, ElementExt, ElementExtManual, State};
 use log::{debug, error};
+use std::env;
 
 use crate::message::PlayerState;
 
@@ -134,6 +135,19 @@ impl Playbin {
             volume,
             buffering: 0,
         }
+    }
+
+    pub fn debug_pipeline(&self) -> Result<()> {
+        if env::var("GST_DEBUG_DUMP_DOT_DIR").is_err() {
+            println!("Please re-run with GST_DEBUG_DUMP_DOT_DIR set!");
+            // FIXME I'll do the actual logging thing
+        }
+        let deets = gstreamer::DebugGraphDetails::all();
+        self.0
+            .downcast_ref::<gstreamer::Bin>()
+            .unwrap()
+            .debug_to_dot_file_with_ts(deets, env!("CARGO_PKG_NAME"));
+        Ok(())
     }
 }
 

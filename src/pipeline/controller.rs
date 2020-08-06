@@ -160,6 +160,7 @@ impl Controller {
                     url,
                 }],
             }),
+            Command::DebugPipeline => self.playbin.debug_pipeline(),
         } {
             log::error!("{:?}", err);
         }
