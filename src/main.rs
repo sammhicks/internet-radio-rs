@@ -8,6 +8,7 @@ use tokio::sync::mpsc;
 mod channel;
 mod config;
 mod keyboard_commands;
+mod lcd_screen;
 mod message;
 mod pipeline;
 mod playlist;
@@ -55,6 +56,8 @@ async fn main() -> Result<()> {
 
     #[cfg(not(feature = "web_interface"))]
     drop(player_state_rx);
+
+    tokio::task::spawn_blocking(lcd_screen::run);
 
     futures::future::select_all(vec![
         keyboard_commands_task.boxed(),
