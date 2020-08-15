@@ -17,8 +17,7 @@ mod tag;
 #[cfg(feature = "web_interface")]
 mod web_interface;
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     let mut logger = flexi_logger::Logger::with_str("error")
         .format(log_format)
         .start()?;
@@ -52,24 +51,30 @@ async fn main() -> Result<()> {
     let (pipeline_task, player_state_rx) = pipeline::run(config, commands_rx)?;
 
     #[cfg(feature = "web_interface")]
-    let web_interface_task = web_interface::run(commands_tx.clone(), player_state_rx);
+    let web_interface_task = web_interface::run(commands_tx.clone(), player_state_rx.clone());
 
-    #[cfg(not(feature = "web_interface"))]
-    drop(player_state_rx);
+    let mut runtime = tokio::runtime::Runtime::new().context("Failed to create tokio runtime")?;
 
-    tokio::task::spawn_blocking(lcd_screen::run);
+    let runtime_handle = runtime.handle();
 
-    futures::future::select_all(vec![
+    let lcd_screen_runtime_handle = runtime_handle.clone();
+
+    runtime_handle
+        .spawn_blocking(move || lcd_screen::run(lcd_screen_runtime_handle, player_state_rx));
+
+    let main_task = futures::future::select_all(vec![
         keyboard_commands_task.boxed(),
         pipeline_task.boxed(),
         #[cfg(feature = "web_interface")]
         web_interface_task.boxed(),
-    ])
-    .await
-    .0
-    .map(|()| {
-        logger.shutdown();
-    })
+    ]);
+
+    let (main_task_result, _, other_tasks) = runtime.block_on(main_task);
+
+    drop(other_tasks);
+    logger.shutdown();
+
+    main_task_result
 }
 
 fn log_format(

@@ -1,5 +1,8 @@
 use anyhow::{Context, Result};
 use clerk::{DataPins4Lines, Pins};
+use tokio::{runtime, sync::watch};
+
+use crate::message::PlayerState;
 
 mod character_pattern;
 
@@ -139,13 +142,13 @@ impl PinDeclarations {
     }
 }
 
-pub fn run() {
-    if let Err(err) = try_run() {
+pub fn run(handle: runtime::Handle, player_state: watch::Receiver<PlayerState>) {
+    if let Err(err) = try_run(handle, player_state) {
         log::error!("{:?}", err);
     }
 }
 
-fn try_run() -> Result<()> {
+fn try_run(handle: runtime::Handle, mut player_state: watch::Receiver<PlayerState>) -> Result<()> {
     log::info!("Hello World from lcd_screen");
 
     let pins_src = std::fs::read_to_string("/boot/wiring_pins.toml")
@@ -169,6 +172,7 @@ fn try_run() -> Result<()> {
 
     lcd.seek(clerk::SeekFrom::Home(0)); // specify we want to write characters to be output, starting at position 0
 
+    /*
     for count in 0..0x8 {
         //we can only specify 8 characters, so we only need to 8.
         lcd.write(count);
@@ -176,33 +180,46 @@ fn try_run() -> Result<()> {
 
     for c in "test".chars() {
         lcd.write(c as u8);
-    }
+    }*/
 
-    lcd.seek(clerk::SeekFrom::Home(LCDLineNumbers::Line2.offset() + 2));
+    while let Some(next_state) = handle.block_on(player_state.recv()) {
+        lcd.seek(clerk::SeekFrom::Home(LCDLineNumbers::Line1.offset() + 12));
 
-    for unicode_character in "test2 message   éèàñöüäµπ~{[|>}".chars() {
-        if unicode_character < '~' {
-            // characters lower than ~ are handled by the built-in character set
-            lcd.write(unicode_character as u8)
-        } else {
-            let ascii_character_bytes = match unicode_character {
-                'é' => &[5], // e accute fifth bespoke character defined starting with the zeroeth bespoke character
-                'è' => &[6], // e grave
-                'à' => &[7], // a grave
-                'ä' => &[0xE1], // a umlaut            // see look up table in GDM2004D.pdf page 9/9
-                'ñ' => &[0xEE], // n tilde
-                'ö' => &[0xEF], // o umlaut
-                'ü' => &[0xF5], // u umlaut
-                'π' => &[0xE4], // pi
-                'µ' => &[0xF7], // mu
-                '~' => &[0xF3], // cannot display tilde using the standard character set in GDM2004D.pdf. This is the best we can do.
-                '' => &[0xFF], // <Control>  = 0x80 replaced by splodge
-                _ => unidecode::unidecode_char(unicode_character).as_bytes(),
-            };
-            for octet in ascii_character_bytes {
-                lcd.write(*octet);
+        let message = format!("{: <20}", next_state.pipeline_state);
+
+        for unicode_character in message.chars() {
+            if unicode_character < '~' {
+                // characters lower than ~ are handled by the built-in character set
+                lcd.write(unicode_character as u8)
+            } else {
+                let ascii_character_bytes = match unicode_character {
+                    'é' => &[5], // e accute fifth bespoke character defined starting with the zeroeth bespoke character
+                    'è' => &[6], // e grave
+                    'à' => &[7], // a grave
+                    'ä' => &[0xE1], // a umlaut            // see look up table in GDM2004D.pdf page 9/9
+                    'ñ' => &[0xEE], // n tilde
+                    'ö' => &[0xEF], // o umlaut
+                    'ü' => &[0xF5], // u umlaut
+                    'π' => &[0xE4], // pi
+                    'µ' => &[0xF7], // mu
+                    '~' => &[0xF3], // cannot display tilde using the standard character set in GDM2004D.pdf. This is the best we can do.
+                    '' => &[0xFF], // <Control>  = 0x80 replaced by splodge
+                    _ => unidecode::unidecode_char(unicode_character).as_bytes(),
+                };
+                for octet in ascii_character_bytes {
+                    lcd.write(*octet);
+                }
             }
         }
+    }
+
+    lcd.clear();
+    std::thread::sleep(std::time::Duration::from_millis(2)); // if this line is commented out, garbage or nothing appears. 1ms is marginal
+
+    lcd.seek(clerk::SeekFrom::Home(LCDLineNumbers::Line1.offset()));
+
+    for character in "Program shut Down".chars() {
+        lcd.write(character as u8);
     }
 
     Ok(())
