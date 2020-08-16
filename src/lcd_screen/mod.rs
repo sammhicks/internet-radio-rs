@@ -183,9 +183,9 @@ fn try_run(handle: runtime::Handle, mut player_state: watch::Receiver<PlayerStat
     }*/
 
     while let Some(next_state) = handle.block_on(player_state.recv()) {
-        lcd.seek(clerk::SeekFrom::Home(LCDLineNumbers::Line1.offset() + 12));
+        lcd.seek(clerk::SeekFrom::Home(LCDLineNumbers::Line1.offset() + 13));
 
-        let message = format!("{: <20}", next_state.pipeline_state);
+        let message = format!("{:<.7}", format!("{}         ", next_state.pipeline_state));
 
         for unicode_character in message.chars() {
             if unicode_character < '~' {
