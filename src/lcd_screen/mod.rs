@@ -185,7 +185,14 @@ fn try_run(handle: runtime::Handle, mut player_state: watch::Receiver<PlayerStat
     while let Some(next_state) = handle.block_on(player_state.recv()) {
         lcd.seek(clerk::SeekFrom::Home(LCDLineNumbers::Line1.offset() + 13));
 
-        let message = format!("{:<.7}", format!("{}         ", next_state.pipeline_state));
+        let dummyvol = 999; //should get this given to us !!! todo
+        let message;
+
+        if false {
+            message = format!("{:<.7}", format!("{}      ", next_state.pipeline_state));
+        } else {
+            message = format!("Vol{:>4}", dummyvol);
+        }
 
         for unicode_character in message.chars() {
             if unicode_character < '~' {
