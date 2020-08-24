@@ -75,7 +75,7 @@ fn get_line(chip: &mut gpio_cdev::Chip, offset: u32, consumer: &'static str) -> 
         .get_line(offset)
         .with_context(|| format!("Failed to get GPIO pin for {:?}", consumer))?
         .request(gpio_cdev::LineRequestFlags::OUTPUT, 0, consumer)
-        .with_context(|| format!("GPIO pin for {:?} already in use", consumer))?;
+        .with_context(|| format!("GPIO pin for {:?} already in use. Are running another copy of the program elsewhere?", consumer))?;
     Ok(Line { handle })
 }
 #[derive(Debug, serde::Deserialize)]
@@ -183,16 +183,17 @@ fn try_run(handle: runtime::Handle, mut player_state: watch::Receiver<PlayerStat
     }*/
 
     while let Some(next_state) = handle.block_on(player_state.recv()) {
-        lcd.seek(clerk::SeekFrom::Home(LCDLineNumbers::Line1.offset() + 13));
+        log::info!("{:?}", next_state.current_track);
 
-        let dummyvol = 999; //should get this given to us !!! todo
-        let message;
+        lcd.seek(clerk::SeekFrom::Home(
+            LCDLineNumbers::Line1.offset() + LCDLineNumbers::NUM_CHARACTERS_PER_LINE - 7,
+        ));
 
-        if false {
-            message = format!("{:<.7}", format!("{}      ", next_state.pipeline_state));
+        let message = if next_state.pipeline_state.is_playing() {
+            format!("Vol{:>4.7}", next_state.volume)
         } else {
-            message = format!("Vol{:>4}", dummyvol);
-        }
+            format!("{:<7.7}", next_state.pipeline_state.to_string()) //if we use  next_state.pipeline_state.to_string() without the .to_string, th eresult can be less than 6 characters long
+        };
 
         for unicode_character in message.chars() {
             if unicode_character < '~' {
@@ -218,6 +219,22 @@ fn try_run(handle: runtime::Handle, mut player_state: watch::Receiver<PlayerStat
                 }
             }
         }
+
+        println!("\rbuf Rx by screen {}\r", next_state.buffering);
+        let trimmed_buffer = next_state.buffering.min(99); //0 to 100 is 101 values, & the screen only handles 100 values, so trim downwards
+
+        #[allow(clippy::cast_possible_wrap)]
+        let scaled_buffer = (trimmed_buffer / 5) as i8; //the characters have 5 columns
+
+        lcd.seek(clerk::SeekFrom::Home(LCDLineNumbers::Line4.offset() + 0));
+
+        for _count in 0..scaled_buffer {
+            lcd.write(' ' as u8); //first write space in all the character positions before the cursor
+        }
+        lcd.write((trimmed_buffer % 5) as u8); //then write the apppriate cursor character in the next position
+        for _count in scaled_buffer + 1..20 {
+            lcd.write(' ' as u8); //then clear the rest of the line
+        }
     }
 
     lcd.clear();
@@ -225,7 +242,7 @@ fn try_run(handle: runtime::Handle, mut player_state: watch::Receiver<PlayerStat
 
     lcd.seek(clerk::SeekFrom::Home(LCDLineNumbers::Line1.offset()));
 
-    for character in "Program shut Down".chars() {
+    for character in "Program shut down".chars() {
         lcd.write(character as u8);
     }
 

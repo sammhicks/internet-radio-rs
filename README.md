@@ -33,3 +33,9 @@ Options:
 + Notifications
   + Default: None
   + Notification sounds to play on success or error
+
++ sample compile option
+cargo run --release --all-features 
++ to allow program to open port 80
+sudo setcap cap_net_bind_service=+ep target/release/rradio
+sudo setcap cap_net_bind_service=+ep target/debug/rradio

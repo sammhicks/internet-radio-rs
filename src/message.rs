@@ -26,6 +26,12 @@ pub struct TrackTags {
 #[derive(Copy, Clone, PartialEq)]
 pub struct PipelineState(gstreamer::State);
 
+impl PipelineState {
+    pub fn is_playing(self) -> bool {
+        self.0 == gstreamer::State::Playing
+    }
+}
+
 impl std::fmt::Debug for PipelineState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
