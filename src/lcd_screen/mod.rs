@@ -192,7 +192,7 @@ fn try_run(handle: runtime::Handle, mut player_state: watch::Receiver<PlayerStat
         let message = if next_state.pipeline_state.is_playing() {
             format!("Vol{:>4.7}", next_state.volume)
         } else {
-            format!("{:<7.7}", next_state.pipeline_state.to_string()) //if we use  next_state.pipeline_state.to_string() without the .to_string, th eresult can be less than 6 characters long
+            format!("{:<7.7}", next_state.pipeline_state.to_string()) //if we use  next_state.pipeline_state.to_string() without the .to_string, the result can be less than 7 characters long
         };
 
         for unicode_character in message.chars() {
