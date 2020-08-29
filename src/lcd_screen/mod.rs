@@ -1,8 +1,9 @@
+use crate::message::PlayerState;
 use anyhow::{Context, Result};
 use clerk::{DataPins4Lines, Pins};
+use std::fs::File;
+use std::io::prelude::*;
 use tokio::{runtime, sync::watch};
-
-use crate::message::PlayerState;
 
 mod character_pattern;
 
@@ -172,15 +173,10 @@ fn try_run(handle: runtime::Handle, mut player_state: watch::Receiver<PlayerStat
 
     lcd.seek(clerk::SeekFrom::Home(0)); // specify we want to write characters to be output, starting at position 0
 
-    /*
-    for count in 0..0x8 {
-        //we can only specify 8 characters, so we only need to 8.
-        lcd.write(count);
+    lcd.seek(clerk::SeekFrom::Home(LCDLineNumbers::Line2.offset())); //TBD not the correct line but good for debug purposes
+    for octet in format!("CPU Temp {} C", get_cpu_temperature()).chars() {
+        lcd.write(octet as u8)
     }
-
-    for c in "test".chars() {
-        lcd.write(c as u8);
-    }*/
 
     while let Some(next_state) = handle.block_on(player_state.recv()) {
         log::info!("{:?}", next_state.current_track);
@@ -247,4 +243,25 @@ fn try_run(handle: runtime::Handle, mut player_state: watch::Receiver<PlayerStat
     }
 
     Ok(())
+}
+fn get_cpu_temperature() -> i32 {
+    let mut file = File::open("/sys/class/thermal/thermal_zone0/temp").unwrap_or_else(|error| {
+        panic!(
+            "Problem opening the CPU temperature pseduo-file: {:?}",
+            error
+        );
+    });
+
+    let mut cpu_temperature = String::new();
+
+    match file.read_to_string(&mut cpu_temperature) {
+        Err(why) => panic!("couldn't read the temperature from the pseduo file {}", why),
+        Ok(_file_size) => {
+            let milli_temp: i32 = cpu_temperature //cpu_temperature contains the temperature in milli-C and a line terminator
+                .trim() //to get rid of the terminator
+                .parse()
+                .expect("CPU temperature was non-numeric");
+            return milli_temp / 1000; //divie by 1000 to convert to C from milli-C and return the temperature
+        }
+    };
 }
