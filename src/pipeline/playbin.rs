@@ -53,22 +53,6 @@ impl Playbin {
     }
 
     pub fn play_pause(&self) -> Result<()> {
-        let duration = self
-            .0
-            .query_duration::<gstreamer::format::Time>()
-            .and_then(|t| t.nanoseconds());
-        let position = self
-            .0
-            .query_position::<gstreamer::format::Time>()
-            .and_then(|t| t.nanoseconds());
-
-        println!(
-            "{:?}",
-            position.and_then(
-                move |position| duration.map(|duration| (position as f64) / (duration as f64))
-            )
-        );
-
         match self.pipeline_state()? {
             State::Paused => self.set_pipeline_state(State::Playing),
             State::Playing => self.set_pipeline_state(State::Paused),

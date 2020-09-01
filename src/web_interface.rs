@@ -1,5 +1,6 @@
 #![macro_use]
 
+use std::sync::Arc;
 use tokio::sync::{mpsc, watch};
 use warp::{
     reject::{Reject, Rejection},
@@ -7,53 +8,73 @@ use warp::{
     Filter,
 };
 
-use crate::message::{Command, PlayerState};
+use crate::message::{Command, PlayerState, TrackTags};
 
-#[allow(unused_macros)]
-macro_rules! check_for_arc_change {
-    ($messages:ident, $current_state:ident, $new_state:ident, $field:ident) => {
-        if $current_state.as_ref().map_or(true, |state| {
-            !std::sync::Arc::ptr_eq(&state.$field, &$new_state.$field)
-        }) {
-            $messages.push(
-                (
-                    warp::sse::event(std::stringify!($field)),
-                    warp::sse::data($new_state.$field.to_string()),
-                )
-                    .boxed(),
-            );
+fn serialize_tags<S: serde::Serializer>(
+    tags: &Option<Arc<Option<TrackTags>>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+    match tags {
+        Some(tags) => {
+            let mut serialized_tags = serializer.serialize_map(None)?;
+            serialized_tags.serialize_entry("tags", tags.as_ref())?;
+            serialized_tags.end()
         }
-    };
+        None => serializer.serialize_none(),
+    }
 }
 
-macro_rules! check_for_json_arc_change {
-    ($messages:ident, $current_state:ident, $new_state:ident, $field:ident) => {
-        if $current_state.as_ref().map_or(true, |state| {
-            !std::sync::Arc::ptr_eq(&state.$field, &$new_state.$field)
-        }) {
-            $messages.push(
-                (
-                    warp::sse::event(std::stringify!($field)),
-                    warp::sse::json($new_state.$field.clone()),
-                )
-                    .boxed(),
-            );
-        }
-    };
+#[derive(Clone, Debug, serde::Serialize)]
+struct PlayerStateDiff {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pipeline_state: Option<String>,
+    #[serde(
+        serialize_with = "serialize_tags",
+        skip_serializing_if = "Option::is_none"
+    )]
+    current_track: Option<Arc<Option<TrackTags>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    volume: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    buffering: Option<u8>,
 }
 
-macro_rules! check_for_change {
-    ($messages:ident, $current_state:ident, $new_state:ident, $field:ident) => {
-        if Some(&$new_state.$field) != $current_state.as_ref().map(|state| &state.$field) {
-            $messages.push(
-                (
-                    warp::sse::event(std::stringify!($field)),
-                    warp::sse::data($new_state.$field.to_string()),
-                )
-                    .boxed(),
-            );
+impl PlayerStateDiff {
+    fn new(state: &PlayerState) -> Self {
+        PlayerStateDiff {
+            pipeline_state: Some(state.pipeline_state.to_string()),
+            current_track: Some(state.current_track.clone()),
+            volume: Some(state.volume),
+            buffering: Some(state.buffering),
         }
-    };
+    }
+
+    fn diff(old: &PlayerState, new: &PlayerState) -> Self {
+        PlayerStateDiff {
+            pipeline_state: Self::diff_value(&old.pipeline_state, &new.pipeline_state)
+                .map(|s| s.to_string()),
+            current_track: Self::diff_arc(&old.current_track, &new.current_track),
+            volume: Self::diff_value(&old.volume, &new.volume),
+            buffering: Self::diff_value(&old.buffering, &new.buffering),
+        }
+    }
+
+    fn diff_value<T: Clone + std::cmp::PartialEq>(a: &T, b: &T) -> Option<T> {
+        if a == b {
+            None
+        } else {
+            Some(b.clone())
+        }
+    }
+
+    fn diff_arc<T>(a: &Arc<T>, b: &Arc<T>) -> Option<Arc<T>> {
+        if Arc::ptr_eq(a, b) {
+            None
+        } else {
+            Some(b.clone())
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -151,7 +172,7 @@ async fn handle_rejection(err: Rejection) -> Result<impl Reply, std::convert::In
 
     if err.is_not_found() {
         code = StatusCode::NOT_FOUND;
-    } else if err.find::<ParseError<std::num::ParseIntError>>().is_some(){
+    } else if err.find::<ParseError<std::num::ParseIntError>>().is_some() {
         code = StatusCode::BAD_REQUEST;
     } else if err.find::<warp::reject::MethodNotAllowed>().is_some() {
         code = StatusCode::METHOD_NOT_ALLOWED;
@@ -169,8 +190,14 @@ pub async fn run(
     let handle_play_pause = warp::path!("play_pause").map(|| Command::PlayPause);
     let handle_previous_item = warp::path!("previous_item").map(|| Command::PreviousItem);
     let handle_next_item = warp::path!("next_item").map(|| Command::NextItem);
-    let handle_set_volume = warp::path!("volume").and(warp::post()).and(body()).map(Command::SetVolume);
-    let handle_play_url = warp::path!("play_url").and(warp::post()).and(body()).map(Command::PlayUrl);
+    let handle_set_volume = warp::path!("volume")
+        .and(warp::post())
+        .and(body())
+        .map(Command::SetVolume);
+    let handle_play_url = warp::path!("play_url")
+        .and(warp::post())
+        .and(body())
+        .map(Command::PlayUrl);
 
     let handle_commands = handle_play_pause
         .or(handle_previous_item)
@@ -195,34 +222,26 @@ pub async fn run(
     let state_changes = warp::path!("state_changes").map(move || {
         use futures::StreamExt;
 
-        let mut current_state: Option<PlayerState> = None;
+        let player_state = player_state.clone();
 
-        warp::sse::reply(
-            warp::sse::keep_alive().stream(
-                player_state
-                    .clone()
-                    .map(move |new_state: PlayerState| {
-                        use warp::sse::ServerSentEvent;
-                        let mut messages = Vec::new();
+        let mut current_state = player_state.borrow().clone();
 
-                        check_for_change!(messages, current_state, new_state, pipeline_state);
-                        check_for_json_arc_change!(
-                            messages,
-                            current_state,
-                            new_state,
-                            current_track
-                        );
-                        check_for_change!(messages, current_state, new_state, volume);
-                        check_for_change!(messages, current_state, new_state, buffering);
+        let first_message = tokio::stream::once(PlayerStateDiff::new(&current_state));
 
-                        current_state = Some(new_state);
+        let other_messages = player_state.map(move |new_state: PlayerState| {
+            let diff = PlayerStateDiff::diff(&current_state, &new_state);
+            current_state = new_state;
+            diff
+        });
 
-                        futures::stream::iter(messages)
-                    })
-                    .flatten()
-                    .map(Ok::<_, std::convert::Infallible>),
-            ),
-        )
+        let messages = first_message.chain(other_messages).map(|message| {
+            Ok::<_, std::convert::Infallible>((
+                warp::sse::event("new_state"),
+                warp::sse::json(message),
+            ))
+        });
+
+        warp::sse::reply(warp::sse::keep_alive().stream(messages))
     });
 
     let static_content = static_pages!["index", "podcasts"].or(static_item!("common.js", js));
