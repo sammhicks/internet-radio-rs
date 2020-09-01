@@ -43,8 +43,6 @@ async fn main() -> Result<()> {
 
     logger.parse_new_spec(&config.log_level);
 
-    gstreamer::init()?;
-
     let (commands_tx, commands_rx) = mpsc::unbounded_channel();
 
     let keyboard_commands_task = keyboard_commands::run(commands_tx.clone(), config.input_timeout);

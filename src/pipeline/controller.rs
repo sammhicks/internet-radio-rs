@@ -257,6 +257,7 @@ pub fn run(
     impl std::future::Future<Output = Result<(), anyhow::Error>>,
     watch::Receiver<PlayerState>,
 )> {
+    gstreamer::init()?;
     let playbin = Playbin::new()?;
     let bus = playbin.bus()?;
 
