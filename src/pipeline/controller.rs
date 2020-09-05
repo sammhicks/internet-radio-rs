@@ -4,32 +4,32 @@ use tokio::sync::{mpsc, watch};
 
 use super::playbin::Playbin;
 use crate::{
-    channel::Channel,
     config::Config,
     message::{Command, PlayerState},
+    station::Station,
     tag::Tag,
 };
 
-struct ChannelState {
-    channel: Channel,
-    index: usize,
+struct StationState {
+    station: Station,
+    current_track: usize,
 }
 
-impl ChannelState {
+impl StationState {
     fn goto_previous_track(&mut self, playbin: &Playbin) -> Result<()> {
-        self.index = if self.index == 0 {
-            self.channel.playlist.len() - 1
+        self.current_track = if self.current_track == 0 {
+            self.station.tracks.len() - 1
         } else {
-            self.index - 1
+            self.current_track - 1
         };
 
         self.update_url(playbin)
     }
 
     fn goto_next_track(&mut self, playbin: &Playbin) -> Result<()> {
-        self.index += 1;
-        if self.index == self.channel.playlist.len() {
-            self.index = 0;
+        self.current_track += 1;
+        if self.current_track == self.station.tracks.len() {
+            self.current_track = 0;
         }
 
         self.update_url(playbin)
@@ -37,9 +37,9 @@ impl ChannelState {
 
     fn update_url(&self, playbin: &Playbin) -> Result<()> {
         use anyhow::Context;
-        self.channel
-            .playlist
-            .get(self.index)
+        self.station
+            .tracks
+            .get(self.current_track)
             .context("Failed to get playlist item")
             .and_then(|entry| playbin.set_url(&entry.url))
     }
@@ -48,38 +48,37 @@ impl ChannelState {
 struct Controller {
     config: Config,
     playbin: Playbin,
-    current_channel: Option<ChannelState>,
+    current_station: Option<StationState>,
     current_state: PlayerState,
     new_state_tx: Option<watch::Sender<PlayerState>>,
 }
 
 impl Controller {
     fn play_pause(&mut self) -> Result<()> {
-        if self.current_channel.is_some() {
-            self.playbin.play_pause()
-        } else {
-            Ok(())
+        if self.current_station.is_none() {
+            return Ok(());
         }
+        self.playbin.play_pause()
     }
 
     fn goto_previous_track(&mut self) -> Result<()> {
-        if let Some(current_channel) = &mut self.current_channel {
-            current_channel.goto_previous_track(&self.playbin)?;
+        if let Some(current_station) = &mut self.current_station {
+            current_station.goto_previous_track(&self.playbin)?;
             self.broadcast_new_track();
         }
         Ok(())
     }
 
     fn goto_next_track(&mut self) -> Result<()> {
-        if let Some(current_channel) = &mut self.current_channel {
-            current_channel.goto_next_track(&self.playbin)?;
+        if let Some(current_station) = &mut self.current_station {
+            current_station.goto_next_track(&self.playbin)?;
             self.broadcast_new_track();
         }
         Ok(())
     }
 
     fn play_error(&mut self) {
-        self.current_channel = None;
+        self.current_station = None;
         if let Some(url) = &self.config.notifications.error {
             if let Err(err) = self.playbin.set_url(&url) {
                 log::error!("{:?}", err);
@@ -105,20 +104,22 @@ impl Controller {
         self.broadcast_state_change();
     }
 
-    fn play_channel(&mut self, mut new_channel: Channel) -> Result<()> {
-        new_channel.start_with_notification(self.config.notifications.success.clone());
+    fn play_station(&mut self, mut new_station: Station) -> Result<()> {
+        if let Some(notification) = self.config.notifications.success.as_ref() {
+            new_station.prepend_url(notification.clone());
+        }
 
-        match new_channel.playlist.get(0) {
+        match new_station.tracks.get(0) {
             Some(entry) => {
-                self.current_channel = Some(ChannelState {
-                    channel: new_channel.clone(),
-                    index: 0,
+                self.current_station = Some(StationState {
+                    station: new_station.clone(),
+                    current_track: 0,
                 });
                 self.current_state.current_track = Arc::new(None);
                 self.broadcast_state_change();
-                self.playbin
-                    .set_url(&entry.url)
-                    .map(|()| log::info!("New Channel: {:?}", new_channel))
+                self.playbin.set_url(&entry.url)?;
+                log::info!("New Station: {:?}", new_station);
+                Ok(())
             }
             None => Err(anyhow::Error::msg("Empty Playlist")),
         }
@@ -127,8 +128,8 @@ impl Controller {
     fn handle_command(&mut self, command: Command) {
         if let Err(err) = match command {
             Command::SetChannel(index) => {
-                if let Err(err) = Channel::load(&self.config.channels_directory, index)
-                    .and_then(|new_channel| self.play_channel(new_channel))
+                if let Err(err) = Station::load(&self.config.stations_directory, index)
+                    .and_then(|new_station| self.play_station(new_station))
                 {
                     log::warn!("{:?}", err);
                     self.play_error();
@@ -152,14 +153,7 @@ impl Controller {
                 .set_volume(volume)
                 .map(|new_volume| self.handle_volume_change(new_volume)),
             #[cfg(feature = "web_interface")]
-            Command::PlayUrl(url) => self.play_channel(Channel {
-                index: None,
-                playlist: vec![crate::playlist::Entry {
-                    is_notification: false,
-                    title: None,
-                    url,
-                }],
-            }),
+            Command::PlayUrl(url) => self.play_station(Station::singleton(url)),
         } {
             log::error!("{:?}", err);
         }
@@ -200,13 +194,13 @@ impl Controller {
                     }
                 }
                 let should_display_tags = self
-                    .current_channel
+                    .current_station
                     .as_ref()
-                    .and_then(|channel| {
-                        channel
-                            .channel
-                            .playlist
-                            .get(channel.index)
+                    .and_then(|station| {
+                        station
+                            .station
+                            .tracks
+                            .get(station.current_track)
                             .map(|entry| !entry.is_notification)
                     })
                     .unwrap_or(false);
@@ -250,6 +244,7 @@ enum Message {
     GStreamerMessage(gstreamer::Message),
 }
 
+/// Initialise the gstreamer pipeline, and process incoming commands
 pub fn run(
     config: Config,
     commands: mpsc::UnboundedReceiver<Command>,
@@ -274,32 +269,29 @@ pub fn run(
     let mut controller = Controller {
         config,
         playbin,
-        current_channel: None,
+        current_station: None,
         current_state,
         new_state_tx: Some(new_state_tx),
     };
 
-    Ok((
-        async move {
-            use tokio::stream::StreamExt;
+    let task = async move {
+        use tokio::stream::StreamExt;
 
-            let commands = commands.map(Message::Command);
+        let commands = commands.map(Message::Command);
 
-            let bus_stream = bus.stream().map(Message::GStreamerMessage);
+        let bus_stream = bus.stream().map(Message::GStreamerMessage);
 
-            let mut messages = commands.merge(bus_stream);
+        let mut messages = commands.merge(bus_stream);
 
-            while let Some(message) = messages.next().await {
-                match message {
-                    Message::Command(command) => controller.handle_command(command),
-                    Message::GStreamerMessage(message) => {
-                        controller.handle_gstreamer_message(&message)
-                    }
-                }
+        while let Some(message) = messages.next().await {
+            match message {
+                Message::Command(command) => controller.handle_command(command),
+                Message::GStreamerMessage(message) => controller.handle_gstreamer_message(&message),
             }
+        }
 
-            Ok(())
-        },
-        new_state_rx,
-    ))
+        Ok(())
+    };
+
+    Ok((task, new_state_rx))
 }

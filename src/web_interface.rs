@@ -8,7 +8,7 @@ use warp::{
     Filter,
 };
 
-use crate::message::{Command, PlayerState, TrackTags};
+use crate::message::{Command, PipelineState, PlayerState, TrackTags};
 
 fn serialize_tags<S: serde::Serializer>(
     tags: &Option<Arc<Option<TrackTags>>>,
@@ -28,7 +28,7 @@ fn serialize_tags<S: serde::Serializer>(
 #[derive(Clone, Debug, serde::Serialize)]
 struct PlayerStateDiff {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pipeline_state: Option<String>,
+    pipeline_state: Option<PipelineState>,
     #[serde(
         serialize_with = "serialize_tags",
         skip_serializing_if = "Option::is_none"
@@ -43,7 +43,7 @@ struct PlayerStateDiff {
 impl PlayerStateDiff {
     fn new(state: &PlayerState) -> Self {
         PlayerStateDiff {
-            pipeline_state: Some(state.pipeline_state.to_string()),
+            pipeline_state: Some(state.pipeline_state),
             current_track: Some(state.current_track.clone()),
             volume: Some(state.volume),
             buffering: Some(state.buffering),
@@ -52,8 +52,7 @@ impl PlayerStateDiff {
 
     fn diff(old: &PlayerState, new: &PlayerState) -> Self {
         PlayerStateDiff {
-            pipeline_state: Self::diff_value(&old.pipeline_state, &new.pipeline_state)
-                .map(|s| s.to_string()),
+            pipeline_state: Self::diff_value(&old.pipeline_state, &new.pipeline_state),
             current_track: Self::diff_arc(&old.current_track, &new.current_track),
             volume: Self::diff_value(&old.volume, &new.volume),
             buffering: Self::diff_value(&old.buffering, &new.buffering),

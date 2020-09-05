@@ -1,5 +1,8 @@
+//! Messages sent between asyncronous actors
+
 use std::sync::Arc;
 
+/// Commands from the user
 #[derive(Debug)]
 pub enum Command {
     SetChannel(String),
@@ -41,6 +44,15 @@ impl std::fmt::Display for PipelineState {
 impl std::convert::From<gstreamer::State> for PipelineState {
     fn from(state: gstreamer::State) -> Self {
         Self(state)
+    }
+}
+
+impl serde::Serialize for PipelineState {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
     }
 }
 

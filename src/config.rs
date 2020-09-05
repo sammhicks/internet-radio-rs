@@ -1,36 +1,59 @@
+//! A description of the rradio configuration file
+
 use anyhow::{Context, Result};
 use log::{error, LevelFilter};
 use serde::{de, Deserializer};
 use tokio::time::Duration;
 
+/// Notifications allow rradio to play sounds to notify the user of events
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct Notifications {
     pub success: Option<String>,
     pub error: Option<String>,
 }
 
+/// A description of the rradio configuration file
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct Config {
-    #[serde(default = "default_channels_directory")]
-    pub channels_directory: String,
+    /// Where to find stations
+    #[serde(default = "default_stations_directory")]
+    pub stations_directory: String,
+
+    /// The timeout when entering two digit station indices
     #[serde(
         rename = "input_timeout_ms",
         default = "default_input_timeout",
         deserialize_with = "deserialize_duration_millis"
     )]
     pub input_timeout: Duration,
+
+    /// The change in volume when the user increments or decrements the volume
     #[serde(default = "default_volume_offset_percent")]
     pub volume_offset_percent: i32,
+
+    /// Controls the logging level. See the [Log Specification](https://docs.rs/flexi_logger/latest/flexi_logger/struct.LogSpecification.html)
     #[serde(default = "default_log_level")]
     pub log_level: String,
+
+    /// Notification sounds
     #[serde(default, rename = "Notifications")]
     pub notifications: Notifications,
+}
+
+impl Config {
+    pub fn load(path: impl AsRef<std::path::Path>) -> Self {
+        std::fs::read_to_string(path)
+            .context("Failed to read config file")
+            .and_then(|config| toml::from_str(&config).context("Failed to parse config file"))
+            .map_err(|err| error!("{:?}", err))
+            .unwrap_or_default()
+    }
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
-            channels_directory: default_channels_directory(),
+            stations_directory: default_stations_directory(),
             input_timeout: default_input_timeout(),
             volume_offset_percent: default_volume_offset_percent(),
             log_level: default_log_level(),
@@ -39,8 +62,8 @@ impl Default for Config {
     }
 }
 
-fn default_channels_directory() -> String {
-    String::from("channels")
+fn default_stations_directory() -> String {
+    String::from("stations")
 }
 
 const fn default_input_timeout() -> Duration {
@@ -105,12 +128,4 @@ impl<'de> de::Visitor<'de> for LogLevelParser {
             )),
         }
     }
-}
-
-pub fn load(path: impl AsRef<std::path::Path>) -> Config {
-    std::fs::read_to_string(path)
-        .context("Failed to read config file")
-        .and_then(|config| toml::from_str(&config).context("Failed to parse config file"))
-        .map_err(|err| error!("{:?}", err))
-        .unwrap_or_default()
 }

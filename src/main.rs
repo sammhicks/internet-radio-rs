@@ -5,12 +5,11 @@ use anyhow::{Context, Result};
 use futures::FutureExt;
 use tokio::sync::mpsc;
 
-mod channel;
 mod config;
 mod keyboard_commands;
 mod message;
 mod pipeline;
-mod playlist;
+mod station;
 mod tag;
 
 #[cfg(feature = "web_interface")]
@@ -39,7 +38,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    let config = config::load(config_path);
+    let config = config::Config::load(config_path);
 
     logger.parse_new_spec(&config.log_level);
 

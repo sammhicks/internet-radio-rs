@@ -1,6 +1,10 @@
+//! Tracks have tags attached to them.
+
 use anyhow::{Context, Result};
 use glib::{value::SendValue, StaticType, Type, Value};
 
+/// The image tag of a track.
+/// This wrapper is to avoid dumping to contents of an image to the terminal when debug printing a track tag.
 pub struct Image(String);
 
 impl Image {
@@ -22,6 +26,8 @@ impl std::fmt::Debug for Image {
         f.write_str("<image>")
     }
 }
+
+/// A tag attached to a track
 #[derive(Debug)]
 pub enum Tag {
     Title(String),

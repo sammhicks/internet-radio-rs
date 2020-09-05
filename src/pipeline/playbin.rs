@@ -1,3 +1,5 @@
+//! A wrapper around a gstreamer playbin
+
 use anyhow::{Context, Result};
 use glib::object::ObjectExt;
 use gstreamer::{ElementExt, ElementExtManual, State};

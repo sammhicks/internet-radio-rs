@@ -8,8 +8,8 @@
 # Radio configuration file
 /config.toml
 
-# Directory of Channels
-/channels
+# Directory of stations
+/stations
 
 # Directory of Notification Sounds
 /sounds
