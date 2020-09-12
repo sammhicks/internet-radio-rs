@@ -23,11 +23,23 @@ impl Track {
 
 /// A station in rradio
 #[derive(Clone, Debug)]
-pub struct Station {
-    /// The index which the user enters to select this station.
-    /// Stations created on the fly have no index
-    index: Option<String>,
-    tracks: Vec<Track>,
+pub enum Station {
+    UrlList {
+        index: String,
+        title: Option<String>,
+        tracks: Vec<Track>,
+    },
+    Server {
+        index: String,
+        title: Option<String>,
+        remote_addresses: Vec<String>,
+    },
+    CD {
+        device: String,
+    },
+    Singleton {
+        track: Track,
+    },
 }
 
 impl Station {
@@ -64,7 +76,7 @@ impl Station {
     fn parse_m3u(path: impl AsRef<std::path::Path> + Clone, index: String) -> Result<Self> {
         use m3u::EntryExtReaderConstructionError;
         // First try parsing an extended M3U
-        let maybe_items = match m3u::Reader::open_ext(path.clone()) {
+        let maybe_tracks = match m3u::Reader::open_ext(path.clone()) {
             Ok(mut reader) => reader
                 .entry_exts()
                 .map(|entry| {
@@ -75,7 +87,7 @@ impl Station {
                         is_notification: false,
                     })
                 })
-                .collect(),
+                .collect::<Result<_>>(),
             Err(EntryExtReaderConstructionError::HeaderNotFound) => {
                 // Not extended M3U, try normal M3U
                 let mut reader = m3u::Reader::open(path)?;
@@ -89,22 +101,24 @@ impl Station {
                             is_notification: false,
                         })
                     })
-                    .collect()
+                    .collect::<Result<_>>()
             }
             Err(EntryExtReaderConstructionError::BufRead(err)) => {
                 Err(err).context("Failed to read file")
             }
         };
-        Ok(Self {
-            index: Some(index),
-            tracks: maybe_items?,
+
+        Ok(Self::UrlList {
+            index,
+            title: None,
+            tracks: maybe_tracks?,
         })
     }
 
     /// Parse a [PLS playlist](https://en.wikipedia.org/wiki/PLS_(file_format))
     fn parse_pls(path: impl AsRef<std::path::Path>, index: String) -> Result<Self> {
         let mut reader = std::fs::File::open(path)?;
-        let maybe_items = pls::parse(&mut reader)
+        let maybe_tracks = pls::parse(&mut reader)
             .map(|entries| {
                 entries
                     .into_iter()
@@ -116,9 +130,10 @@ impl Station {
                     .collect()
             })
             .map_err(Error::new);
-        Ok(Self {
-            index: Some(index),
-            tracks: maybe_items?,
+        Ok(Self::UrlList {
+            index,
+            title: None,
+            tracks: maybe_tracks?,
         })
     }
 
@@ -126,18 +141,22 @@ impl Station {
     /// This function is only used by the `web_interface` feature.
     #[cfg(feature = "web_interface")]
     pub fn singleton(url: String) -> Self {
-        Self {
-            index: None,
-            tracks: vec![Track {
+        Self::Singleton {
+            track: Track {
                 title: None,
                 url,
                 is_notification: false,
-            }],
+            },
         }
     }
 
-    pub fn tracks(self) -> Vec<Track> {
-        self.tracks
+    pub fn tracks(&self) -> Result<Vec<Track>> {
+        match self {
+            Self::UrlList { tracks, .. } => Ok(tracks.clone()),
+            Self::Server { .. } => anyhow::bail!("Server not supported yet"),
+            Self::CD { .. } => anyhow::bail!("CD not supported yet"),
+            Self::Singleton { track } => Ok(vec![track.clone()]),
+        }
     }
 }
 

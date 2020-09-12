@@ -106,7 +106,8 @@ impl Controller {
         self.broadcast_state_change();
     }
 
-    fn play_station(&mut self, new_station: Station) -> Result<()> {
+    fn play_station(&mut self, new_station: &Station) -> Result<()> {
+        // Add the notification track if it exists
         let mut tracks: Vec<_> = self
             .config
             .notifications
@@ -115,7 +116,8 @@ impl Controller {
             .cloned()
             .map(Track::notification)
             .collect();
-        tracks.append(&mut new_station.tracks());
+        // Add the station tracks
+        tracks.append(&mut new_station.tracks()?);
 
         match tracks.get(0) {
             Some(entry) => {
@@ -136,7 +138,7 @@ impl Controller {
         if let Err(err) = match command {
             Command::SetChannel(index) => {
                 if let Err(err) = Station::load(&self.config.stations_directory, index)
-                    .and_then(|new_station| self.play_station(new_station))
+                    .and_then(|new_station| self.play_station(&new_station))
                 {
                     log::warn!("{:?}", err);
                     self.play_error();
@@ -160,7 +162,7 @@ impl Controller {
                 .set_volume(volume)
                 .map(|new_volume| self.handle_volume_change(new_volume)),
             #[cfg(feature = "web_interface")]
-            Command::PlayUrl(url) => self.play_station(Station::singleton(url)),
+            Command::PlayUrl(url) => self.play_station(&Station::singleton(url)),
         } {
             log::error!("{:?}", err);
         }
