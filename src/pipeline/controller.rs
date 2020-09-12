@@ -6,30 +6,34 @@ use super::playbin::Playbin;
 use crate::{
     config::Config,
     message::{Command, PlayerState},
-    station::Station,
+    station::{Station, Track},
     tag::Tag,
 };
 
 struct StationState {
-    station: Station,
-    current_track: usize,
+    tracks: Vec<Track>,
+    current_track_index: usize,
 }
 
 impl StationState {
+    fn current_track(&self) -> Option<&Track> {
+        self.tracks.get(self.current_track_index)
+    }
+
     fn goto_previous_track(&mut self, playbin: &Playbin) -> Result<()> {
-        self.current_track = if self.current_track == 0 {
-            self.station.tracks.len() - 1
+        self.current_track_index = if self.current_track_index == 0 {
+            self.tracks.len() - 1
         } else {
-            self.current_track - 1
+            self.current_track_index - 1
         };
 
         self.update_url(playbin)
     }
 
     fn goto_next_track(&mut self, playbin: &Playbin) -> Result<()> {
-        self.current_track += 1;
-        if self.current_track == self.station.tracks.len() {
-            self.current_track = 0;
+        self.current_track_index += 1;
+        if self.current_track_index == self.tracks.len() {
+            self.current_track_index = 0;
         }
 
         self.update_url(playbin)
@@ -37,11 +41,9 @@ impl StationState {
 
     fn update_url(&self, playbin: &Playbin) -> Result<()> {
         use anyhow::Context;
-        self.station
-            .tracks
-            .get(self.current_track)
+        self.current_track()
             .context("Failed to get playlist item")
-            .and_then(|entry| playbin.set_url(&entry.url))
+            .and_then(|track| playbin.set_url(&track.url))
     }
 }
 
@@ -104,21 +106,26 @@ impl Controller {
         self.broadcast_state_change();
     }
 
-    fn play_station(&mut self, mut new_station: Station) -> Result<()> {
-        if let Some(notification) = self.config.notifications.success.as_ref() {
-            new_station.prepend_url(notification.clone());
-        }
+    fn play_station(&mut self, new_station: Station) -> Result<()> {
+        let mut tracks: Vec<_> = self
+            .config
+            .notifications
+            .success
+            .iter()
+            .cloned()
+            .map(Track::notification)
+            .collect();
+        tracks.append(&mut new_station.tracks());
 
-        match new_station.tracks.get(0) {
+        match tracks.get(0) {
             Some(entry) => {
+                self.playbin.set_url(&entry.url)?;
                 self.current_station = Some(StationState {
-                    station: new_station.clone(),
-                    current_track: 0,
+                    tracks,
+                    current_track_index: 0,
                 });
                 self.current_state.current_track = Arc::new(None);
                 self.broadcast_state_change();
-                self.playbin.set_url(&entry.url)?;
-                log::info!("New Station: {:?}", new_station);
                 Ok(())
             }
             None => Err(anyhow::Error::msg("Empty Playlist")),
@@ -196,13 +203,7 @@ impl Controller {
                 let should_display_tags = self
                     .current_station
                     .as_ref()
-                    .and_then(|station| {
-                        station
-                            .station
-                            .tracks
-                            .get(station.current_track)
-                            .map(|entry| !entry.is_notification)
-                    })
+                    .and_then(|station| station.current_track().map(|entry| !entry.is_notification))
                     .unwrap_or(false);
                 if should_display_tags && new_tags != crate::message::TrackTags::default() {
                     self.current_state.current_track = Arc::new(Some(new_tags));

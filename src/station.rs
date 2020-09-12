@@ -11,13 +11,23 @@ pub struct Track {
     pub is_notification: bool,
 }
 
+impl Track {
+    pub fn notification(url: String) -> Self {
+        Self {
+            title: None,
+            url,
+            is_notification: true,
+        }
+    }
+}
+
 /// A station in rradio
 #[derive(Clone, Debug)]
 pub struct Station {
     /// The index which the user enters to select this station.
     /// Stations created on the fly have no index
-    pub index: Option<String>,
-    pub tracks: Vec<Track>,
+    index: Option<String>,
+    tracks: Vec<Track>,
 }
 
 impl Station {
@@ -126,16 +136,8 @@ impl Station {
         }
     }
 
-    /// Prepend a url to the start of the track list
-    pub fn prepend_url(&mut self, url: String) {
-        self.tracks.insert(
-            0,
-            Track {
-                title: None,
-                url,
-                is_notification: true,
-            },
-        );
+    pub fn tracks(self) -> Vec<Track> {
+        self.tracks
     }
 }
 
