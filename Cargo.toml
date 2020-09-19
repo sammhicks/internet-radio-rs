@@ -32,6 +32,7 @@ log = { version = "0.4", features = ["std"] }
 m3u = "1.0"
 pls = "0.2"
 serde = { version = "1.0", features = ["derive"] }
+thiserror = "1.0"
 tokio = { version = "0.2", features = ["macros", "stream", "sync", "time"] }
 toml = "0.5"
 warp = { version = "0.2", optional = true }

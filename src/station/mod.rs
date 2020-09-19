@@ -4,10 +4,11 @@ use std::path::Path;
 
 use anyhow::{Context, Error, Result};
 
+mod parse_custom;
 mod parse_m3u;
 mod parse_pls;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Track {
     pub title: Option<String>,
     pub url: String,
@@ -15,6 +16,14 @@ pub struct Track {
 }
 
 impl Track {
+    pub fn url(url: String) -> Self {
+        Self {
+            title: None,
+            url,
+            is_notification: false,
+        }
+    }
+
     pub fn notification(url: String) -> Self {
         Self {
             title: None,
@@ -24,20 +33,31 @@ impl Track {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct Credentials {
+    username: String,
+    password: String,
+}
+
 /// A station in rradio
-#[derive(Clone, Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Station {
     UrlList {
         index: String,
         title: Option<String>,
+        pause_before_playing: Option<std::time::Duration>,
+        show_buffer: Option<bool>, // Show the user how full the gstreamer buffer is
         tracks: Vec<Track>,
     },
-    Server {
+    FileServer {
         index: String,
         title: Option<String>,
-        remote_addresses: Vec<String>,
+        credentials: Credentials,
+        show_buffer: Option<bool>, // Show the user how full the gstreamer buffer is
+        remote_address: String,
     },
     CD {
+        index: String,
         device: String,
     },
     Singleton {
@@ -63,6 +83,7 @@ impl Station {
                 {
                     "m3u" => parse_m3u::parse(path, index),
                     "pls" => parse_pls::parse(path, index),
+                    "txt" => parse_custom::parse(path, index),
                     extension => Err(Error::msg(format!("Unsupported format: \"{}\"", extension))),
                 };
             }
@@ -91,7 +112,7 @@ impl Station {
     pub fn tracks(&self) -> Result<Vec<Track>> {
         match self {
             Self::UrlList { tracks, .. } => Ok(tracks.clone()),
-            Self::Server { .. } => anyhow::bail!("Server not supported yet"),
+            Self::FileServer { .. } => anyhow::bail!("FileServer not supported yet"),
             Self::CD { .. } => anyhow::bail!("CD not supported yet"),
             Self::Singleton { track } => Ok(vec![track.clone()]),
         }

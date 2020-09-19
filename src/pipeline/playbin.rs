@@ -2,10 +2,10 @@
 
 use anyhow::{Context, Result};
 use glib::object::ObjectExt;
-use gstreamer::{ElementExt, ElementExtManual, State};
+use gstreamer::{ElementExt, ElementExtManual};
 use log::{debug, error};
 
-use crate::message::PlayerState;
+pub use gstreamer::State;
 
 #[derive(Clone)]
 pub struct Playbin(gstreamer::Element);
@@ -44,7 +44,7 @@ impl Playbin {
         Ok(state)
     }
 
-    pub fn set_pipeline_state(&self, state: State) -> Result<()> {
+    fn set_pipeline_state(&self, state: State) -> Result<()> {
         self.0.set_state(state).with_context(|| {
             format!(
                 "Unable to set the playbin pipeline to the `{:?}` state",
@@ -101,25 +101,6 @@ impl Playbin {
         let new_volume = (self.volume()? + offset).max(0).min(1000);
 
         self.set_volume(new_volume)
-    }
-
-    pub fn state(&self) -> PlayerState {
-        use std::sync::Arc;
-        let pipeline_state = self
-            .pipeline_state()
-            .unwrap_or(gstreamer::State::Null)
-            .into();
-
-        let current_track = Arc::new(None);
-
-        let volume = self.volume().unwrap_or_default();
-
-        PlayerState {
-            pipeline_state,
-            current_track,
-            volume,
-            buffering: 0,
-        }
     }
 }
 

@@ -30,7 +30,7 @@ player_state_changes.addEventListener("new_state", message => {
     console.log(new_state);
 
     apply_new_value(new_state.pipeline_state, value => pipeline_state.innerText = value);
-    apply_new_value(new_state.current_track, tags => {
+    apply_new_value(new_state.current_track_tags, tags => {
         if (tags.tags === null) {
             current_track_tags.style.display = "none";
         } else {

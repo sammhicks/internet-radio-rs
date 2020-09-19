@@ -10,6 +10,17 @@ use warp::{
 
 use crate::message::{Command, PipelineState, PlayerState, TrackTags};
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn serialize_state<S: serde::Serializer>(
+    state: &Option<PipelineState>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    match state {
+        Some(state) => serializer.serialize_str(&format!("{:?}", state)),
+        None => serializer.serialize_none(),
+    }
+}
+
 fn serialize_tags<S: serde::Serializer>(
     tags: &Option<Arc<Option<TrackTags>>>,
     serializer: S,
@@ -27,13 +38,16 @@ fn serialize_tags<S: serde::Serializer>(
 
 #[derive(Clone, Debug, serde::Serialize)]
 struct PlayerStateDiff {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        serialize_with = "serialize_state",
+        skip_serializing_if = "Option::is_none"
+    )]
     pipeline_state: Option<PipelineState>,
     #[serde(
         serialize_with = "serialize_tags",
         skip_serializing_if = "Option::is_none"
     )]
-    current_track: Option<Arc<Option<TrackTags>>>,
+    current_track_tags: Option<Arc<Option<TrackTags>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     volume: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -44,7 +58,7 @@ impl PlayerStateDiff {
     fn new(state: &PlayerState) -> Self {
         PlayerStateDiff {
             pipeline_state: Some(state.pipeline_state),
-            current_track: Some(state.current_track.clone()),
+            current_track_tags: Some(state.current_track_tags.clone()),
             volume: Some(state.volume),
             buffering: Some(state.buffering),
         }
@@ -53,7 +67,7 @@ impl PlayerStateDiff {
     fn diff(old: &PlayerState, new: &PlayerState) -> Self {
         PlayerStateDiff {
             pipeline_state: Self::diff_value(&old.pipeline_state, &new.pipeline_state),
-            current_track: Self::diff_arc(&old.current_track, &new.current_track),
+            current_track_tags: Self::diff_arc(&old.current_track_tags, &new.current_track_tags),
             volume: Self::diff_value(&old.volume, &new.volume),
             buffering: Self::diff_value(&old.buffering, &new.buffering),
         }

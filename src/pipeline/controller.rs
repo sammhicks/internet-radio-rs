@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::sync::Arc;
 use tokio::sync::{mpsc, watch};
 
-use super::playbin::Playbin;
+use super::playbin::{Playbin, State as PipelineState};
 use crate::{
     config::Config,
     message::{Command, PlayerState},
@@ -11,6 +11,7 @@ use crate::{
 };
 
 struct StationState {
+    station: Arc<Station>,
     tracks: Vec<Track>,
     current_track_index: usize,
 }
@@ -89,7 +90,7 @@ impl Controller {
     }
 
     fn broadcast_new_track(&mut self) {
-        self.current_state.current_track = Arc::new(None);
+        self.current_state.current_track_tags = Arc::new(None);
         self.broadcast_state_change();
     }
 
@@ -106,7 +107,7 @@ impl Controller {
         self.broadcast_state_change();
     }
 
-    fn play_station(&mut self, new_station: &Station) -> Result<()> {
+    fn play_station(&mut self, new_station: Station) -> Result<()> {
         // Add the notification track if it exists
         let mut tracks: Vec<_> = self
             .config
@@ -123,10 +124,11 @@ impl Controller {
             Some(entry) => {
                 self.playbin.set_url(&entry.url)?;
                 self.current_station = Some(StationState {
+                    station: Arc::new(new_station),
                     tracks,
                     current_track_index: 0,
                 });
-                self.current_state.current_track = Arc::new(None);
+                self.current_state.current_track_tags = Arc::new(None);
                 self.broadcast_state_change();
                 Ok(())
             }
@@ -138,7 +140,7 @@ impl Controller {
         if let Err(err) = match command {
             Command::SetChannel(index) => {
                 if let Err(err) = Station::load(&self.config.stations_directory, index)
-                    .and_then(|new_station| self.play_station(&new_station))
+                    .and_then(|new_station| self.play_station(new_station))
                 {
                     log::warn!("{:?}", err);
                     self.play_error();
@@ -162,7 +164,7 @@ impl Controller {
                 .set_volume(volume)
                 .map(|new_volume| self.handle_volume_change(new_volume)),
             #[cfg(feature = "web_interface")]
-            Command::PlayUrl(url) => self.play_station(&Station::singleton(url)),
+            Command::PlayUrl(url) => self.play_station(Station::singleton(url)),
         } {
             log::error!("{:?}", err);
         }
@@ -208,7 +210,7 @@ impl Controller {
                     .and_then(|station| station.current_track().map(|entry| !entry.is_notification))
                     .unwrap_or(false);
                 if should_display_tags && new_tags != crate::message::TrackTags::default() {
-                    self.current_state.current_track = Arc::new(Some(new_tags));
+                    self.current_state.current_track_tags = Arc::new(Some(new_tags));
                     self.broadcast_state_change();
                 }
             }
@@ -216,7 +218,7 @@ impl Controller {
                 if self.playbin.is_src_of(unsafe { *state_change.as_ptr() }) {
                     let new_state = state_change.get_current();
 
-                    self.current_state.pipeline_state = new_state.into();
+                    self.current_state.pipeline_state = new_state;
 
                     self.broadcast_state_change();
 
@@ -265,7 +267,13 @@ pub fn run(
         }
     }
 
-    let current_state = playbin.state();
+    let current_state = PlayerState {
+        pipeline_state: playbin.pipeline_state().unwrap_or(PipelineState::Null),
+        current_station: None,
+        current_track_tags: Arc::new(None),
+        volume: playbin.volume().unwrap_or_default(),
+        buffering: 0,
+    };
 
     let (new_state_tx, new_state_rx) = watch::channel(current_state.clone());
 
