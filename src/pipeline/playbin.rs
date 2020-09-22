@@ -44,7 +44,7 @@ impl Playbin {
         Ok(state)
     }
 
-    fn set_pipeline_state(&self, state: State) -> Result<()> {
+    pub fn set_pipeline_state(&self, state: State) -> Result<()> {
         self.0.set_state(state).with_context(|| {
             format!(
                 "Unable to set the playbin pipeline to the `{:?}` state",
@@ -67,6 +67,11 @@ impl Playbin {
         self.0
             .set_property("uri", &glib::Value::from(url))
             .with_context(|| format!("Unable to set the playbin url to `{}`", url))?;
+        Ok(())
+    }
+
+    pub fn play_url(&self, url: &str) -> Result<()> {
+        self.set_url(url)?;
         self.set_pipeline_state(State::Playing)?;
         Ok(())
     }

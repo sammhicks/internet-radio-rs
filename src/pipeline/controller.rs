@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::sync::Arc;
 use tokio::sync::{mpsc, watch};
 
@@ -17,34 +17,25 @@ struct StationState {
 }
 
 impl StationState {
-    fn current_track(&self) -> Option<&Track> {
-        self.tracks.get(self.current_track_index)
+    fn current_track(&self) -> Result<&Track> {
+        self.tracks
+            .get(self.current_track_index)
+            .context("Failed to get playlist item")
     }
 
-    fn goto_previous_track(&mut self, playbin: &Playbin) -> Result<()> {
+    fn goto_previous_track(&mut self) {
         self.current_track_index = if self.current_track_index == 0 {
             self.tracks.len() - 1
         } else {
             self.current_track_index - 1
         };
-
-        self.update_url(playbin)
     }
 
-    fn goto_next_track(&mut self, playbin: &Playbin) -> Result<()> {
+    fn goto_next_track(&mut self) {
         self.current_track_index += 1;
         if self.current_track_index == self.tracks.len() {
             self.current_track_index = 0;
         }
-
-        self.update_url(playbin)
-    }
-
-    fn update_url(&self, playbin: &Playbin) -> Result<()> {
-        use anyhow::Context;
-        self.current_track()
-            .context("Failed to get playlist item")
-            .and_then(|track| playbin.set_url(&track.url))
     }
 }
 
@@ -64,18 +55,36 @@ impl Controller {
         self.playbin.play_pause()
     }
 
-    fn goto_previous_track(&mut self) -> Result<()> {
+    async fn play_current_track(&mut self) -> Result<()> {
+        let current_station = self.current_station.as_mut().context("No Station")?;
+        let track = current_station.current_track()?;
+        let pause_before_playing = current_station.station.pause_before_playing();
+
+        self.playbin.set_url(&track.url)?;
+        self.current_state.current_track_tags = Arc::new(None);
+        if let Some(pause_duration) = pause_before_playing {
+            log::info!("Pausing for {}s", pause_duration.as_secs());
+            self.playbin.set_pipeline_state(PipelineState::Paused)?;
+            self.broadcast_state_change();
+            tokio::time::delay_for(pause_duration).await;
+        }
+        self.playbin.set_pipeline_state(PipelineState::Playing)?;
+        self.broadcast_state_change();
+        Ok(())
+    }
+
+    async fn goto_previous_track(&mut self) -> Result<()> {
         if let Some(current_station) = &mut self.current_station {
-            current_station.goto_previous_track(&self.playbin)?;
-            self.broadcast_new_track();
+            current_station.goto_previous_track();
+            self.play_current_track().await?;
         }
         Ok(())
     }
 
-    fn goto_next_track(&mut self) -> Result<()> {
+    async fn goto_next_track(&mut self) -> Result<()> {
         if let Some(current_station) = &mut self.current_station {
-            current_station.goto_next_track(&self.playbin)?;
-            self.broadcast_new_track();
+            current_station.goto_next_track();
+            self.play_current_track().await?;
         }
         Ok(())
     }
@@ -83,15 +92,12 @@ impl Controller {
     fn play_error(&mut self) {
         self.current_station = None;
         if let Some(url) = &self.config.notifications.error {
-            if let Err(err) = self.playbin.set_url(&url) {
+            if let Err(err) = self.playbin.play_url(&url) {
                 log::error!("{:?}", err);
             }
+        } else {
+            self.playbin.set_pipeline_state(PipelineState::Null).ok();
         }
-    }
-
-    fn broadcast_new_track(&mut self) {
-        self.current_state.current_track_tags = Arc::new(None);
-        self.broadcast_state_change();
     }
 
     fn broadcast_state_change(&mut self) {
@@ -122,7 +128,7 @@ impl Controller {
 
         match tracks.get(0) {
             Some(entry) => {
-                self.playbin.set_url(&entry.url)?;
+                self.playbin.play_url(&entry.url)?;
                 self.current_station = Some(StationState {
                     station: Arc::new(new_station),
                     tracks,
@@ -136,7 +142,7 @@ impl Controller {
         }
     }
 
-    fn handle_command(&mut self, command: Command) {
+    async fn handle_command(&mut self, command: Command) {
         if let Err(err) = match command {
             Command::SetChannel(index) => {
                 if let Err(err) = Station::load(&self.config.stations_directory, index)
@@ -148,8 +154,8 @@ impl Controller {
                 Ok(())
             }
             Command::PlayPause => self.play_pause(),
-            Command::PreviousItem => self.goto_previous_track(),
-            Command::NextItem => self.goto_next_track(),
+            Command::PreviousItem => self.goto_previous_track().await,
+            Command::NextItem => self.goto_next_track().await,
             Command::VolumeUp => self
                 .playbin
                 .change_volume(self.config.volume_offset_percent)
@@ -170,7 +176,7 @@ impl Controller {
         }
     }
 
-    fn handle_gstreamer_message(&mut self, message: &gstreamer::Message) {
+    async fn handle_gstreamer_message(&mut self, message: &gstreamer::Message) {
         use gstreamer::MessageView;
         match message.view() {
             MessageView::Buffering(b) => {
@@ -207,7 +213,12 @@ impl Controller {
                 let should_display_tags = self
                     .current_station
                     .as_ref()
-                    .and_then(|station| station.current_track().map(|entry| !entry.is_notification))
+                    .and_then(|station| {
+                        station
+                            .current_track()
+                            .ok()
+                            .map(|entry| !entry.is_notification)
+                    })
                     .unwrap_or(false);
                 if should_display_tags && new_tags != crate::message::TrackTags::default() {
                     self.current_state.current_track_tags = Arc::new(Some(new_tags));
@@ -226,7 +237,7 @@ impl Controller {
                 }
             }
             MessageView::Eos(..) => {
-                if let Err(err) = self.goto_next_track() {
+                if let Err(err) = self.goto_next_track().await {
                     log::error!("{:?}", err);
                     self.play_error();
                 }
@@ -262,7 +273,7 @@ pub fn run(
     let bus = playbin.bus()?;
 
     if let Some(url) = &config.notifications.success {
-        if let Some(err) = playbin.set_url(url).err() {
+        if let Some(err) = playbin.play_url(url).err() {
             log::error!("{:?}", err);
         }
     }
@@ -296,8 +307,10 @@ pub fn run(
 
         while let Some(message) = messages.next().await {
             match message {
-                Message::Command(command) => controller.handle_command(command),
-                Message::GStreamerMessage(message) => controller.handle_gstreamer_message(&message),
+                Message::Command(command) => controller.handle_command(command).await,
+                Message::GStreamerMessage(message) => {
+                    controller.handle_gstreamer_message(&message).await
+                }
             }
         }
 

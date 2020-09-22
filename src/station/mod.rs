@@ -117,4 +117,16 @@ impl Station {
             Self::Singleton { track } => Ok(vec![track.clone()]),
         }
     }
+
+    pub fn pause_before_playing(&self) -> Option<std::time::Duration> {
+        if let Self::UrlList {
+            pause_before_playing,
+            ..
+        } = self
+        {
+            *pause_before_playing
+        } else {
+            None
+        }
+    }
 }
