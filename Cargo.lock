@@ -1275,6 +1275,7 @@ dependencies = [
  "glib",
  "gstreamer",
  "gstreamer-sys",
+ "libc",
  "log 0.4.11",
  "m3u",
  "pls",

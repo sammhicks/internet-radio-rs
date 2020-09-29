@@ -8,6 +8,19 @@ mod parse_custom;
 mod parse_m3u;
 mod parse_pls;
 
+#[cfg(not(unix))]
+mod cd {
+    pub fn tracks(device: &str) -> Result<Vec<Track>> {
+        drop(device);
+        anyhow::bail!("CD on supported on unix");
+    }
+}
+
+#[cfg(unix)]
+mod cd_unix;
+#[cfg(unix)]
+use cd_unix as cd;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Track {
     pub title: Option<String>,
@@ -113,7 +126,7 @@ impl Station {
         match self {
             Self::UrlList { tracks, .. } => Ok(tracks.clone()),
             Self::FileServer { .. } => anyhow::bail!("FileServer not supported yet"),
-            Self::CD { .. } => anyhow::bail!("CD not supported yet"),
+            Self::CD { device, .. } => cd::tracks(device.as_str()),
             Self::Singleton { track } => Ok(vec![track.clone()]),
         }
     }
