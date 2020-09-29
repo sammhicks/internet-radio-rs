@@ -10,9 +10,8 @@ mod parse_pls;
 
 #[cfg(not(unix))]
 mod cd {
-    pub fn tracks(device: &str) -> Result<Vec<Track>> {
-        drop(device);
-        anyhow::bail!("CD on supported on unix");
+    pub fn tracks(_device: &str) -> anyhow::Result<Vec<super::Track>> {
+        anyhow::bail!("CD only supported on unix");
     }
 }
 
