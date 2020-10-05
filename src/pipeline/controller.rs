@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use std::convert::TryInto;
 use std::sync::Arc;
 use tokio::sync::{mpsc, watch};
 
@@ -174,11 +175,10 @@ impl Controller {
         use gstreamer::MessageView;
         match message.view() {
             MessageView::Buffering(b) => {
-                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-
                 log::debug!("Buffering: {}", b.get_percent());
 
-                self.published_state.buffering = b.get_percent() as u8;
+                self.published_state.buffering =
+                    b.get_percent().try_into().context("Bad buffering value")?;
 
                 self.broadcast_state_change();
 
