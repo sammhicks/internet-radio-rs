@@ -12,10 +12,10 @@ pub struct Playbin(gstreamer::Element);
 
 impl Playbin {
     pub fn new() -> Result<Self> {
-        let playbin = gstreamer::ElementFactory::make("playbin", None)
+        let playbin_element = gstreamer::ElementFactory::make("playbin", None)
             .context("Failed to create a playbin")?;
 
-        let flags = playbin
+        let flags = playbin_element
             .get_property("flags")
             .context("Failed to get the playbin flags")?;
         let flags_class =
@@ -27,11 +27,11 @@ impl Playbin {
             .unset_by_nick("video")
             .build()
             .context("Failed to set flags")?;
-        playbin
+        playbin_element
             .set_property("flags", &flags)
             .context("Failed to set playbin flags")?;
 
-        Ok(Self(playbin))
+        Ok(Self(playbin_element))
     }
 
     pub fn bus(&self) -> Result<gstreamer::Bus> {
