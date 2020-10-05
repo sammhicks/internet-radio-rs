@@ -17,7 +17,7 @@ categories = ["audio", "internet"]
 web_interface = [ "bytes", "warp"]
 embed_static_web_content = []
 production_web_server = []
-cd = []
+cd = [ "libc" ]
 
 [dependencies]
 anyhow = "1.0"
@@ -39,4 +39,4 @@ toml = "0.5"
 warp = { version = "0.2", optional = true }
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc = { version = "0.2", optional = true }

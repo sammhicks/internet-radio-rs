@@ -8,16 +8,19 @@ mod parse_custom;
 mod parse_m3u;
 mod parse_pls;
 
-#[cfg(not(unix))]
+#[cfg(not(feature = "cd"))]
 mod cd {
     pub fn tracks(_device: &str) -> anyhow::Result<Vec<super::Track>> {
-        anyhow::bail!("CD only supported on unix");
+        anyhow::bail!("CD support not enabled");
     }
 }
 
-#[cfg(unix)]
+#[cfg(all(feature = "cd", not(unix)))]
+compile_error!("CD only supported on unix");
+
+#[cfg(all(feature = "cd", unix))]
 mod cd_unix;
-#[cfg(unix)]
+#[cfg(all(feature = "cd", unix))]
 use cd_unix as cd;
 
 #[derive(Clone, Debug, PartialEq)]
