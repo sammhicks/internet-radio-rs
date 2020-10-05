@@ -1,7 +1,7 @@
 //! A description of the rradio configuration file
 
 use anyhow::{Context, Result};
-use log::{error, LevelFilter};
+use log::LevelFilter;
 use serde::{de, Deserializer};
 use tokio::time::Duration;
 
@@ -45,7 +45,7 @@ impl Config {
         std::fs::read_to_string(path)
             .context("Failed to read config file")
             .and_then(|config| toml::from_str(&config).context("Failed to parse config file"))
-            .map_err(|err| error!("{:?}", err))
+            .map_err(|err| log::error!("{:#}", err))
             .unwrap_or_default()
     }
 }

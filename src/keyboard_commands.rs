@@ -47,7 +47,7 @@ impl std::ops::Drop for RawMode {
     /// Attempt to disable raw mode for stdin and stdout if not already disabled
     fn drop(&mut self) {
         if let Some(err) = self.disable().err() {
-            log::error!("Failed to disable raw mode: {:?}", err);
+            log::error!("Failed to disable raw mode: {:#}", err);
         }
     }
 }

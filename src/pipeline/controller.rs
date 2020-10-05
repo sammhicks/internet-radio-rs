@@ -95,7 +95,7 @@ impl Controller {
         self.current_playlist = None;
         if let Some(url) = &self.config.notifications.error {
             if let Err(err) = self.playbin.play_url(&url) {
-                log::error!("{:?}", err);
+                log::error!("{:#}", err);
             }
         } else {
             self.playbin.set_pipeline_state(PipelineState::Null).ok();
@@ -204,7 +204,7 @@ impl Controller {
                         Ok(Tag::Genre(genre)) => new_tags.genre = Some(genre),
                         Ok(Tag::Image(image)) => new_tags.image = Some(image.unwrap()),
                         Ok(Tag::Unknown { .. }) => (),
-                        Err(err) => log::error!("{:?}", err),
+                        Err(err) => log::error!("{:#}", err),
                     }
                 }
 
@@ -275,7 +275,7 @@ pub fn run(
 
     if let Some(url) = &config.notifications.success {
         if let Some(err) = playbin.play_url(url).err() {
-            log::error!("{:?}", err);
+            log::error!("{:#}", err);
         }
     }
 
@@ -313,7 +313,7 @@ pub fn run(
                     controller.handle_gstreamer_message(&message).await
                 }
             } {
-                log::error!("{:?}", err);
+                log::error!("{:#}", err);
                 controller.play_error();
             }
         }
