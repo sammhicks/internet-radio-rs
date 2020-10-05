@@ -1,5 +1,9 @@
 # internet-radio-rs
 
+## Build Options using Environment Variables
+
++ `RRADIO_CONFIG_PATH` - The default location of the config path if not set using command line option `-c`. Defaults to `config.toml`
+
 ## Example Config file
     station_directory = "stations"
     input_timeout_ms = 1000
@@ -39,3 +43,4 @@ Options:
 + `web_interface` - Enabled the web interface
 + `embed_static_web_content` - If `web_interface` is enabled, embed the html, css, js, etc in the binary, rather than reading from the file system
 + `production_web_server` - If `web_interface` is enabled, listen on all addresses, rather than `127.0.0.1`, and listen on port 80 not 3030
++ `cd` - Support playing CDs

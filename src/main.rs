@@ -21,7 +21,7 @@ async fn main() -> Result<()> {
         .format(log_format)
         .start()?;
 
-    let mut config_path = String::from("config.toml");
+    let mut config_path = String::from(option_env!("RRADIO_CONFIG_PATH").unwrap_or("config.toml"));
 
     let mut args = std::env::args().skip(1);
 
