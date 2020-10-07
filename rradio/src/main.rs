@@ -2,21 +2,17 @@
 #![allow(clippy::used_underscore_binding)]
 
 use anyhow::{Context, Result};
-use futures::FutureExt;
 use tokio::sync::mpsc;
 
 mod config;
 mod keyboard_commands;
-mod message;
+mod log_error;
 mod pipeline;
+mod ports;
 mod station;
 mod tag;
 
-#[cfg(feature = "web_interface")]
-mod web_interface;
-
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     let mut logger = flexi_logger::Logger::with_str("error")
         .format(log_format)
         .start()?;
@@ -44,26 +40,21 @@ async fn main() -> Result<()> {
 
     let (commands_tx, commands_rx) = mpsc::unbounded_channel();
 
-    let keyboard_commands_task = keyboard_commands::run(commands_tx.clone(), config.input_timeout);
+    let keyboard_commands_task = keyboard_commands::run(commands_tx, config.input_timeout);
     let (pipeline_task, player_state_rx) = pipeline::run(config, commands_rx)?;
+    let tcp_task = ports::tcp_text::run(player_state_rx);
 
-    #[cfg(feature = "web_interface")]
-    let web_interface_task = web_interface::run(commands_tx.clone(), player_state_rx);
+    let mut runtime = tokio::runtime::Runtime::new()?;
+    runtime.spawn(pipeline_task);
+    runtime.spawn(log_error::log_error(tcp_task));
 
-    #[cfg(not(feature = "web_interface"))]
-    drop(player_state_rx);
+    runtime.block_on(log_error::log_error(keyboard_commands_task));
 
-    futures::future::select_all(vec![
-        keyboard_commands_task.boxed(),
-        pipeline_task.boxed(),
-        #[cfg(feature = "web_interface")]
-        web_interface_task.boxed(),
-    ])
-    .await
-    .0
-    .map(|()| {
-        logger.shutdown();
-    })
+    drop(runtime);
+
+    logger.shutdown();
+
+    Ok(())
 }
 
 fn log_format(

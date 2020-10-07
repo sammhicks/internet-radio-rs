@@ -5,13 +5,13 @@ use std::iter::FromIterator;
 
 use anyhow::Result;
 use crossterm::event::{Event, EventStream, KeyCode, KeyEvent};
-use futures::stream::StreamExt;
+use futures::StreamExt;
 use tokio::{
     sync::mpsc,
     time::{self, Duration},
 };
 
-use crate::message::Command;
+use rradio_messages::Command;
 
 /// `RawMode` is an RAII guard for the raw mode of stdin (and stdout).
 ///

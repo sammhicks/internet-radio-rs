@@ -5,7 +5,18 @@ use glib::object::ObjectExt;
 use gstreamer::{ElementExt, ElementExtManual};
 use log::{debug, error};
 
-pub use gstreamer::State;
+pub use rradio_messages::PipelineState;
+
+pub fn gstreamer_state_to_pipeline_state(state: gstreamer::State) -> Result<PipelineState> {
+    match state {
+        gstreamer::State::VoidPending => Ok(PipelineState::VoidPending),
+        gstreamer::State::Null => Ok(PipelineState::Null),
+        gstreamer::State::Ready => Ok(PipelineState::Ready),
+        gstreamer::State::Paused => Ok(PipelineState::Paused),
+        gstreamer::State::Playing => Ok(PipelineState::Playing),
+        _ => Err(anyhow::Error::msg(format!("Unknown state {:?}", state))),
+    }
+}
 
 #[derive(Clone)]
 pub struct Playbin(gstreamer::Element);
@@ -38,13 +49,20 @@ impl Playbin {
         self.0.get_bus().context("Playbin has no bus")
     }
 
-    pub fn pipeline_state(&self) -> Result<State> {
+    pub fn pipeline_state(&self) -> Result<PipelineState> {
         let (success, state, _) = self.0.get_state(gstreamer::ClockTime::none());
         success.context("Unable to get state")?;
-        Ok(state)
+        gstreamer_state_to_pipeline_state(state)
     }
 
-    pub fn set_pipeline_state(&self, state: State) -> Result<()> {
+    pub fn set_pipeline_state(&self, state: PipelineState) -> Result<()> {
+        let state = match state {
+            PipelineState::VoidPending => gstreamer::State::VoidPending,
+            PipelineState::Null => gstreamer::State::Null,
+            PipelineState::Ready => gstreamer::State::Ready,
+            PipelineState::Paused => gstreamer::State::Paused,
+            PipelineState::Playing => gstreamer::State::Playing,
+        };
         self.0.set_state(state).with_context(|| {
             format!(
                 "Unable to set the playbin pipeline to the `{:?}` state",
@@ -56,14 +74,14 @@ impl Playbin {
 
     pub fn play_pause(&self) -> Result<()> {
         match self.pipeline_state()? {
-            State::Paused => self.set_pipeline_state(State::Playing),
-            State::Playing => self.set_pipeline_state(State::Paused),
+            PipelineState::Paused => self.set_pipeline_state(PipelineState::Playing),
+            PipelineState::Playing => self.set_pipeline_state(PipelineState::Paused),
             _ => Ok(()),
         }
     }
 
     pub fn set_url(&self, url: &str) -> Result<()> {
-        self.set_pipeline_state(State::Null)?;
+        self.set_pipeline_state(PipelineState::Null)?;
         self.0
             .set_property("uri", &glib::Value::from(url))
             .with_context(|| format!("Unable to set the playbin url to `{}`", url))?;
@@ -72,7 +90,7 @@ impl Playbin {
 
     pub fn play_url(&self, url: &str) -> Result<()> {
         self.set_url(url)?;
-        self.set_pipeline_state(State::Playing)?;
+        self.set_pipeline_state(PipelineState::Playing)?;
         Ok(())
     }
 
@@ -111,7 +129,7 @@ impl Playbin {
 
 impl Drop for Playbin {
     fn drop(&mut self) {
-        if let Err(err) = self.set_pipeline_state(State::Null) {
+        if let Err(err) = self.set_pipeline_state(PipelineState::Null) {
             error!("{:?}", err);
         }
     }

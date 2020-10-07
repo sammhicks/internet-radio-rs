@@ -1,0 +1,39 @@
+[package]
+name = "rradio"
+version = "0.11.1"
+authors = ["Samuel Hicks <SamMHicks@hotmail.co.uk>"]
+edition = "2018"
+description = "An internet radio with configurable two digit entry of stations"
+readme = "README.md"
+homepage = "https://github.com/sammhicks/internet-radio-rs"
+repository = "https://github.com/sammhicks/internet-radio-rs"
+license = "MIT"
+keywords = ["radio"]
+categories = ["audio", "internet"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+cd = [ "libc" ]
+
+[dependencies]
+anyhow = "1.0"
+base64 = "0.12"
+crossterm =  { version = "0.17", features = ["event-stream"] }
+flexi_logger = { version = "0.15", default_features = false, features = ["textfilter"] }
+futures = "0.3"
+glib = "0.10"
+gstreamer = "0.16"
+gstreamer-sys = "0.9"
+log = { version = "0.4", features = ["std"] }
+m3u = "1.0"
+pls = "0.2"
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "1.0"
+tokio = { version = "0.2", features = [ "io-util", "macros", "rt-threaded", "stream", "sync", "tcp", "time"] }
+toml = "0.5"
+
+rradio-messages = { path = "../messages" }
+
+[target.'cfg(unix)'.dependencies]
+libc = { version = "0.2", optional = true }

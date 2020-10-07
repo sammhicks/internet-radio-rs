@@ -3,10 +3,11 @@ use std::convert::TryInto;
 use std::sync::Arc;
 use tokio::sync::{mpsc, watch};
 
-use super::playbin::{Playbin, State as PipelineState};
+use rradio_messages::{Command, TrackTags};
+
+use super::playbin::{PipelineState, Playbin};
 use crate::{
     config::Config,
-    message::{Command, PlayerState},
     station::{Station, Track},
     tag::Tag,
 };
@@ -38,6 +39,15 @@ impl PlaylistState {
             self.current_track_index = 0;
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct PlayerState {
+    pub pipeline_state: PipelineState,
+    pub current_station: Arc<Option<rradio_messages::Station>>,
+    pub current_track_tags: Arc<Option<TrackTags>>,
+    pub volume: i32,
+    pub buffering: u8,
 }
 
 struct Controller {
@@ -120,6 +130,8 @@ impl Controller {
     }
 
     async fn play_station(&mut self, new_station: Station) -> Result<()> {
+        let station_index = new_station.index().map(std::borrow::ToOwned::to_owned);
+        let station_title = new_station.title().map(std::borrow::ToOwned::to_owned);
         let tracks = new_station.tracks()?;
 
         log::debug!("Station tracks: {:?}", tracks);
@@ -132,13 +144,21 @@ impl Controller {
             .cloned()
             .map(Track::notification);
 
-        let playlist_tracks = success_notification.chain(tracks.iter().cloned()).collect();
+        let playlist_tracks = success_notification
+            .chain(tracks.iter().cloned())
+            .collect::<Vec<_>>();
 
         self.current_playlist = Some(PlaylistState {
             station: Arc::new(new_station),
-            tracks: playlist_tracks,
+            tracks: playlist_tracks.clone(),
             current_track_index: 0,
         });
+
+        self.published_state.current_station = Arc::new(Some(rradio_messages::Station {
+            index: station_index,
+            title: station_title,
+            tracks: playlist_tracks,
+        }));
 
         self.play_current_track().await
     }
@@ -160,12 +180,10 @@ impl Controller {
                 .playbin
                 .change_volume(-self.config.volume_offset_percent)
                 .map(|new_volume| self.handle_volume_change(new_volume)),
-            #[cfg(feature = "web_interface")]
             Command::SetVolume(volume) => self
                 .playbin
                 .set_volume(volume)
                 .map(|new_volume| self.handle_volume_change(new_volume)),
-            #[cfg(feature = "web_interface")]
             Command::PlayUrl(url) => self.play_station(Station::singleton(url)).await,
         }
     }
@@ -185,7 +203,7 @@ impl Controller {
                 Ok(())
             }
             MessageView::Tag(tag) => {
-                let mut new_tags = crate::message::TrackTags::default();
+                let mut new_tags = TrackTags::default();
 
                 for (i, (name, value)) in tag.get_tags().as_ref().iter().enumerate() {
                     let tag = Tag::from_value(name, &value);
@@ -210,8 +228,7 @@ impl Controller {
 
                 if let Some(playlist_state) = &self.current_playlist {
                     if let Ok(track) = playlist_state.current_track() {
-                        if track.is_notification && new_tags != crate::message::TrackTags::default()
-                        {
+                        if !track.is_notification && new_tags != TrackTags::default() {
                             self.published_state.current_track_tags = Arc::new(Some(new_tags));
                             self.broadcast_state_change();
                         }
@@ -224,7 +241,8 @@ impl Controller {
                 if self.playbin.is_src_of(unsafe { *state_change.as_ptr() }) {
                     let new_state = state_change.get_current();
 
-                    self.published_state.pipeline_state = new_state;
+                    self.published_state.pipeline_state =
+                        super::playbin::gstreamer_state_to_pipeline_state(new_state)?;
 
                     self.broadcast_state_change();
 
@@ -266,7 +284,7 @@ pub fn run(
     config: Config,
     commands: mpsc::UnboundedReceiver<Command>,
 ) -> Result<(
-    impl std::future::Future<Output = Result<(), anyhow::Error>>,
+    impl std::future::Future<Output = ()>,
     watch::Receiver<PlayerState>,
 )> {
     gstreamer::init()?;
@@ -281,7 +299,7 @@ pub fn run(
 
     let published_state = PlayerState {
         pipeline_state: playbin.pipeline_state().unwrap_or(PipelineState::Null),
-        current_station: None,
+        current_station: Arc::new(None),
         current_track_tags: Arc::new(None),
         volume: playbin.volume().unwrap_or_default(),
         buffering: 0,
@@ -317,8 +335,6 @@ pub fn run(
                 controller.play_error();
             }
         }
-
-        Ok(())
     };
 
     Ok((task, new_state_rx))

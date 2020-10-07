@@ -4,6 +4,8 @@ use std::path::Path;
 
 use anyhow::{Context, Error, Result};
 
+pub use rradio_messages::Track;
+
 mod parse_custom;
 mod parse_m3u;
 mod parse_pls;
@@ -22,31 +24,6 @@ compile_error!("CD only supported on unix");
 mod cd_unix;
 #[cfg(all(feature = "cd", unix))]
 use cd_unix as cd;
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Track {
-    pub title: Option<String>,
-    pub url: String,
-    pub is_notification: bool,
-}
-
-impl Track {
-    pub fn url(url: String) -> Self {
-        Self {
-            title: None,
-            url,
-            is_notification: false,
-        }
-    }
-
-    pub fn notification(url: String) -> Self {
-        Self {
-            title: None,
-            url,
-            is_notification: true,
-        }
-    }
-}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Credentials {
@@ -112,8 +89,6 @@ impl Station {
     }
 
     /// Create a station consisting of a single url.
-    /// This function is only used by the `web_interface` feature.
-    #[cfg(feature = "web_interface")]
     pub fn singleton(url: String) -> Self {
         Self::Singleton {
             track: Track {
@@ -121,6 +96,25 @@ impl Station {
                 url,
                 is_notification: false,
             },
+        }
+    }
+
+    pub fn index(&self) -> Option<&str> {
+        match &self {
+            Station::UrlList { index, .. }
+            | Station::FileServer { index, .. }
+            | Station::CD { index, .. } => Some(index.as_str()),
+            Station::Singleton { .. } => None,
+        }
+    }
+
+    pub fn title(&self) -> Option<&str> {
+        match &self {
+            Station::UrlList { title, .. } | Station::FileServer { title, .. } => {
+                title.as_ref().map(String::as_str)
+            }
+            Station::CD { .. } => Some("CD"),
+            Station::Singleton { .. } => None,
         }
     }
 
