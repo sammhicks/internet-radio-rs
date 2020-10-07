@@ -7,14 +7,15 @@ use rradio_messages::{Command, TrackTags};
 
 use super::playbin::{PipelineState, Playbin};
 use crate::{
+    atomic_string::AtomicString,
     config::Config,
     station::{Station, Track},
     tag::Tag,
 };
 
 struct PlaylistState {
-    station: Arc<Station>,
-    tracks: Vec<Track>,
+    pause_before_playing: Option<std::time::Duration>,
+    tracks: Arc<[Track]>,
     current_track_index: usize,
 }
 
@@ -44,8 +45,8 @@ impl PlaylistState {
 #[derive(Clone, Debug)]
 pub struct PlayerState {
     pub pipeline_state: PipelineState,
-    pub current_station: Arc<Option<rradio_messages::Station>>,
-    pub current_track_tags: Arc<Option<TrackTags>>,
+    pub current_station: Arc<Option<rradio_messages::Station<AtomicString, Arc<[Track]>>>>,
+    pub current_track_tags: Arc<Option<TrackTags<AtomicString>>>,
     pub volume: i32,
     pub buffering: u8,
 }
@@ -71,7 +72,7 @@ impl Controller {
         let current_playlist = self.current_playlist.as_mut().context("No playlist")?;
 
         let track = current_playlist.current_track()?;
-        let pause_before_playing = current_playlist.station.pause_before_playing();
+        let pause_before_playing = current_playlist.pause_before_playing;
 
         self.playbin.set_url(&track.url)?;
         self.published_state.current_track_tags = Arc::new(None);
@@ -130,11 +131,9 @@ impl Controller {
     }
 
     async fn play_station(&mut self, new_station: Station) -> Result<()> {
-        let station_index = new_station.index().map(std::borrow::ToOwned::to_owned);
-        let station_title = new_station.title().map(std::borrow::ToOwned::to_owned);
-        let tracks = new_station.tracks()?;
+        let playlist = new_station.into_playlist()?;
 
-        log::debug!("Station tracks: {:?}", tracks);
+        log::debug!("Station tracks: {:?}", playlist.tracks);
 
         let success_notification = self
             .config
@@ -145,18 +144,18 @@ impl Controller {
             .map(Track::notification);
 
         let playlist_tracks = success_notification
-            .chain(tracks.iter().cloned())
-            .collect::<Vec<_>>();
+            .chain(playlist.tracks)
+            .collect::<Arc<_>>();
 
         self.current_playlist = Some(PlaylistState {
-            station: Arc::new(new_station),
+            pause_before_playing: playlist.pause_before_playing,
             tracks: playlist_tracks.clone(),
             current_track_index: 0,
         });
 
         self.published_state.current_station = Arc::new(Some(rradio_messages::Station {
-            index: station_index,
-            title: station_title,
+            index: playlist.station_index.map(From::from),
+            title: playlist.station_title.map(From::from),
             tracks: playlist_tracks,
         }));
 
@@ -203,7 +202,7 @@ impl Controller {
                 Ok(())
             }
             MessageView::Tag(tag) => {
-                let mut new_tags = TrackTags::default();
+                let mut new_tags = TrackTags::<AtomicString>::default();
 
                 for (i, (name, value)) in tag.get_tags().as_ref().iter().enumerate() {
                     let tag = Tag::from_value(name, &value);
@@ -216,11 +215,11 @@ impl Controller {
                     );
 
                     match tag {
-                        Ok(Tag::Title(title)) => new_tags.title = Some(title),
-                        Ok(Tag::Artist(artist)) => new_tags.artist = Some(artist),
-                        Ok(Tag::Album(album)) => new_tags.album = Some(album),
-                        Ok(Tag::Genre(genre)) => new_tags.genre = Some(genre),
-                        Ok(Tag::Image(image)) => new_tags.image = Some(image.unwrap()),
+                        Ok(Tag::Title(title)) => new_tags.title = Some(title.into()),
+                        Ok(Tag::Artist(artist)) => new_tags.artist = Some(artist.into()),
+                        Ok(Tag::Album(album)) => new_tags.album = Some(album.into()),
+                        Ok(Tag::Genre(genre)) => new_tags.genre = Some(genre.into()),
+                        Ok(Tag::Image(image)) => new_tags.image = Some(image.into_inner().into()),
                         Ok(Tag::Unknown { .. }) => (),
                         Err(err) => log::error!("{:#}", err),
                     }

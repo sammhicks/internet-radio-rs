@@ -20,7 +20,7 @@ pub enum PipelineState {
     Playing,
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct Track {
     pub title: Option<String>,
     pub url: String,
@@ -46,19 +46,35 @@ impl Track {
 }
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-pub struct Station {
-    pub index: Option<String>,
-    pub title: Option<String>,
-    pub tracks: Vec<Track>,
+pub struct Station<S, TrackList>
+where
+    S: AsRef<str>,
+    TrackList: AsRef<[Track]>,
+{
+    pub index: Option<S>,
+    pub title: Option<S>,
+    pub tracks: TrackList,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
-pub struct TrackTags {
-    pub title: Option<String>,
-    pub artist: Option<String>,
-    pub album: Option<String>,
-    pub genre: Option<String>,
-    pub image: Option<String>,
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+pub struct TrackTags<S: AsRef<str>> {
+    pub title: Option<S>,
+    pub artist: Option<S>,
+    pub album: Option<S>,
+    pub genre: Option<S>,
+    pub image: Option<S>,
+}
+
+impl<S: AsRef<str>> std::default::Default for TrackTags<S> {
+    fn default() -> Self {
+        Self {
+            title: None,
+            artist: None,
+            album: None,
+            genre: None,
+            image: None,
+        }
+    }
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
@@ -88,15 +104,15 @@ impl<T> std::convert::From<Option<Option<T>>> for OptionDiff<T> {
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
-pub struct PlayerStateDiff {
+pub struct PlayerStateDiff<S: AsRef<str>, TrackList: AsRef<[Track]>> {
     pub pipeline_state: Option<PipelineState>,
-    pub current_station: OptionDiff<Station>,
-    pub current_track_tags: OptionDiff<TrackTags>,
+    pub current_station: OptionDiff<Station<S, TrackList>>,
+    pub current_track_tags: OptionDiff<TrackTags<S>>,
     pub volume: Option<i32>,
     pub buffering: Option<u8>,
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
-pub enum OutgoingMessage {
-    PlayStateChanged(PlayerStateDiff),
+pub enum OutgoingMessage<S: AsRef<str>, T: AsRef<[Track]>> {
+    PlayerStateChanged(PlayerStateDiff<S, T>),
 }

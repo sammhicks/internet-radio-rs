@@ -31,6 +31,14 @@ pub struct Credentials {
     password: String,
 }
 
+pub struct Playlist {
+    pub station_index: Option<String>,
+    pub station_title: Option<String>,
+    pub pause_before_playing: Option<std::time::Duration>,
+    pub show_buffer: Option<bool>,
+    pub tracks: Vec<Track>,
+}
+
 /// A station in rradio
 #[derive(Debug, PartialEq)]
 pub enum Station {
@@ -99,43 +107,36 @@ impl Station {
         }
     }
 
-    pub fn index(&self) -> Option<&str> {
-        match &self {
-            Station::UrlList { index, .. }
-            | Station::FileServer { index, .. }
-            | Station::CD { index, .. } => Some(index.as_str()),
-            Station::Singleton { .. } => None,
-        }
-    }
-
-    pub fn title(&self) -> Option<&str> {
-        match &self {
-            Station::UrlList { title, .. } | Station::FileServer { title, .. } => {
-                title.as_ref().map(String::as_str)
-            }
-            Station::CD { .. } => Some("CD"),
-            Station::Singleton { .. } => None,
-        }
-    }
-
-    pub fn tracks(&self) -> Result<Vec<Track>> {
+    pub fn into_playlist(self) -> Result<Playlist> {
         match self {
-            Self::UrlList { tracks, .. } => Ok(tracks.clone()),
-            Self::FileServer { .. } => anyhow::bail!("FileServer not supported yet"),
-            Self::CD { device, .. } => cd::tracks(device.as_str()),
-            Self::Singleton { track } => Ok(vec![track.clone()]),
-        }
-    }
-
-    pub fn pause_before_playing(&self) -> Option<std::time::Duration> {
-        if let Self::UrlList {
-            pause_before_playing,
-            ..
-        } = self
-        {
-            *pause_before_playing
-        } else {
-            None
+            Station::UrlList {
+                index,
+                title,
+                pause_before_playing,
+                show_buffer,
+                tracks,
+            } => Ok(Playlist {
+                station_index: Some(index),
+                station_title: title,
+                pause_before_playing,
+                show_buffer,
+                tracks,
+            }),
+            Station::FileServer { .. } => anyhow::bail!("FileServer not supported yet"),
+            Station::CD { index, device } => Ok(Playlist {
+                station_index: Some(index),
+                station_title: None,
+                pause_before_playing: None,
+                show_buffer: None,
+                tracks: cd::tracks(&device)?,
+            }),
+            Station::Singleton { track } => Ok(Playlist {
+                station_index: None,
+                station_title: None,
+                pause_before_playing: None,
+                show_buffer: None,
+                tracks: vec![track],
+            }),
         }
     }
 }

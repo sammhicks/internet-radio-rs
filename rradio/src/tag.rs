@@ -16,7 +16,7 @@ impl Image {
         ))
     }
 
-    pub fn unwrap(self) -> String {
+    pub fn into_inner(self) -> String {
         self.0
     }
 }

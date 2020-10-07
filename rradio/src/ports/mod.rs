@@ -2,10 +2,10 @@ pub mod tcp_text;
 
 use std::sync::Arc;
 
-use crate::pipeline::PlayerState;
-use rradio_messages::PlayerStateDiff;
+use crate::{atomic_string::AtomicString, pipeline::PlayerState};
+use rradio_messages::{PlayerStateDiff, Track};
 
-fn state_to_diff(state: &PlayerState) -> PlayerStateDiff {
+fn state_to_diff(state: &PlayerState) -> PlayerStateDiff<AtomicString, Arc<[Track]>> {
     PlayerStateDiff {
         pipeline_state: Some(state.pipeline_state),
         current_station: state.current_station.as_ref().clone().into(),
@@ -15,7 +15,10 @@ fn state_to_diff(state: &PlayerState) -> PlayerStateDiff {
     }
 }
 
-fn diff_player_state(a: &PlayerState, b: &PlayerState) -> PlayerStateDiff {
+fn diff_player_state(
+    a: &PlayerState,
+    b: &PlayerState,
+) -> PlayerStateDiff<AtomicString, Arc<[Track]>> {
     PlayerStateDiff {
         pipeline_state: diff_value(&a.pipeline_state, &b.pipeline_state),
         current_station: diff_arc_with_clone(&a.current_station, &b.current_station).into(),

@@ -4,6 +4,7 @@
 use anyhow::{Context, Result};
 use tokio::sync::mpsc;
 
+mod atomic_string;
 mod config;
 mod keyboard_commands;
 mod log_error;
