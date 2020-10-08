@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 /// Commands from the user
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub enum Command {
@@ -5,10 +7,12 @@ pub enum Command {
     PlayPause,
     PreviousItem,
     NextItem,
+    SeekTo(Duration),
     VolumeUp,
     VolumeDown,
     SetVolume(i32),
     PlayUrl(String),
+    Eject,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -59,20 +63,24 @@ where
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct TrackTags<S: AsRef<str>> {
     pub title: Option<S>,
+    pub organisation: Option<S>,
     pub artist: Option<S>,
     pub album: Option<S>,
     pub genre: Option<S>,
     pub image: Option<S>,
+    pub comment: Option<S>,
 }
 
 impl<S: AsRef<str>> std::default::Default for TrackTags<S> {
     fn default() -> Self {
         Self {
             title: None,
+            organisation: None,
             artist: None,
             album: None,
             genre: None,
             image: None,
+            comment: None,
         }
     }
 }
@@ -110,9 +118,56 @@ pub struct PlayerStateDiff<S: AsRef<str>, TrackList: AsRef<[Track]>> {
     pub current_track_tags: OptionDiff<TrackTags<S>>,
     pub volume: Option<i32>,
     pub buffering: Option<u8>,
+    pub track_duration: Option<Duration>,
+    pub track_position: Option<Duration>,
+}
+
+#[derive(Copy, Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub enum LogLevel {
+    Error,
+    Warn,
+    Info,
+    Debug,
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct LogMessage<S: AsRef<str>> {
+    pub level: LogLevel,
+    pub message: S,
+}
+
+impl<S: AsRef<str>> LogMessage<S> {
+    pub fn error(message: S) -> Self {
+        Self {
+            level: LogLevel::Error,
+            message,
+        }
+    }
+
+    pub fn warn(message: S) -> Self {
+        Self {
+            level: LogLevel::Warn,
+            message,
+        }
+    }
+
+    pub fn info(message: S) -> Self {
+        Self {
+            level: LogLevel::Info,
+            message,
+        }
+    }
+
+    pub fn debug(message: S) -> Self {
+        Self {
+            level: LogLevel::Debug,
+            message,
+        }
+    }
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub enum OutgoingMessage<S: AsRef<str>, T: AsRef<[Track]>> {
     PlayerStateChanged(PlayerStateDiff<S, T>),
+    LogMessage(LogMessage<S>),
 }

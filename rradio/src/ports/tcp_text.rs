@@ -1,10 +1,19 @@
 use anyhow::{Context, Result};
-use futures::StreamExt;
-use tokio::io::AsyncWriteExt;
-use tokio::net::TcpStream;
-use tokio::sync::watch;
+use tokio::{
+    io::AsyncWriteExt,
+    net::TcpStream,
+    stream::StreamExt,
+    sync::{broadcast, watch},
+};
 
-use crate::pipeline::PlayerState;
+use rradio_messages::LogMessage;
+
+use crate::{
+    atomic_string::AtomicString,
+    pipeline::{LogMessageSource, PlayerState},
+};
+
+use super::Message;
 
 struct StreamGuard {
     stream: TcpStream,
@@ -40,7 +49,8 @@ impl std::ops::Drop for StreamGuard {
 
 async fn client_connected(
     stream: TcpStream,
-    mut player_state: watch::Receiver<PlayerState>,
+    player_state: watch::Receiver<PlayerState>,
+    log_message: broadcast::Receiver<LogMessage<AtomicString>>,
 ) -> Result<()> {
     let mut guard = StreamGuard::new(stream);
     let guarded_stream = &mut guard.stream;
@@ -50,12 +60,30 @@ async fn client_connected(
     let init_state_str = format!("{:?}\r\n", super::state_to_diff(&current_state));
     guarded_stream.write_all(init_state_str.as_bytes()).await?;
 
-    while let Some(new_state) = player_state.next().await {
-        let diff = super::diff_player_state(&current_state, &new_state);
-        let diff_state_str = format!("{:?}\r\n", diff);
-        guarded_stream.write_all(diff_state_str.as_bytes()).await?;
+    let player_state = player_state.map(Message::StateUpdate);
+    let log_message = log_message.into_stream().filter_map(|msg| match msg {
+        Ok(msg) => Some(Message::LogMessage(msg)),
+        Err(_) => None,
+    });
 
-        current_state = new_state;
+    pin_utils::pin_mut!(player_state);
+    pin_utils::pin_mut!(log_message);
+
+    let mut messages = player_state.merge(log_message);
+
+    while let Some(new_message) = messages.next().await {
+        let message_to_send = match new_message {
+            Message::StateUpdate(new_state) => {
+                let diff = super::diff_player_state(&current_state, &new_state);
+                let diff_state_str = format!("{:?}\r\n", diff);
+
+                current_state = new_state;
+
+                diff_state_str
+            }
+            Message::LogMessage(message) => format!("{:?}\r\n", message),
+        };
+        guarded_stream.write_all(message_to_send.as_bytes()).await?;
     }
 
     guard.shutdown()?;
@@ -63,7 +91,10 @@ async fn client_connected(
     Ok(())
 }
 
-pub async fn run(player_state: watch::Receiver<PlayerState>) -> Result<()> {
+pub async fn run(
+    player_state: watch::Receiver<PlayerState>,
+    log_message_source: LogMessageSource,
+) -> Result<()> {
     let addr = std::net::Ipv4Addr::LOCALHOST;
     let port = 8080;
     let socket_addr = (addr, port);
@@ -78,6 +109,7 @@ pub async fn run(player_state: watch::Receiver<PlayerState>) -> Result<()> {
         tokio::spawn(crate::log_error::log_error(client_connected(
             stream,
             player_state.clone(),
+            log_message_source.subscribe(),
         )));
     }
 }

@@ -5,8 +5,8 @@ use std::iter::FromIterator;
 
 use anyhow::Result;
 use crossterm::event::{Event, EventStream, KeyCode, KeyEvent};
-use futures::StreamExt;
 use tokio::{
+    stream::StreamExt,
     sync::mpsc,
     time::{self, Duration},
 };

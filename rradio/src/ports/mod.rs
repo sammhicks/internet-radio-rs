@@ -12,6 +12,8 @@ fn state_to_diff(state: &PlayerState) -> PlayerStateDiff<AtomicString, Arc<[Trac
         current_track_tags: state.current_track_tags.as_ref().clone().into(),
         volume: Some(state.volume),
         buffering: Some(state.buffering),
+        track_duration: None,
+        track_position: None,
     }
 }
 
@@ -26,6 +28,8 @@ fn diff_player_state(
             .into(),
         volume: diff_value(&a.volume, &b.volume),
         buffering: diff_value(&a.buffering, &b.buffering),
+        track_duration: None,
+        track_position: None,
     }
 }
 
@@ -43,4 +47,9 @@ fn diff_arc_with_clone<T: Clone>(a: &Arc<T>, b: &Arc<T>) -> Option<T> {
     } else {
         Some(b.as_ref().clone())
     }
+}
+
+enum Message {
+    StateUpdate(PlayerState),
+    LogMessage(rradio_messages::LogMessage<AtomicString>),
 }

@@ -31,10 +31,12 @@ impl std::fmt::Debug for Image {
 #[derive(Debug)]
 pub enum Tag {
     Title(String),
+    Organisation(String),
     Artist(String),
     Album(String),
     Genre(String),
     Image(Image),
+    Comment(String),
     Unknown { name: String, value: String },
 }
 
@@ -42,6 +44,7 @@ impl Tag {
     pub fn from_value(name: &str, value: &SendValue) -> Result<Self> {
         match name {
             "title" => get_value(value, Self::Title),
+            "organisation" | "organization" => get_value(value, Self::Organisation),
             "artist" => get_value(value, Self::Artist),
             "album" => get_value(value, Self::Album),
             "genre" => get_value(value, Self::Genre),
@@ -60,6 +63,7 @@ impl Tag {
 
                 Ok(Self::Image(Image::new(mime_type, readable_mem.as_slice())))
             }
+            "comment" => get_value(value, Self::Comment),
             _ => Ok(Self::Unknown {
                 name: name.into(),
                 value: value_to_string(value)?,

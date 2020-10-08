@@ -42,8 +42,8 @@ fn main() -> Result<()> {
     let (commands_tx, commands_rx) = mpsc::unbounded_channel();
 
     let keyboard_commands_task = keyboard_commands::run(commands_tx, config.input_timeout);
-    let (pipeline_task, player_state_rx) = pipeline::run(config, commands_rx)?;
-    let tcp_task = ports::tcp_text::run(player_state_rx);
+    let (pipeline_task, player_state_rx, log_message_source) = pipeline::run(config, commands_rx)?;
+    let tcp_task = ports::tcp_text::run(player_state_rx, log_message_source);
 
     let mut runtime = tokio::runtime::Runtime::new()?;
     runtime.spawn(pipeline_task);

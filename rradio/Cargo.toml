@@ -21,12 +21,12 @@ anyhow = "1.0"
 base64 = "0.12"
 crossterm =  { version = "0.17", features = ["event-stream"] }
 flexi_logger = { version = "0.15", default_features = false, features = ["textfilter"] }
-futures = "0.3"
 glib = "0.10"
 gstreamer = "0.16"
 gstreamer-sys = "0.9"
 log = { version = "0.4", features = ["std"] }
 m3u = "1.0"
+pin-utils = "0.1"
 pls = "0.2"
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0"

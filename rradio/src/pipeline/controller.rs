@@ -1,9 +1,9 @@
 use anyhow::{Context, Result};
 use std::convert::TryInto;
 use std::sync::Arc;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{broadcast, mpsc, watch};
 
-use rradio_messages::{Command, TrackTags};
+use rradio_messages::{Command, LogMessage, TrackTags};
 
 use super::playbin::{PipelineState, Playbin};
 use crate::{
@@ -12,6 +12,15 @@ use crate::{
     station::{Station, Track},
     tag::Tag,
 };
+
+#[derive(Clone, Debug)]
+pub struct LogMessageSource(broadcast::Sender<LogMessage<AtomicString>>);
+
+impl LogMessageSource {
+    pub fn subscribe(&self) -> broadcast::Receiver<LogMessage<AtomicString>> {
+        self.0.subscribe()
+    }
+}
 
 struct PlaylistState {
     pause_before_playing: Option<std::time::Duration>,
@@ -56,7 +65,8 @@ struct Controller {
     playbin: Playbin,
     current_playlist: Option<PlaylistState>,
     published_state: PlayerState,
-    new_state_tx: Option<watch::Sender<PlayerState>>,
+    new_state_tx: watch::Sender<PlayerState>,
+    log_message_tx: broadcast::Sender<LogMessage<AtomicString>>,
 }
 
 impl Controller {
@@ -115,14 +125,16 @@ impl Controller {
     }
 
     fn broadcast_state_change(&mut self) {
-        if let Some(new_state_tx) = &self.new_state_tx {
-            if new_state_tx
-                .broadcast(self.published_state.clone())
-                .is_err()
-            {
-                self.new_state_tx = None;
-            }
-        }
+        self.new_state_tx
+            .broadcast(self.published_state.clone())
+            .ok();
+    }
+
+    fn broadcast_error_message(&mut self, message: String) {
+        log::error!("{}", message);
+        self.log_message_tx
+            .send(LogMessage::error(message.into()))
+            .ok();
     }
 
     fn handle_volume_change(&mut self, new_volume: i32) {
@@ -171,6 +183,10 @@ impl Controller {
             Command::PlayPause => self.play_pause(),
             Command::PreviousItem => self.goto_previous_track().await,
             Command::NextItem => self.goto_next_track().await,
+            Command::SeekTo(_position) => {
+                log::info!("Ignoring Seek");
+                Ok(())
+            }
             Command::VolumeUp => self
                 .playbin
                 .change_volume(self.config.volume_offset_percent)
@@ -184,6 +200,10 @@ impl Controller {
                 .set_volume(volume)
                 .map(|new_volume| self.handle_volume_change(new_volume)),
             Command::PlayUrl(url) => self.play_station(Station::singleton(url)).await,
+            Command::Eject => {
+                log::info!("Ignoring Eject");
+                Ok(())
+            }
         }
     }
 
@@ -216,12 +236,18 @@ impl Controller {
 
                     match tag {
                         Ok(Tag::Title(title)) => new_tags.title = Some(title.into()),
+                        Ok(Tag::Organisation(organisation)) => {
+                            new_tags.organisation = Some(organisation.into())
+                        }
                         Ok(Tag::Artist(artist)) => new_tags.artist = Some(artist.into()),
                         Ok(Tag::Album(album)) => new_tags.album = Some(album.into()),
                         Ok(Tag::Genre(genre)) => new_tags.genre = Some(genre.into()),
                         Ok(Tag::Image(image)) => new_tags.image = Some(image.into_inner().into()),
-                        Ok(Tag::Unknown { .. }) => (),
-                        Err(err) => log::error!("{:#}", err),
+                        Ok(Tag::Comment(comment)) => new_tags.comment = Some(comment.into()),
+                        Ok(Tag::Unknown { .. }) => {}
+                        Err(err) => {
+                            self.broadcast_error_message(format!("{:#}", err));
+                        }
                     }
                 }
 
@@ -258,15 +284,17 @@ impl Controller {
             }
             MessageView::Error(err) => {
                 let glib_err = err.get_error();
-                if let Some(resource_err) = glib_err.kind::<gstreamer::ResourceError>() {
-                    log::error!("{:?}", resource_err);
-                }
                 let prefix = if glib_err.is::<gstreamer::ResourceError>() {
                     "Resource not found: "
                 } else {
                     ""
                 };
-                anyhow::bail!("{}{} ({:?})", prefix, err.get_error(), err.get_debug());
+                let message: AtomicString =
+                    format!("{}{} ({:?})", prefix, err.get_error(), err.get_debug()).into();
+                self.log_message_tx
+                    .send(LogMessage::error(message.clone()))
+                    .ok();
+                Err(anyhow::Error::msg(message))
             }
             _ => Ok(()),
         }
@@ -285,6 +313,7 @@ pub fn run(
 ) -> Result<(
     impl std::future::Future<Output = ()>,
     watch::Receiver<PlayerState>,
+    LogMessageSource,
 )> {
     gstreamer::init()?;
     let playbin = Playbin::new()?;
@@ -306,12 +335,17 @@ pub fn run(
 
     let (new_state_tx, new_state_rx) = watch::channel(published_state.clone());
 
+    let (log_message_tx, _) = broadcast::channel(16);
+
+    let log_message_source = LogMessageSource(log_message_tx.clone());
+
     let mut controller = Controller {
         config,
         playbin,
         current_playlist: None,
         published_state,
-        new_state_tx: Some(new_state_tx),
+        new_state_tx,
+        log_message_tx,
     };
 
     let task = async move {
@@ -330,11 +364,11 @@ pub fn run(
                     controller.handle_gstreamer_message(&message).await
                 }
             } {
-                log::error!("{:#}", err);
+                controller.broadcast_error_message(format!("{:#}", err));
                 controller.play_error();
             }
         }
     };
 
-    Ok((task, new_state_rx))
+    Ok((task, new_state_rx, log_message_source))
 }
