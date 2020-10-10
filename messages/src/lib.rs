@@ -169,13 +169,29 @@ impl<S: AsRef<str>> LogMessage<S> {
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
-pub enum OutgoingMessage<Version: AsRef<str>, S: AsRef<str>, T: AsRef<[Track]>> {
+pub enum OutgoingMessage<Version: AsRef<str>, S: AsRef<str>, Tracklist: AsRef<[Track]>> {
     ProtocolVersion(Version),
-    PlayerStateChanged(PlayerStateDiff<S, T>),
+    PlayerStateChanged(PlayerStateDiff<S, Tracklist>),
     LogMessage(LogMessage<S>),
 }
 
-pub fn protocol_version_message<S: AsRef<str>, T: AsRef<[Track]>>(
-) -> OutgoingMessage<&'static str, S, T> {
+impl<Version: AsRef<str>, S: AsRef<str>, Tracklist: AsRef<[Track]>>
+    std::convert::From<PlayerStateDiff<S, Tracklist>> for OutgoingMessage<Version, S, Tracklist>
+{
+    fn from(diff: PlayerStateDiff<S, Tracklist>) -> Self {
+        Self::PlayerStateChanged(diff)
+    }
+}
+
+impl<Version: AsRef<str>, S: AsRef<str>, Tracklist: AsRef<[Track]>>
+    std::convert::From<LogMessage<S>> for OutgoingMessage<Version, S, Tracklist>
+{
+    fn from(message: LogMessage<S>) -> Self {
+        Self::LogMessage(message)
+    }
+}
+
+pub fn protocol_version_message<S: AsRef<str>, TrackList: AsRef<[Track]>>(
+) -> OutgoingMessage<&'static str, S, TrackList> {
     OutgoingMessage::ProtocolVersion(VERSION)
 }

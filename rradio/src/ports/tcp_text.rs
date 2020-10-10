@@ -1,10 +1,10 @@
 use std::fmt::{Debug, Display, Formatter};
 
 use anyhow::{Context, Result};
+use futures::StreamExt;
 use tokio::{
     io::AsyncWriteExt,
     net::TcpStream,
-    stream::StreamExt,
     sync::{broadcast, watch},
 };
 
@@ -15,7 +15,7 @@ use crate::{
     pipeline::{LogMessageSource, PlayerState},
 };
 
-use super::Message;
+use super::IncomingMessage;
 
 struct StreamGuard {
     stream: TcpStream,
@@ -166,20 +166,22 @@ async fn client_connected(
 
     write_diff(guarded_stream, super::state_to_diff(&current_state)).await?;
 
-    let player_state = player_state.map(Message::StateUpdate);
-    let log_message = log_message.into_stream().filter_map(|msg| match msg {
-        Ok(msg) => Some(Message::LogMessage(msg)),
-        Err(_) => None,
+    let player_state = player_state.map(IncomingMessage::StateUpdate);
+    let log_message = log_message.into_stream().filter_map(|msg| async {
+        match msg {
+            Ok(msg) => Some(IncomingMessage::LogMessage(msg)),
+            Err(_) => None,
+        }
     });
 
     pin_utils::pin_mut!(player_state);
     pin_utils::pin_mut!(log_message);
 
-    let mut messages = player_state.merge(log_message);
+    let mut incoming_messages = futures::stream::select(player_state, log_message);
 
-    while let Some(new_message) = messages.next().await {
+    while let Some(new_message) = incoming_messages.next().await {
         match new_message {
-            Message::StateUpdate(new_state) => {
+            IncomingMessage::StateUpdate(new_state) => {
                 write_diff(
                     guarded_stream,
                     super::diff_player_state(&current_state, &new_state),
@@ -188,7 +190,7 @@ async fn client_connected(
 
                 current_state = new_state;
             }
-            Message::LogMessage(message) => {
+            IncomingMessage::LogMessage(message) => {
                 guarded_stream
                     .write_all(
                         format!("{}{:?}", crossterm::cursor::MoveTo(0, 0), message).as_bytes(),

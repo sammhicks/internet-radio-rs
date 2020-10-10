@@ -349,13 +349,13 @@ pub fn run(
     };
 
     let task = async move {
-        use tokio::stream::StreamExt;
+        use futures::StreamExt;
 
         let commands = commands.map(Message::Command);
 
         let bus_stream = bus.stream().map(Message::GStreamerMessage);
 
-        let mut messages = commands.merge(bus_stream);
+        let mut messages = futures::stream::select(commands, bus_stream);
 
         while let Some(message) = messages.next().await {
             if let Err(err) = match message {

@@ -1,11 +1,19 @@
+mod shutdown;
 pub mod tcp_text;
+
+#[cfg(feature = "web")]
+pub mod web;
+
+pub use shutdown::Signal as ShutdownSignal;
 
 use std::sync::Arc;
 
 use crate::{atomic_string::AtomicString, pipeline::PlayerState};
 use rradio_messages::{PlayerStateDiff, Track};
 
-fn state_to_diff(state: &PlayerState) -> PlayerStateDiff<AtomicString, Arc<[Track]>> {
+type TrackList = Arc<[Track]>;
+
+fn state_to_diff(state: &PlayerState) -> PlayerStateDiff<AtomicString, TrackList> {
     PlayerStateDiff {
         pipeline_state: Some(state.pipeline_state),
         current_station: state.current_station.as_ref().clone().into(),
@@ -17,10 +25,7 @@ fn state_to_diff(state: &PlayerState) -> PlayerStateDiff<AtomicString, Arc<[Trac
     }
 }
 
-fn diff_player_state(
-    a: &PlayerState,
-    b: &PlayerState,
-) -> PlayerStateDiff<AtomicString, Arc<[Track]>> {
+fn diff_player_state(a: &PlayerState, b: &PlayerState) -> PlayerStateDiff<AtomicString, TrackList> {
     PlayerStateDiff {
         pipeline_state: diff_value(&a.pipeline_state, &b.pipeline_state),
         current_station: diff_arc_with_clone(&a.current_station, &b.current_station).into(),
@@ -49,7 +54,7 @@ fn diff_arc_with_clone<T: Clone>(a: &Arc<T>, b: &Arc<T>) -> Option<T> {
     }
 }
 
-enum Message {
+enum IncomingMessage {
     StateUpdate(PlayerState),
     LogMessage(rradio_messages::LogMessage<AtomicString>),
 }

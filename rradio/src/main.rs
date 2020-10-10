@@ -41,15 +41,37 @@ fn main() -> Result<()> {
 
     let (commands_tx, commands_rx) = mpsc::unbounded_channel();
 
-    let keyboard_commands_task = keyboard_commands::run(commands_tx, config.input_timeout);
+    let keyboard_commands_task = keyboard_commands::run(commands_tx.clone(), config.input_timeout);
     let (pipeline_task, player_state_rx, log_message_source) = pipeline::run(config, commands_rx)?;
-    let tcp_task = ports::tcp_text::run(player_state_rx, log_message_source);
+    let tcp_task = ports::tcp_text::run(player_state_rx.clone(), log_message_source.clone());
+    #[cfg(feature = "web")]
+    let (web_task, shutdown) = {
+        let shutdown = ports::ShutdownSignal::new();
+
+        let task = ports::web::run(
+            commands_tx.clone(),
+            player_state_rx.clone(),
+            log_message_source.clone(),
+            shutdown.wait(),
+        );
+
+        (task, shutdown)
+    };
+
+    drop(commands_tx);
+    drop(player_state_rx);
+    drop(log_message_source);
 
     let mut runtime = tokio::runtime::Runtime::new()?;
     runtime.spawn(pipeline_task);
     runtime.spawn(log_error::log_error(tcp_task));
+    #[cfg(feature = "web")]
+    runtime.spawn(web_task);
 
     runtime.block_on(log_error::log_error(keyboard_commands_task));
+
+    #[cfg(feature = "web")]
+    drop(shutdown);
 
     drop(runtime);
 
