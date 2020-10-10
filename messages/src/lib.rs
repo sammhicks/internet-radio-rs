@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 /// Commands from the user
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub enum Command {
@@ -167,7 +169,13 @@ impl<S: AsRef<str>> LogMessage<S> {
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
-pub enum OutgoingMessage<S: AsRef<str>, T: AsRef<[Track]>> {
+pub enum OutgoingMessage<Version: AsRef<str>, S: AsRef<str>, T: AsRef<[Track]>> {
+    ProtocolVersion(Version),
     PlayerStateChanged(PlayerStateDiff<S, T>),
     LogMessage(LogMessage<S>),
+}
+
+pub fn protocol_version_message<S: AsRef<str>, T: AsRef<[Track]>>(
+) -> OutgoingMessage<&'static str, S, T> {
+    OutgoingMessage::ProtocolVersion(VERSION)
 }
