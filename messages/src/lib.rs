@@ -26,6 +26,24 @@ pub enum PipelineState {
     Playing,
 }
 
+impl Default for PipelineState {
+    fn default() -> Self {
+        Self::VoidPending
+    }
+}
+
+impl std::fmt::Display for PipelineState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.pad(match self {
+            Self::VoidPending => "VoidPending",
+            Self::Null => "Null",
+            Self::Ready => "Ready",
+            Self::Paused => "Paused",
+            Self::Playing => "Playing",
+        })
+    }
+}
+
 #[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct Track {
     pub title: Option<String>,
