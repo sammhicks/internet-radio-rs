@@ -60,7 +60,7 @@ fn main() -> Result<()> {
     let lcd_screen_runtime_handle = runtime_handle.clone();
 
     runtime_handle
-        .spawn_blocking(move || lcd_screen::run(lcd_screen_runtime_handle, player_state_rx));
+        .spawn_blocking(move || lcd_screen::run(&lcd_screen_runtime_handle, player_state_rx));
 
     let main_task = futures::future::select_all(vec![
         keyboard_commands_task.boxed(),

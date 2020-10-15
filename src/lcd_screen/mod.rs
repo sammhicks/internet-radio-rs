@@ -4,6 +4,7 @@ use clerk::{DataPins4Lines, Pins};
 use std::fs::File;
 use std::io::prelude::*;
 use tokio::{runtime, sync::watch};
+extern crate hex;
 
 mod character_pattern;
 
@@ -15,8 +16,8 @@ enum LCDLineNumbers {
 }
 
 impl LCDLineNumbers {
-    const NUM_CHARACTERS_PER_LINE: u8 = 20;
-    const ROW_OFFSET: u8 = 0x40;
+    const NUM_CHARACTERS_PER_LINE: u8 = 20; //the display is visually 20 * 4 characters
+    const ROW_OFFSET: u8 = 0x40; //specified by the chip
 
     fn offset(self) -> u8 {
         match self {
@@ -143,13 +144,13 @@ impl PinDeclarations {
     }
 }
 
-pub fn run(handle: runtime::Handle, player_state: watch::Receiver<PlayerState>) {
+pub fn run(handle: &runtime::Handle, player_state: watch::Receiver<PlayerState>) {
     if let Err(err) = try_run(handle, player_state) {
         log::error!("{:?}", err);
     }
 }
 
-fn try_run(handle: runtime::Handle, mut player_state: watch::Receiver<PlayerState>) -> Result<()> {
+fn try_run(handle: &runtime::Handle, mut player_state: watch::Receiver<PlayerState>) -> Result<()> {
     log::info!("Hello World from lcd_screen");
 
     let pins_src = std::fs::read_to_string("/boot/wiring_pins.toml")
@@ -178,8 +179,12 @@ fn try_run(handle: runtime::Handle, mut player_state: watch::Receiver<PlayerStat
         lcd.write(octet as u8)
     }
 
+    println!("local IP address {}\r", get_local_ip_address());
+
+    println!("router address {:?}\r", get_gateway_address());
+
     while let Some(next_state) = handle.block_on(player_state.recv()) {
-        log::info!("{:?}", next_state.current_track);
+        log::info!("next_state.current_track{:?}", next_state.current_track);
 
         lcd.seek(clerk::SeekFrom::Home(
             LCDLineNumbers::Line1.offset() + LCDLineNumbers::NUM_CHARACTERS_PER_LINE - 7,
@@ -247,7 +252,7 @@ fn try_run(handle: runtime::Handle, mut player_state: watch::Receiver<PlayerStat
 fn get_cpu_temperature() -> i32 {
     let mut file = File::open("/sys/class/thermal/thermal_zone0/temp").unwrap_or_else(|error| {
         panic!(
-            "Problem opening the CPU temperature pseduo-file: {:?}",
+            "Problem opening the CPU temperature pseudo-file: {:?}",
             error
         );
     });
@@ -261,7 +266,68 @@ fn get_cpu_temperature() -> i32 {
                 .trim() //to get rid of the terminator
                 .parse()
                 .expect("CPU temperature was non-numeric");
-            return milli_temp / 1000; //divie by 1000 to convert to C from milli-C and return the temperature
+            return milli_temp / 1000; //divide by 1000 to convert to C from milli-C and return the temperature
         }
     };
+}
+fn get_local_ip_address() -> String {
+    let mut return_value: String = String::from("bad Local IP address");
+    for iface in pnet::datalink::interfaces() {
+        if iface.is_up() && !iface.is_loopback() && iface.ips.len() > 0 {
+            // this if statement filters off the loopback address & addresses that do not have an IP address
+            for ipaddr in &iface.ips {
+                let ip4addr = match ipaddr {
+                    pnet::ipnetwork::IpNetwork::V4(addr) => addr.ip(), // filters off the "/24" at the end of the IP address
+                    pnet::ipnetwork::IpNetwork::V6(_) => continue,
+                };
+                return_value = ip4addr.to_string();
+            }
+        }
+    }
+    return_value
+}
+pub fn get_gateway_address() -> Result<String, String> {
+    let buffered_file = std::io::BufReader::new(
+        std::fs::File::open("/proc/net/route")
+            .with_context(|| format!("Couldn't open the file to get the address of the router"))
+            .unwrap(),
+    );
+    for one_line_or_error in buffered_file.lines() {
+        if let Ok(one_line) = one_line_or_error {
+            let mut found_tab = false;
+            let mut found_all_destination = false;
+            let mut gateway_adress_string = String::new();
+            for character in one_line.chars() {
+                if character == '\t' && !found_tab {
+                    found_tab = true
+                } else if found_tab && !found_all_destination {
+                    if character == '0' { //still iterating over the destination, which must be all zeroes
+                    } else if character == '\t' {
+                        found_all_destination = true;
+                    }
+                } else if found_all_destination && character.is_digit(16) {
+                    gateway_adress_string.push(character);
+                } else if found_all_destination {
+                    if gateway_adress_string.len() != 8
+                        || gateway_adress_string == "00000000".to_string()
+                    {
+                        break;
+                    } // not a gateway address
+
+                    let gateway_address_vec = hex::decode(&gateway_adress_string).unwrap();
+                    let gateway_address = format!(
+                        "{}.{}.{}.{}",
+                        gateway_address_vec[3],
+                        gateway_address_vec[2],
+                        gateway_address_vec[1],
+                        gateway_address_vec[0]
+                    );
+                    return Ok(gateway_address);
+                }
+            }
+        } else {
+            return Err("Failed to read the router address".to_string());
+        }
+    }
+    return Err("Could  not find the router address".to_string());
 }
