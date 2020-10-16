@@ -33,7 +33,7 @@ pub enum Tag {
 }
 
 impl Tag {
-    pub fn from_value(name: &str, value: &SendValue) -> Result<Self> {
+    pub fn from_value(name: &str, value: &SendValue) -> Result<Option<Self>> {
         match name {
             "title" => get_value(value, Self::Title),
             "artist" => get_value(value, Self::Artist),
@@ -52,22 +52,33 @@ impl Tag {
 
                 let mime_type = caps.get_structure(0).context("No Cap 0")?.get_name();
 
-                Ok(Self::Image(Image::new(mime_type, readable_mem.as_slice())))
+                Ok(Some(Self::Image(Image::new(
+                    mime_type,
+                    readable_mem.as_slice(),
+                ))))
             }
-            _ => Ok(Self::Unknown {
+            "container-format" | "has-crc" | "channel-mode" | "audio-codec" | "minimum-bitrate"
+            | "maximum-bitrate" | "bitrate" => {
+                log::trace!("Ignoring tag: {}", name);
+                Ok(None)
+            }
+            _ => Ok(Some(Self::Unknown {
                 name: name.into(),
                 value: value_to_string(value)?,
-            }),
+            })),
         }
     }
 }
 
-fn get_value<'v, T, F>(value: &'v SendValue, builder: F) -> Result<Tag>
+fn get_value<'v, T, F>(value: &'v SendValue, builder: F) -> Result<Option<Tag>>
 where
     T: glib::value::FromValueOptional<'v>,
     F: FnOnce(T) -> Tag,
 {
-    value.get()?.context("No Value").map(builder)
+    value
+        .get()?
+        .context("No Value")
+        .map(|tag| Some(builder(tag)))
 }
 
 pub fn value_to_string(value: &Value) -> Result<String> {

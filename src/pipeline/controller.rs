@@ -180,7 +180,14 @@ impl Controller {
             MessageView::Tag(tag) => {
                 let mut new_tags = crate::message::TrackTags::default();
                 for (i, (name, value)) in tag.get_tags().as_ref().iter().enumerate() {
-                    let tag = Tag::from_value(name, &value);
+                    let tag = match Tag::from_value(name, &value) {
+                        Ok(Some(tag)) => tag,
+                        Ok(None) => continue,
+                        Err(err) => {
+                            log::error!("{:?}", err);
+                            continue;
+                        }
+                    };
 
                     log::debug!(
                         target: concat!(module_path!(), "::tag"),
@@ -190,13 +197,12 @@ impl Controller {
                     );
 
                     match tag {
-                        Ok(Tag::Title(title)) => new_tags.title = Some(title),
-                        Ok(Tag::Artist(artist)) => new_tags.artist = Some(artist),
-                        Ok(Tag::Album(album)) => new_tags.album = Some(album),
-                        Ok(Tag::Genre(genre)) => new_tags.genre = Some(genre),
-                        Ok(Tag::Image(image)) => new_tags.image = Some(image.unwrap()),
-                        Ok(Tag::Unknown { .. }) => (),
-                        Err(err) => log::error!("{:?}", err),
+                        Tag::Title(title) => new_tags.title = Some(title),
+                        Tag::Artist(artist) => new_tags.artist = Some(artist),
+                        Tag::Album(album) => new_tags.album = Some(album),
+                        Tag::Genre(genre) => new_tags.genre = Some(genre),
+                        Tag::Image(image) => new_tags.image = Some(image.unwrap()),
+                        Tag::Unknown { .. } => (),
                     }
                 }
                 let should_display_tags = self

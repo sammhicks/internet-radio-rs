@@ -81,6 +81,17 @@ impl Playbin {
         self.0
             .set_property("uri", &glib::Value::from(url))
             .with_context(|| format!("Unable to set the playbin url to `{}`", url))?;
+
+        let buffer_duration_ns: i64 = 40_000_000_000;
+        self.0
+            .set_property("buffer-duration", &buffer_duration_ns)
+            .with_context(|| {
+                format!(
+                    "Unable to set the buffer duration to {}ns",
+                    buffer_duration_ns
+                )
+            })?;
+
         self.set_pipeline_state(State::Playing)?;
         Ok(())
     }

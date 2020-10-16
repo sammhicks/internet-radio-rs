@@ -287,47 +287,37 @@ fn get_local_ip_address() -> String {
     return_value
 }
 pub fn get_gateway_address() -> Result<String, String> {
-    let buffered_file = std::io::BufReader::new(
-        std::fs::File::open("/proc/net/route")
-            .with_context(|| format!("Couldn't open the file to get the address of the router"))
-            .unwrap(),
-    );
-    for one_line_or_error in buffered_file.lines() {
-        if let Ok(one_line) = one_line_or_error {
-            let mut found_tab = false;
-            let mut found_all_destination = false;
-            let mut gateway_adress_string = String::new();
-            for character in one_line.chars() {
-                if character == '\t' && !found_tab {
-                    found_tab = true
-                } else if found_tab && !found_all_destination {
-                    if character == '0' { //still iterating over the destination, which must be all zeroes
-                    } else if character == '\t' {
-                        found_all_destination = true;
+    /* example contents of file are shown below. If the destination is 0, the address given as the gateway is what we are looking for, but byte reversed
+       Iface   Destination     Gateway         Flags   RefCnt  Use     Metric  Mask            MTU     Window  IRTT
+       wlan0   00000000        0200A8C0        0003    0       0       303     00000000        0       0       0
+       wlan0   0000A8C0        00000000        0001    0       0       303     00FFFFFF        0       0       0
+    */
+    if let Ok(file) = File::open("/proc/net/route") {
+        let buffered_file = std::io::BufReader::new(file);
+        for one_line_or_error in buffered_file.lines() {
+            if let Ok(one_line) = one_line_or_error {
+                let line_one_elements: Vec<&str> = one_line.split('\t').collect();
+                if line_one_elements.len() > 100 && line_one_elements[1] == "00000000" {
+                    match hex::decode(line_one_elements[2]) {
+                        Ok(gateway_address_vec) => {
+                            let gateway_address = format!(
+                                "{}.{}.{}.{}",
+                                gateway_address_vec[3],
+                                gateway_address_vec[2],
+                                gateway_address_vec[1],
+                                gateway_address_vec[0]
+                            );
+                            return Ok(gateway_address);
+                        }
+                        Err(_) => return Err("Router address not hex digits".to_string()),
                     }
-                } else if found_all_destination && character.is_digit(16) {
-                    gateway_adress_string.push(character);
-                } else if found_all_destination {
-                    if gateway_adress_string.len() != 8
-                        || gateway_adress_string == "00000000".to_string()
-                    {
-                        break;
-                    } // not a gateway address
-
-                    let gateway_address_vec = hex::decode(&gateway_adress_string).unwrap();
-                    let gateway_address = format!(
-                        "{}.{}.{}.{}",
-                        gateway_address_vec[3],
-                        gateway_address_vec[2],
-                        gateway_address_vec[1],
-                        gateway_address_vec[0]
-                    );
-                    return Ok(gateway_address);
                 }
+            } else {
+                return Err("Failed to read the router address".to_string());
             }
-        } else {
-            return Err("Failed to read the router address".to_string());
         }
+        return Err("Could  not find the router address".to_string());
+    } else {
+        return Err("Couldn't open the file to get the address of the router".to_string());
     }
-    return Err("Could  not find the router address".to_string());
 }
