@@ -31,8 +31,8 @@ log = { version = "0.4", features = ["std"] }
 m3u = "1.0"
 pin-utils = "0.1"
 pls = "0.2"
+rmp-serde = "0.14"
 serde = { version = "1.0", features = ["derive", "rc"] }
-serde_json = "1.0"
 thiserror = "1.0"
 tokio = { version = "0.2", features = [ "io-util", "macros", "rt-threaded", "stream", "sync", "tcp", "time"] }
 toml = "0.5"

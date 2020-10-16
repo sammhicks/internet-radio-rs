@@ -65,7 +65,7 @@ pub async fn run(
                             .with(|message: OutgoingMessage| async move {
                                 match message {
                                     OutgoingMessage::OutgoingMessage(message) => {
-                                        serde_json::to_string(&message).map(warp::ws::Message::text)
+                                        rmp_serde::to_vec(&message).map(warp::ws::Message::binary)
                                     }
                                     OutgoingMessage::Pong(pong) => {
                                         Ok(warp::ws::Message::binary(pong))
@@ -106,19 +106,16 @@ pub async fn run(
                                     continue;
                                 }
 
-                                let message = match message.to_str() {
-                                    Ok(m) => m,
-                                    Err(_) => continue,
-                                };
-                                let command: Command = match serde_json::from_str(message)
-                                    .context("Command not encoded using JSON")
-                                {
-                                    Ok(c) => c,
-                                    Err(err) => {
-                                        log::error!("{:#}", err);
-                                        continue;
-                                    }
-                                };
+                                let command: Command =
+                                    match rmp_serde::from_slice(message.as_bytes())
+                                        .context("Command not encoded using MsgPack")
+                                    {
+                                        Ok(c) => c,
+                                        Err(err) => {
+                                            log::error!("{:#}", err);
+                                            continue;
+                                        }
+                                    };
 
                                 if commands.send(command).is_err() {
                                     break;

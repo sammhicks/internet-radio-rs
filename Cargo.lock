@@ -1246,6 +1246,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmp"
+version = "0.8.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f10b46df14cf1ee1ac7baa4d2fbc2c52c0622a4b82fa8740e37bc452ac0184f"
+dependencies = [
+ "byteorder",
+ "num-traits",
+]
+
+[[package]]
+name = "rmp-serde"
+version = "0.14.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4ce7d70c926fe472aed493b902010bccc17fa9f7284145cb8772fd22fdb052d8"
+dependencies = [
+ "byteorder",
+ "rmp",
+ "serde",
+]
+
+[[package]]
 name = "rradio"
 version = "0.11.1"
 dependencies = [
@@ -1262,9 +1283,9 @@ dependencies = [
  "m3u",
  "pin-utils",
  "pls",
+ "rmp-serde",
  "rradio-messages",
  "serde",
- "serde_json",
  "thiserror",
  "tokio",
  "toml",
