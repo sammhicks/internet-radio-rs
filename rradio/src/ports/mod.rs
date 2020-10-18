@@ -1,4 +1,6 @@
 mod shutdown;
+pub mod tcp_msgpack;
+mod tcp_stream_guard;
 pub mod tcp_text;
 
 #[cfg(feature = "web")]
@@ -13,7 +15,7 @@ use rradio_messages::{PlayerStateDiff, Track};
 
 type TrackList = Arc<[Track]>;
 
-fn state_to_diff(state: &PlayerState) -> PlayerStateDiff<AtomicString, TrackList> {
+fn player_state_to_diff(state: &PlayerState) -> PlayerStateDiff<AtomicString, TrackList> {
     PlayerStateDiff {
         pipeline_state: Some(state.pipeline_state),
         current_station: state.current_station.as_ref().clone().into(),
@@ -54,7 +56,7 @@ fn diff_arc_with_clone<T: Clone>(a: &Arc<T>, b: &Arc<T>) -> Option<T> {
     }
 }
 
-enum IncomingMessage {
+enum Event {
     StateUpdate(PlayerState),
     LogMessage(rradio_messages::LogMessage<AtomicString>),
 }

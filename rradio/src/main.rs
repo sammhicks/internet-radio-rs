@@ -43,7 +43,12 @@ fn main() -> Result<()> {
 
     let keyboard_commands_task = keyboard_commands::run(commands_tx.clone(), config.input_timeout);
     let (pipeline_task, player_state_rx, log_message_source) = pipeline::run(config, commands_rx)?;
-    let tcp_task = ports::tcp_text::run(player_state_rx.clone(), log_message_source.clone());
+    let tcp_text_task = ports::tcp_text::run(player_state_rx.clone(), log_message_source.clone());
+    let tcp_msgpack_task = ports::tcp_msgpack::run(
+        commands_tx.clone(),
+        player_state_rx.clone(),
+        log_message_source.clone(),
+    );
     #[cfg(feature = "web")]
     let (web_task, shutdown) = {
         let shutdown = ports::ShutdownSignal::new();
@@ -64,7 +69,8 @@ fn main() -> Result<()> {
 
     let mut runtime = tokio::runtime::Runtime::new()?;
     runtime.spawn(pipeline_task);
-    runtime.spawn(log_error::log_error(tcp_task));
+    runtime.spawn(log_error::log_error(tcp_text_task));
+    runtime.spawn(log_error::log_error(tcp_msgpack_task));
     #[cfg(feature = "web")]
     runtime.spawn(web_task);
 

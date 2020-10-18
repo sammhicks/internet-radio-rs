@@ -11,7 +11,7 @@ use crate::atomic_string::AtomicString;
 use crate::log_error::log_error;
 use crate::pipeline::{LogMessageSource, PlayerState};
 
-use super::IncomingMessage;
+use super::Event;
 
 trait ToDebugString {
     fn to_debug_string(&self) -> String;
@@ -86,7 +86,7 @@ pub async fn run(
 
                         ws_tx
                             .send(OutgoingMessage::OutgoingMessage(
-                                super::state_to_diff(&current_state).into(),
+                                super::player_state_to_diff(&current_state).into(),
                             ))
                             .await?;
 
@@ -125,10 +125,10 @@ pub async fn run(
                             Ok(())
                         }));
 
-                        let player_state = player_state.map(IncomingMessage::StateUpdate);
+                        let player_state = player_state.map(Event::StateUpdate);
                         let log_message = log_message.into_stream().filter_map(|msg| async {
                             match msg {
-                                Ok(msg) => Some(IncomingMessage::LogMessage(msg)),
+                                Ok(msg) => Some(Event::LogMessage(msg)),
                                 Err(_) => None,
                             }
                         });
@@ -149,10 +149,7 @@ pub async fn run(
                             )
                             .await
                             {
-                                Either::Left((
-                                    Some(IncomingMessage::StateUpdate(new_state)),
-                                    _,
-                                )) => {
+                                Either::Left((Some(Event::StateUpdate(new_state)), _)) => {
                                     let diff = super::diff_player_state(&current_state, &new_state);
                                     ws_tx
                                         .send(OutgoingMessage::OutgoingMessage(diff.into()))
@@ -160,10 +157,7 @@ pub async fn run(
 
                                     current_state = new_state;
                                 }
-                                Either::Left((
-                                    Some(IncomingMessage::LogMessage(log_message)),
-                                    _,
-                                )) => {
+                                Either::Left((Some(Event::LogMessage(log_message)), _)) => {
                                     ws_tx
                                         .send(OutgoingMessage::OutgoingMessage(log_message.into()))
                                         .await?;

@@ -15,39 +15,7 @@ use crate::{
     pipeline::{LogMessageSource, PlayerState},
 };
 
-use super::IncomingMessage;
-
-struct StreamGuard {
-    stream: TcpStream,
-    is_shutdown: bool,
-}
-
-impl StreamGuard {
-    fn new(stream: TcpStream) -> Self {
-        Self {
-            stream,
-            is_shutdown: false,
-        }
-    }
-
-    fn shutdown(&mut self) -> Result<()> {
-        if std::mem::replace(&mut self.is_shutdown, true) {
-            Ok(())
-        } else {
-            self.stream
-                .shutdown(std::net::Shutdown::Both)
-                .context("Could not shutdown tcp stream")
-        }
-    }
-}
-
-impl std::ops::Drop for StreamGuard {
-    fn drop(&mut self) {
-        if let Err(err) = self.shutdown() {
-            log::error!("{:?}", err)
-        }
-    }
-}
+use super::{tcp_stream_guard::StreamGuard, Event};
 
 fn clear_lines(f: &mut Formatter, row: u16, count: u16) -> std::fmt::Result {
     use crossterm::terminal;
@@ -149,7 +117,7 @@ async fn client_connected(
     log_message: broadcast::Receiver<LogMessage<AtomicString>>,
 ) -> Result<()> {
     let mut guard = StreamGuard::new(stream);
-    let guarded_stream = &mut guard.stream;
+    let guarded_stream = guard.as_mut();
 
     guarded_stream
         .write_all(
@@ -164,24 +132,23 @@ async fn client_connected(
 
     let mut current_state = (*player_state.borrow()).clone();
 
-    write_diff(guarded_stream, super::state_to_diff(&current_state)).await?;
+    write_diff(guarded_stream, super::player_state_to_diff(&current_state)).await?;
 
-    let player_state = player_state.map(IncomingMessage::StateUpdate);
+    let player_state = player_state.map(Event::StateUpdate);
     let log_message = log_message.into_stream().filter_map(|msg| async {
         match msg {
-            Ok(msg) => Some(IncomingMessage::LogMessage(msg)),
+            Ok(msg) => Some(Event::LogMessage(msg)),
             Err(_) => None,
         }
     });
 
-    pin_utils::pin_mut!(player_state);
     pin_utils::pin_mut!(log_message);
 
-    let mut incoming_messages = futures::stream::select(player_state, log_message);
+    let mut events = futures::stream::select(player_state, log_message);
 
-    while let Some(new_message) = incoming_messages.next().await {
-        match new_message {
-            IncomingMessage::StateUpdate(new_state) => {
+    while let Some(event) = events.next().await {
+        match event {
+            Event::StateUpdate(new_state) => {
                 write_diff(
                     guarded_stream,
                     super::diff_player_state(&current_state, &new_state),
@@ -190,7 +157,7 @@ async fn client_connected(
 
                 current_state = new_state;
             }
-            IncomingMessage::LogMessage(message) => {
+            Event::LogMessage(message) => {
                 guarded_stream
                     .write_all(
                         format!("{}{:?}", crossterm::cursor::MoveTo(0, 0), message).as_bytes(),
@@ -210,7 +177,7 @@ pub async fn run(
     log_message_source: LogMessageSource,
 ) -> Result<()> {
     let addr = std::net::Ipv4Addr::LOCALHOST;
-    let port = 8080;
+    let port = 8001;
     let socket_addr = (addr, port);
 
     let mut listener = tokio::net::TcpListener::bind(socket_addr)
