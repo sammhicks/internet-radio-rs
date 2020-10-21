@@ -1,12 +1,13 @@
 mod shutdown;
 pub mod tcp_msgpack;
-mod tcp_stream_guard;
 pub mod tcp_text;
+mod wait_group;
 
 #[cfg(feature = "web")]
 pub mod web;
 
 pub use shutdown::Signal as ShutdownSignal;
+pub use wait_group::{Handle as WaitGroupHandle, WaitGroup};
 
 use std::sync::Arc;
 

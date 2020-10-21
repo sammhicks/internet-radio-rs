@@ -1,17 +1,20 @@
-use std::future::Future;
-
 use anyhow::{Context, Result};
-use futures::{future::Either, SinkExt, StreamExt};
-use tokio::sync::{broadcast, mpsc, watch};
+use futures::{SinkExt, StreamExt};
+use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use warp::Filter;
 
 use rradio_messages::{Command, LogMessage};
 
 use crate::atomic_string::AtomicString;
-use crate::log_error::log_error;
 use crate::pipeline::{LogMessageSource, PlayerState};
 
-use super::Event;
+use super::{Event, ShutdownSignal};
+
+type OutgoingMessage = rradio_messages::OutgoingMessage<
+    &'static str,
+    crate::atomic_string::AtomicString,
+    super::TrackList,
+>;
 
 trait ToDebugString {
     fn to_debug_string(&self) -> String;
@@ -23,39 +26,43 @@ impl<T: std::fmt::Debug> ToDebugString for T {
     }
 }
 
-enum OutgoingMessage {
-    OutgoingMessage(
-        rradio_messages::OutgoingMessage<
-            &'static str,
-            crate::atomic_string::AtomicString,
-            super::TrackList,
-        >,
-    ),
-    Pong(Vec<u8>),
-}
-
 #[allow(clippy::too_many_lines)]
 pub async fn run(
     commands: mpsc::UnboundedSender<Command>,
     player_state: watch::Receiver<PlayerState>,
     log_message: LogMessageSource,
-    shutdown: impl Future<Output = ()> + Send + 'static,
+    shutdown_signal: ShutdownSignal,
 ) -> Result<()> {
     let commands = warp::any().map(move || commands.clone());
     let player_state = warp::any().map(move || player_state.clone());
     let log_message = warp::any().map(move || log_message.subscribe());
+    let ws_shutdown_signal = {
+        let shutdown_signal = shutdown_signal.clone();
+        warp::any().map(move || shutdown_signal.clone())
+    };
+
+    let wait_group = super::wait_group::WaitGroup::new();
+
+    let wait_handle = {
+        let handle = wait_group.clone_handle();
+        warp::any().map(move || handle.clone())
+    };
 
     let events = warp::ws()
         .and(commands)
         .and(player_state)
         .and(log_message)
+        .and(ws_shutdown_signal)
+        .and(wait_handle)
         .map(
             |ws: warp::ws::Ws,
              commands: mpsc::UnboundedSender<Command>,
              player_state: watch::Receiver<PlayerState>,
-             log_message: broadcast::Receiver<LogMessage<AtomicString>>| {
+             log_message: broadcast::Receiver<LogMessage<AtomicString>>,
+             shutdown_signal: ShutdownSignal,
+             wait_handle: super::wait_group::Handle| {
                 ws.on_upgrade(|websocket| {
-                    log_error(async move {
+                    crate::log_error::log_error(async move {
                         let (ws_tx, mut ws_rx) = websocket.split();
 
                         let ws_tx = ws_tx
@@ -63,67 +70,46 @@ pub async fn run(
                                 anyhow::Error::new(err).context("Could not send Websocket Message")
                             })
                             .with(|message: OutgoingMessage| async move {
-                                match message {
-                                    OutgoingMessage::OutgoingMessage(message) => {
-                                        rmp_serde::to_vec(&message).map(warp::ws::Message::binary)
-                                    }
-                                    OutgoingMessage::Pong(pong) => {
-                                        Ok(warp::ws::Message::binary(pong))
-                                    }
-                                }
-                                .map_err(anyhow::Error::new)
+                                rmp_serde::to_vec(&message)
+                                    .map(warp::ws::Message::binary)
+                                    .map_err(anyhow::Error::new)
                             });
 
                         pin_utils::pin_mut!(ws_tx);
 
                         ws_tx
-                            .send(OutgoingMessage::OutgoingMessage(
-                                rradio_messages::protocol_version_message(),
-                            ))
+                            .send(rradio_messages::protocol_version_message())
                             .await?;
 
                         let mut current_state = (*player_state.borrow()).clone();
 
                         ws_tx
-                            .send(OutgoingMessage::OutgoingMessage(
-                                super::player_state_to_diff(&current_state).into(),
-                            ))
+                            .send(super::player_state_to_diff(&current_state).into())
                             .await?;
 
-                        let (mut tx, mut rx) = mpsc::channel(1);
+                        let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
 
-                        tokio::spawn(log_error(async move {
+                        wait_handle.spawn_task(async move {
                             while let Some(message) = ws_rx.next().await {
                                 let message = message?;
 
                                 if message.is_close() {
-                                    log::info!("Close message received");
+                                    log::debug!("Close message received");
                                     break;
                                 }
 
-                                if message.is_ping() {
-                                    tx.send(message.into_bytes()).await.ok();
-                                    continue;
-                                }
-
-                                let command: Command =
-                                    match rmp_serde::from_slice(message.as_bytes())
-                                        .context("Command not encoded using MsgPack")
-                                    {
-                                        Ok(c) => c,
-                                        Err(err) => {
-                                            log::error!("{:#}", err);
-                                            continue;
-                                        }
-                                    };
-
-                                if commands.send(command).is_err() {
-                                    break;
-                                }
+                                commands
+                                    .send(
+                                        rmp_serde::from_slice(message.as_bytes())
+                                            .context("Command not encoded using MsgPack")?,
+                                    )
+                                    .context("Failed to send command")?
                             }
 
+                            drop(shutdown_tx);
+
                             Ok(())
-                        }));
+                        });
 
                         let player_state = player_state.map(Event::StateUpdate);
                         let log_message = log_message.into_stream().filter_map(|msg| async {
@@ -133,42 +119,29 @@ pub async fn run(
                             }
                         });
 
-                        pin_utils::pin_mut!(player_state);
-                        pin_utils::pin_mut!(log_message);
+                        let events = futures::stream::select(player_state, log_message)
+                            .take_until(shutdown_rx)
+                            .take_until(shutdown_signal.wait());
 
-                        let mut external_messages =
-                            futures::stream::select(player_state, log_message);
+                        pin_utils::pin_mut!(events);
 
-                        loop {
-                            let next_external_message = external_messages.next();
-                            let next_internal_message = rx.next();
-
-                            match futures::future::select(
-                                next_external_message,
-                                next_internal_message,
-                            )
-                            .await
-                            {
-                                Either::Left((Some(Event::StateUpdate(new_state)), _)) => {
+                        while let Some(event) = events.next().await {
+                            match event {
+                                Event::StateUpdate(new_state) => {
                                     let diff = super::diff_player_state(&current_state, &new_state);
-                                    ws_tx
-                                        .send(OutgoingMessage::OutgoingMessage(diff.into()))
-                                        .await?;
+                                    ws_tx.send(diff.into()).await?;
 
                                     current_state = new_state;
                                 }
-                                Either::Left((Some(Event::LogMessage(log_message)), _)) => {
-                                    ws_tx
-                                        .send(OutgoingMessage::OutgoingMessage(log_message.into()))
-                                        .await?;
+                                Event::LogMessage(log_message) => {
+                                    ws_tx.send(log_message.into()).await?;
                                 }
-                                Either::Right((Some(ping), _)) => {
-                                    log::info!("Ping: {:?}", ping);
-                                    ws_tx.send(OutgoingMessage::Pong(ping)).await?;
-                                }
-                                Either::Left((None, _)) | Either::Right((None, _)) => break,
                             }
                         }
+
+                        ws_tx.close().await?;
+
+                        drop(wait_handle);
 
                         Ok(())
                     })
@@ -183,9 +156,15 @@ pub async fn run(
     let socket_addr = (addr, port);
 
     warp::serve(filter)
-        .bind_with_graceful_shutdown(socket_addr, shutdown)
+        .bind_with_graceful_shutdown(socket_addr, shutdown_signal.wait())
         .1
         .await;
+
+    log::debug!("Web server shut down");
+
+    wait_group.wait().await;
+
+    log::debug!("Websockets shut down");
 
     Ok(())
 }

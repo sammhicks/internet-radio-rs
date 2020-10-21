@@ -1,11 +1,12 @@
 use std::fmt::{Debug, Display, Formatter};
+use std::net::Shutdown;
 
 use anyhow::{Context, Result};
 use futures::StreamExt;
 use tokio::{
     io::AsyncWriteExt,
     net::TcpStream,
-    sync::{broadcast, watch},
+    sync::{broadcast, oneshot, watch},
 };
 
 use rradio_messages::LogMessage;
@@ -15,7 +16,7 @@ use crate::{
     pipeline::{LogMessageSource, PlayerState},
 };
 
-use super::{tcp_stream_guard::StreamGuard, Event};
+use super::{Event, ShutdownSignal, WaitGroup, WaitGroupHandle};
 
 fn clear_lines(f: &mut Formatter, row: u16, count: u16) -> std::fmt::Result {
     use crossterm::terminal;
@@ -102,8 +103,12 @@ impl<S: AsRef<str> + Debug, TrackList: AsRef<[rradio_messages::Track]>> Display
     }
 }
 
-async fn write_diff<S: AsRef<str> + Debug, TrackList: AsRef<[rradio_messages::Track]>>(
-    stream: &mut TcpStream,
+async fn write_diff<
+    Stream: tokio::io::AsyncWrite + Unpin,
+    S: AsRef<str> + Debug,
+    TrackList: AsRef<[rradio_messages::Track]>,
+>(
+    stream: &mut Stream,
     diff: rradio_messages::PlayerStateDiff<S, TrackList>,
 ) -> std::io::Result<()> {
     stream
@@ -115,11 +120,15 @@ async fn client_connected(
     stream: TcpStream,
     player_state: watch::Receiver<PlayerState>,
     log_message: broadcast::Receiver<LogMessage<AtomicString>>,
+    shutdown_signal: ShutdownSignal,
+    wait_handle: WaitGroupHandle,
 ) -> Result<()> {
-    let mut guard = StreamGuard::new(stream);
-    let guarded_stream = guard.as_mut();
+    let remote_addr = stream.peer_addr()?;
+    log::info!("Connection from {}", remote_addr);
 
-    guarded_stream
+    let (mut stream_rx, mut stream_tx) = stream.into_split();
+
+    stream_tx
         .write_all(
             format!(
                 "{}{}",
@@ -132,7 +141,21 @@ async fn client_connected(
 
     let mut current_state = (*player_state.borrow()).clone();
 
-    write_diff(guarded_stream, super::player_state_to_diff(&current_state)).await?;
+    write_diff(&mut stream_tx, super::player_state_to_diff(&current_state)).await?;
+
+    let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+
+    wait_handle.spawn_task(async move {
+        use tokio::io::AsyncReadExt;
+
+        let mut buffer = [0_u8; 32];
+        while stream_rx.read(&mut buffer).await? != 0 {}
+
+        stream_rx.as_ref().shutdown(Shutdown::Read)?;
+
+        drop(shutdown_tx);
+        Ok(())
+    });
 
     let player_state = player_state.map(Event::StateUpdate);
     let log_message = log_message.into_stream().filter_map(|msg| async {
@@ -142,15 +165,17 @@ async fn client_connected(
         }
     });
 
-    pin_utils::pin_mut!(log_message);
+    let events = futures::stream::select(player_state, log_message)
+        .take_until(shutdown_rx)
+        .take_until(shutdown_signal.wait());
 
-    let mut events = futures::stream::select(player_state, log_message);
+    pin_utils::pin_mut!(events);
 
     while let Some(event) = events.next().await {
         match event {
             Event::StateUpdate(new_state) => {
                 write_diff(
-                    guarded_stream,
+                    &mut stream_tx,
                     super::diff_player_state(&current_state, &new_state),
                 )
                 .await?;
@@ -158,7 +183,7 @@ async fn client_connected(
                 current_state = new_state;
             }
             Event::LogMessage(message) => {
-                guarded_stream
+                stream_tx
                     .write_all(
                         format!("{}{:?}", crossterm::cursor::MoveTo(0, 0), message).as_bytes(),
                     )
@@ -167,7 +192,11 @@ async fn client_connected(
         };
     }
 
-    guard.shutdown()?;
+    stream_tx.as_ref().shutdown(Shutdown::Write)?;
+
+    drop(wait_handle);
+
+    log::info!("{} disconnected", remote_addr);
 
     Ok(())
 }
@@ -175,22 +204,38 @@ async fn client_connected(
 pub async fn run(
     player_state: watch::Receiver<PlayerState>,
     log_message_source: LogMessageSource,
+    shutdown_signal: ShutdownSignal,
 ) -> Result<()> {
     let addr = std::net::Ipv4Addr::LOCALHOST;
     let port = 8001;
     let socket_addr = (addr, port);
 
-    let mut listener = tokio::net::TcpListener::bind(socket_addr)
-        .await
-        .with_context(|| format!("Cannot listen to {:?}", socket_addr))?;
+    let wait_group = WaitGroup::new();
 
-    loop {
-        let (stream, addr) = listener.accept().await?;
-        log::info!("TCP connection from {}", addr);
-        tokio::spawn(crate::log_error::log_error(client_connected(
-            stream,
+    let listener = tokio::net::TcpListener::bind(socket_addr)
+        .await
+        .with_context(|| format!("Cannot listen to {:?}", socket_addr))?
+        .take_until(shutdown_signal.clone().wait());
+
+    pin_utils::pin_mut!(listener);
+
+    log::debug!("Listening on {:?}", socket_addr);
+
+    while let Some(connection) = listener.next().await.transpose()? {
+        wait_group.spawn_task(client_connected(
+            connection,
             player_state.clone(),
             log_message_source.subscribe(),
-        )));
+            shutdown_signal.clone(),
+            wait_group.clone_handle(),
+        ));
     }
+
+    log::debug!("Shutting down");
+
+    wait_group.wait().await;
+
+    log::debug!("Shut down");
+
+    Ok(())
 }

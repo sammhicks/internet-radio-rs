@@ -41,43 +41,59 @@ fn main() -> Result<()> {
 
     let (commands_tx, commands_rx) = mpsc::unbounded_channel();
 
+    let (shutdown_handle, shutdown_signal) = ports::ShutdownSignal::new();
+
     let keyboard_commands_task = keyboard_commands::run(commands_tx.clone(), config.input_timeout);
     let (pipeline_task, player_state_rx, log_message_source) = pipeline::run(config, commands_rx)?;
-    let tcp_text_task = ports::tcp_text::run(player_state_rx.clone(), log_message_source.clone());
+    let tcp_text_task = ports::tcp_text::run(
+        player_state_rx.clone(),
+        log_message_source.clone(),
+        shutdown_signal.clone(),
+    );
     let tcp_msgpack_task = ports::tcp_msgpack::run(
         commands_tx.clone(),
         player_state_rx.clone(),
         log_message_source.clone(),
+        shutdown_signal.clone(),
     );
     #[cfg(feature = "web")]
-    let (web_task, shutdown) = {
-        let shutdown = ports::ShutdownSignal::new();
-
-        let task = ports::web::run(
-            commands_tx.clone(),
-            player_state_rx.clone(),
-            log_message_source.clone(),
-            shutdown.wait(),
-        );
-
-        (task, shutdown)
-    };
+    let web_task = ports::web::run(
+        commands_tx.clone(),
+        player_state_rx.clone(),
+        log_message_source.clone(),
+        shutdown_signal.clone(),
+    );
 
     drop(commands_tx);
     drop(player_state_rx);
     drop(log_message_source);
+    drop(shutdown_signal);
 
     let mut runtime = tokio::runtime::Runtime::new()?;
+
+    // These tasks don't need special shutdown
     runtime.spawn(pipeline_task);
-    runtime.spawn(log_error::log_error(tcp_text_task));
-    runtime.spawn(log_error::log_error(tcp_msgpack_task));
-    #[cfg(feature = "web")]
-    runtime.spawn(web_task);
 
-    runtime.block_on(log_error::log_error(keyboard_commands_task));
+    runtime.block_on(async move {
+        let wait_group = ports::WaitGroup::new();
 
-    #[cfg(feature = "web")]
-    drop(shutdown);
+        // These tasks have a special shutdown procedure
+        wait_group.spawn_task(tcp_text_task);
+        wait_group.spawn_task(tcp_msgpack_task);
+        #[cfg(feature = "web")]
+        wait_group.spawn_task(web_task);
+
+        log_error::log_error(keyboard_commands_task).await;
+
+        drop(shutdown_handle);
+
+        if tokio::time::timeout(std::time::Duration::from_secs(5), wait_group.wait())
+            .await
+            .is_err()
+        {
+            log::error!("Not all tasks shutdown within time limit");
+        }
+    });
 
     drop(runtime);
 
