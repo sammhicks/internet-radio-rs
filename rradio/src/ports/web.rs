@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use futures::{SinkExt, StreamExt};
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use warp::Filter;
@@ -94,19 +94,15 @@ pub async fn run(
                                 let message = message?;
 
                                 if message.is_close() {
-                                    log::debug!("Close message received");
                                     break;
                                 }
 
-                                commands
-                                    .send(
-                                        rmp_serde::from_slice(message.as_bytes())
-                                            .context("Command not encoded using MsgPack")?,
-                                    )
-                                    .context("Failed to send command")?
+                                commands.send(rmp_serde::from_slice(message.as_bytes())?)?
                             }
 
                             drop(shutdown_tx);
+
+                            log::debug!("Close message received");
 
                             Ok(())
                         });
@@ -155,16 +151,18 @@ pub async fn run(
     let port = 8000;
     let socket_addr = (addr, port);
 
-    warp::serve(filter)
-        .bind_with_graceful_shutdown(socket_addr, shutdown_signal.wait())
-        .1
-        .await;
+    let (server_addr, server) =
+        warp::serve(filter).bind_with_graceful_shutdown(socket_addr, shutdown_signal.wait());
 
-    log::debug!("Web server shut down");
+    log::info!("Listening on {}", server_addr);
+
+    server.await;
+
+    log::debug!("Shutting down");
 
     wait_group.wait().await;
 
-    log::debug!("Websockets shut down");
+    log::debug!("Shut down");
 
     Ok(())
 }
