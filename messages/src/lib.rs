@@ -135,6 +135,7 @@ impl<T> std::convert::From<Option<Option<T>>> for OptionDiff<T> {
 pub struct PlayerStateDiff<S: AsRef<str>, TrackList: AsRef<[Track]>> {
     pub pipeline_state: Option<PipelineState>,
     pub current_station: OptionDiff<Station<S, TrackList>>,
+    pub current_track_index: Option<usize>,
     pub current_track_tags: OptionDiff<TrackTags<S>>,
     pub volume: Option<i32>,
     pub buffering: Option<u8>,

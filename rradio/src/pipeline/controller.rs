@@ -55,6 +55,7 @@ impl PlaylistState {
 pub struct PlayerState {
     pub pipeline_state: PipelineState,
     pub current_station: Arc<Option<rradio_messages::Station<AtomicString, Arc<[Track]>>>>,
+    pub current_track_index: usize,
     pub current_track_tags: Arc<Option<TrackTags<AtomicString>>>,
     pub volume: i32,
     pub buffering: u8,
@@ -85,6 +86,7 @@ impl Controller {
         let pause_before_playing = current_playlist.pause_before_playing;
 
         self.playbin.set_url(&track.url)?;
+        self.published_state.current_track_index = current_playlist.current_track_index;
         self.published_state.current_track_tags = Arc::new(None);
         if let Some(pause_duration) = pause_before_playing {
             log::info!("Pausing for {}s", pause_duration.as_secs());
@@ -328,6 +330,7 @@ pub fn run(
     let published_state = PlayerState {
         pipeline_state: playbin.pipeline_state().unwrap_or(PipelineState::Null),
         current_station: Arc::new(None),
+        current_track_index: 0,
         current_track_tags: Arc::new(None),
         volume: playbin.volume().unwrap_or_default(),
         buffering: 0,

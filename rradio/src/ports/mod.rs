@@ -21,6 +21,7 @@ fn player_state_to_diff(state: &PlayerState) -> PlayerStateDiff<AtomicString, Tr
     PlayerStateDiff {
         pipeline_state: Some(state.pipeline_state),
         current_station: state.current_station.as_ref().clone().into(),
+        current_track_index: Some(state.current_track_index),
         current_track_tags: state.current_track_tags.as_ref().clone().into(),
         volume: Some(state.volume),
         buffering: Some(state.buffering),
@@ -33,6 +34,7 @@ fn diff_player_state(a: &PlayerState, b: &PlayerState) -> PlayerStateDiff<Atomic
     PlayerStateDiff {
         pipeline_state: diff_value(&a.pipeline_state, &b.pipeline_state),
         current_station: diff_arc_with_clone(&a.current_station, &b.current_station).into(),
+        current_track_index: diff_value(&a.current_track_index, &b.current_track_index),
         current_track_tags: diff_arc_with_clone(&a.current_track_tags, &b.current_track_tags)
             .into(),
         volume: diff_value(&a.volume, &b.volume),

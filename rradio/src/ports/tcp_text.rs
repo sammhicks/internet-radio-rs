@@ -73,7 +73,14 @@ impl<S: AsRef<str> + Debug, TrackList: AsRef<[rradio_messages::Track]>> Display
             }
         }
 
-        let tags_row = station_row + station_row_count;
+        let current_track_index_row = station_row + station_row_count;
+        let current_track_index_row_count = 1;
+        if let Some(track_index) = self.0.current_track_index {
+            Display::fmt(&MoveTo(0, current_track_index_row), f)?;
+            display_entry(f, "Current Track", track_index)?;
+        }
+
+        let tags_row = current_track_index_row + current_track_index_row_count;
         let tags_row_count = 6;
         match &self.0.current_track_tags {
             rradio_messages::OptionDiff::NoChange => (),
