@@ -1,5 +1,6 @@
 mod connection_stream;
 mod shutdown;
+pub mod tcp;
 pub mod tcp_msgpack;
 pub mod tcp_text;
 mod wait_group;

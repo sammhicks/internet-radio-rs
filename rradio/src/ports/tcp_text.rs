@@ -1,26 +1,8 @@
-use std::net::Shutdown;
-use std::{
-    fmt::{Debug, Display, Formatter},
-    net::SocketAddr,
-};
+use std::fmt::{Debug, Display, Formatter};
 
-use anyhow::{Context, Result};
-use futures::StreamExt;
-use tokio::{
-    io::AsyncWriteExt,
-    net::TcpStream,
-    sync::{broadcast, oneshot, watch},
-};
+use anyhow::Result;
 
-use rradio_messages::LogMessage;
-
-use crate::{
-    atomic_string::AtomicString,
-    log_error::CanAttachContext,
-    pipeline::{LogMessageSource, PlayerState},
-};
-
-use super::{Event, ShutdownSignal, WaitGroup, WaitGroupHandle};
+use rradio_messages::Command;
 
 fn clear_lines(f: &mut Formatter, row: u16, count: u16) -> std::fmt::Result {
     use crossterm::terminal;
@@ -46,8 +28,8 @@ fn display_entry(f: &mut Formatter, label: &str, entry: impl Debug) -> std::fmt:
 
 struct DisplayDiff<T>(T);
 
-impl<S: AsRef<str> + Debug, TrackList: AsRef<[rradio_messages::Track]>> Display
-    for DisplayDiff<rradio_messages::PlayerStateDiff<S, TrackList>>
+impl<'a, S: AsRef<str> + Debug, TrackList: AsRef<[rradio_messages::Track]>> Display
+    for DisplayDiff<&'a rradio_messages::PlayerStateDiff<S, TrackList>>
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use crossterm::cursor::MoveTo;
@@ -114,150 +96,43 @@ impl<S: AsRef<str> + Debug, TrackList: AsRef<[rradio_messages::Track]>> Display
     }
 }
 
-async fn write_diff<
-    Stream: tokio::io::AsyncWrite + Unpin,
-    S: AsRef<str> + Debug,
-    TrackList: AsRef<[rradio_messages::Track]>,
->(
-    stream: &mut Stream,
-    diff: rradio_messages::PlayerStateDiff<S, TrackList>,
-) -> std::io::Result<()> {
-    stream
-        .write_all(DisplayDiff(diff).to_string().as_bytes())
-        .await
-}
-
-async fn client_connected(
-    stream: TcpStream,
-    remote_addr: SocketAddr,
-    player_state: watch::Receiver<PlayerState>,
-    log_message: broadcast::Receiver<LogMessage<AtomicString>>,
-    shutdown_signal: ShutdownSignal,
-    wait_handle: WaitGroupHandle,
-) -> Result<()> {
-    log::info!("Connection from {}", remote_addr);
-
-    let (mut stream_rx, mut stream_tx) = stream.into_split();
-
-    stream_tx
-        .write_all(
-            format!(
-                "{}{}",
-                crossterm::cursor::Hide,
-                crossterm::terminal::SetSize(120, 15)
-            )
-            .as_bytes(),
+fn encode_message(message: &super::tcp::OutgoingMessage) -> Result<Vec<u8>> {
+    Ok(match message {
+        rradio_messages::OutgoingMessage::ProtocolVersion(_) => format!(
+            "{}{}{}",
+            crossterm::cursor::Hide,
+            crossterm::terminal::SetSize(120, 15),
+            crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
         )
-        .await?;
-
-    let mut current_state = (*player_state.borrow()).clone();
-
-    write_diff(&mut stream_tx, super::player_state_to_diff(&current_state)).await?;
-
-    let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
-
-    wait_handle.spawn_task(
-        async move {
-            use tokio::io::AsyncReadExt;
-
-            let mut buffer = [0_u8; 32];
-            while stream_rx.read(&mut buffer).await? != 0 {}
-
-            log::debug!("Disconnection from {}", remote_addr);
-
-            stream_rx.as_ref().shutdown(Shutdown::Read)?;
-
-            drop(shutdown_tx);
-            Ok(())
+        .into_bytes(),
+        rradio_messages::OutgoingMessage::PlayerStateChanged(diff) => {
+            DisplayDiff(diff).to_string().into_bytes()
         }
-        .context(remote_addr),
-    );
-
-    let player_state = player_state.map(Event::StateUpdate);
-    let log_message = log_message.into_stream().filter_map(|msg| async {
-        match msg {
-            Ok(msg) => Some(Event::LogMessage(msg)),
-            Err(_) => None,
+        rradio_messages::OutgoingMessage::LogMessage(log_message) => {
+            format!("{}{:?}", crossterm::cursor::MoveTo(0, 0), log_message).into_bytes()
         }
-    });
-
-    let events = futures::stream::select(player_state, log_message)
-        .take_until(shutdown_rx)
-        .take_until(shutdown_signal.wait());
-
-    pin_utils::pin_mut!(events);
-
-    while let Some(event) = events.next().await {
-        match event {
-            Event::StateUpdate(new_state) => {
-                write_diff(
-                    &mut stream_tx,
-                    super::diff_player_state(&current_state, &new_state),
-                )
-                .await?;
-
-                current_state = new_state;
-            }
-            Event::LogMessage(message) => {
-                stream_tx
-                    .write_all(
-                        format!("{}{:?}", crossterm::cursor::MoveTo(0, 0), message).as_bytes(),
-                    )
-                    .await?
-            }
-        };
-    }
-
-    log::debug!("Closing connection to {}", remote_addr);
-
-    stream_tx.as_ref().shutdown(Shutdown::Write)?;
-
-    drop(wait_handle);
-
-    Ok(())
+    })
 }
 
-pub async fn run(
-    player_state: watch::Receiver<PlayerState>,
-    log_message_source: LogMessageSource,
-    shutdown_signal: ShutdownSignal,
-) -> Result<()> {
-    let addr = std::net::Ipv4Addr::LOCALHOST;
-    let port = 8001;
-    let socket_addr = (addr, port);
+fn decode_command(
+    stream: tokio::net::tcp::OwnedReadHalf,
+) -> impl futures::Stream<Item = Result<Command>> {
+    futures::stream::unfold(stream, |mut stream| async move {
+        use tokio::io::AsyncReadExt;
 
-    let wait_group = WaitGroup::new();
+        let mut buffer = [0; 64];
+        loop {
+            match stream.read(&mut buffer).await {
+                Ok(0) => return None,
+                Err(err) => return Some((Err(anyhow::Error::new(err)), stream)),
+                Ok(_) => continue,
+            }
+        }
+    })
+}
 
-    let listener = super::connection_stream::ConnectionStream(
-        tokio::net::TcpListener::bind(socket_addr)
-            .await
-            .with_context(|| format!("Cannot listen to {:?}", socket_addr))?,
-    )
-    .take_until(shutdown_signal.clone().wait());
-
-    log::info!("Listening on {:?}", socket_addr);
-
-    pin_utils::pin_mut!(listener);
-
-    while let Some((connection, remote_addr)) = listener.next().await.transpose()? {
-        wait_group.spawn_task(
-            client_connected(
-                connection,
-                remote_addr,
-                player_state.clone(),
-                log_message_source.subscribe(),
-                shutdown_signal.clone(),
-                wait_group.clone_handle(),
-            )
-            .context(remote_addr),
-        );
-    }
-
-    log::debug!("Shutting down");
-
-    wait_group.wait().await;
-
-    log::debug!("Shut down");
-
-    Ok(())
+pub async fn run(server: super::tcp::Server) -> Result<()> {
+    server
+        .run(std::module_path!(), 8001, encode_message, decode_command)
+        .await
 }

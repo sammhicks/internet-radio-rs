@@ -1,37 +1,29 @@
-use std::net::{Shutdown, SocketAddr};
+use anyhow::Result;
 
-use anyhow::{Context, Result};
-use futures::StreamExt;
-use tokio::{
-    io::AsyncWriteExt,
-    net::TcpStream,
-    sync::{broadcast, mpsc, oneshot, watch},
-};
+use rradio_messages::Command;
 
-use rradio_messages::{Command, LogMessage, Track};
+fn encode_message(message: &super::tcp::OutgoingMessage) -> Result<Vec<u8>> {
+    use std::convert::TryFrom;
 
-use crate::{
-    atomic_string::AtomicString,
-    log_error::CanAttachContext,
-    pipeline::{LogMessageSource, PlayerState},
-};
+    let mut message_buffer = rmp_serde::to_vec(message)?;
 
-use super::{Event, ShutdownSignal, WaitGroup, WaitGroupHandle};
+    let mut buffer = Vec::from(u16::try_from(message_buffer.len())?.to_be_bytes());
+    buffer.append(&mut message_buffer);
 
-type OutgoingMessage =
-    rradio_messages::OutgoingMessage<&'static str, AtomicString, std::sync::Arc<[Track]>>;
+    Ok(buffer)
+}
 
-fn extract_eof<T: std::fmt::Debug>(result: Result<T>) -> Result<Option<T>> {
+fn extract_eof<T: std::fmt::Debug>(result: Result<T>) -> Option<Result<T>> {
     match result {
-        Ok(success) => Ok(Some(success)),
+        Ok(success) => Some(Ok(success)),
         Err(err) => {
             if let Some(io_error) = err.downcast_ref::<std::io::Error>() {
                 if let std::io::ErrorKind::UnexpectedEof = io_error.kind() {
-                    return Ok(None);
+                    return None;
                 }
             }
 
-            Err(err)
+            Some(Err(err))
         }
     }
 }
@@ -50,150 +42,16 @@ async fn read_command<Stream: tokio::io::AsyncRead + Unpin>(
     rmp_serde::from_slice(buffer.as_ref()).map_err(anyhow::Error::new)
 }
 
-async fn send_message<Stream: tokio::io::AsyncWrite + Unpin>(
-    stream: &mut Stream,
-    message: &OutgoingMessage,
-) -> Result<()> {
-    use std::convert::TryInto;
-
-    let buffer = rmp_serde::to_vec(&message)?;
-
-    stream.write_u16(buffer.len().try_into()?).await?;
-
-    stream.write_all(&buffer).await?;
-
-    Ok(())
+fn decode_command(
+    stream: tokio::net::tcp::OwnedReadHalf,
+) -> impl futures::Stream<Item = Result<Command>> {
+    futures::stream::unfold(stream, |mut stream| async move {
+        extract_eof(read_command(&mut stream).await).map(|value| (value, stream))
+    })
 }
 
-async fn client_connected(
-    stream: TcpStream,
-    remote_addr: SocketAddr,
-    commands: mpsc::UnboundedSender<Command>,
-    player_state: watch::Receiver<PlayerState>,
-    log_message: broadcast::Receiver<LogMessage<AtomicString>>,
-    shutdown_signal: ShutdownSignal,
-    wait_handle: WaitGroupHandle,
-) -> Result<()> {
-    log::info!("Connection from {}", remote_addr);
-
-    let (mut stream_rx, mut stream_tx) = stream.into_split();
-
-    send_message(
-        &mut stream_tx,
-        &OutgoingMessage::ProtocolVersion(rradio_messages::VERSION),
-    )
-    .await?;
-
-    let mut current_state = player_state.borrow().clone();
-
-    send_message(
-        &mut stream_tx,
-        &OutgoingMessage::PlayerStateChanged(super::player_state_to_diff(&current_state)),
-    )
-    .await?;
-
-    let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
-
-    wait_handle.spawn_task(
-        async move {
-            while let Some(next_command) = extract_eof(read_command(&mut stream_rx).await)? {
-                commands.send(next_command)?;
-            }
-
-            log::debug!("Disconnection from {}", remote_addr);
-
-            stream_rx.as_ref().shutdown(Shutdown::Read)?;
-
-            drop(shutdown_tx);
-
-            Ok(())
-        }
-        .context(remote_addr),
-    );
-
-    let player_state = player_state.map(super::Event::StateUpdate);
-    let log_message = log_message.into_stream().filter_map(|msg| async {
-        match msg {
-            Ok(msg) => Some(Event::LogMessage(msg)),
-            Err(_) => None,
-        }
-    });
-
-    let events = futures::stream::select(player_state, log_message)
-        .take_until(shutdown_rx)
-        .take_until(shutdown_signal.wait());
-
-    pin_utils::pin_mut!(events);
-
-    while let Some(event) = events.next().await {
-        match event {
-            Event::StateUpdate(new_state) => {
-                let state_diff = super::diff_player_state(&current_state, &new_state);
-                current_state = new_state;
-                send_message(
-                    &mut stream_tx,
-                    &OutgoingMessage::PlayerStateChanged(state_diff),
-                )
-                .await?;
-            }
-            Event::LogMessage(log_message) => {
-                send_message(&mut stream_tx, &OutgoingMessage::LogMessage(log_message)).await?
-            }
-        }
-    }
-
-    log::debug!("Closing connection to {}", remote_addr);
-
-    stream_tx.as_ref().shutdown(Shutdown::Write)?;
-
-    drop(wait_handle);
-
-    Ok(())
-}
-
-pub async fn run(
-    commands: mpsc::UnboundedSender<Command>,
-    player_state: watch::Receiver<PlayerState>,
-    log_message_source: LogMessageSource,
-    shutdown_signal: ShutdownSignal,
-) -> Result<()> {
-    let addr = std::net::Ipv4Addr::LOCALHOST;
-    let port = 8002;
-    let socket_addr = (addr, port);
-
-    let wait_group = WaitGroup::new();
-
-    let listener = super::connection_stream::ConnectionStream(
-        tokio::net::TcpListener::bind(socket_addr)
-            .await
-            .with_context(|| format!("Cannot listen to {:?}", socket_addr))?,
-    )
-    .take_until(shutdown_signal.clone().wait());
-
-    log::info!("Listening on {:?}", socket_addr);
-
-    pin_utils::pin_mut!(listener);
-
-    while let Some((connection, remote_addr)) = listener.next().await.transpose()? {
-        wait_group.spawn_task(
-            client_connected(
-                connection,
-                remote_addr,
-                commands.clone(),
-                player_state.clone(),
-                log_message_source.subscribe(),
-                shutdown_signal.clone(),
-                wait_group.clone_handle(),
-            )
-            .context(remote_addr),
-        );
-    }
-
-    log::debug!("Shutting down");
-
-    wait_group.wait().await;
-
-    log::debug!("Shut down");
-
-    Ok(())
+pub async fn run(server: super::tcp::Server) -> Result<()> {
+    server
+        .run(std::module_path!(), 8002, encode_message, decode_command)
+        .await
 }
