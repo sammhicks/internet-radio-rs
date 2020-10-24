@@ -2,7 +2,6 @@
 #![allow(clippy::used_underscore_binding)]
 
 use anyhow::{Context, Result};
-use tokio::sync::mpsc;
 
 mod atomic_string;
 mod config;
@@ -39,29 +38,20 @@ fn main() -> Result<()> {
 
     logger.parse_new_spec(&config.log_level);
 
-    let (commands_tx, commands_rx) = mpsc::unbounded_channel();
-
     let (shutdown_handle, shutdown_signal) = ports::ShutdownSignal::new();
 
-    let keyboard_commands_task = keyboard_commands::run(commands_tx.clone(), config.input_timeout);
-    let (pipeline_task, player_state_rx, log_message_source) = pipeline::run(config, commands_rx)?;
+    let (pipeline_task, port_channels) = pipeline::run(config.clone())?;
+
+    let port_channels = port_channels.with_shutdown_signal(shutdown_signal);
+
+    let keyboard_commands_task =
+        keyboard_commands::run(port_channels.commands.clone(), config.input_timeout);
+
     #[cfg(feature = "web")]
-    let web_task = ports::web::run(
-        commands_tx.clone(),
-        player_state_rx.clone(),
-        log_message_source.clone(),
-        shutdown_signal.clone(),
-    );
+    let web_task = ports::web::run(port_channels.clone());
 
-    let tcp_server = ports::tcp::Server {
-        commands: commands_tx,
-        player_state: player_state_rx,
-        log_message_source,
-        shutdown_signal,
-    };
-
-    let tcp_msgpack_task = ports::tcp_msgpack::run(tcp_server.clone());
-    let tcp_text_task = ports::tcp_text::run(tcp_server);
+    let tcp_msgpack_task = ports::tcp_msgpack::run(port_channels.clone());
+    let tcp_text_task = ports::tcp_text::run(port_channels);
 
     let mut runtime = tokio::runtime::Runtime::new()?;
 

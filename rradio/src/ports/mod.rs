@@ -65,3 +65,24 @@ enum Event {
     StateUpdate(PlayerState),
     LogMessage(rradio_messages::LogMessage<AtomicString>),
 }
+
+#[derive(Clone)]
+pub struct PartialPortChannels<SS> {
+    pub commands: tokio::sync::mpsc::UnboundedSender<rradio_messages::Command>,
+    pub player_state: tokio::sync::watch::Receiver<PlayerState>,
+    pub log_message_source: crate::pipeline::LogMessageSource,
+    pub shutdown_signal: SS,
+}
+
+pub type PortChannels = PartialPortChannels<ShutdownSignal>;
+
+impl<SS1> PartialPortChannels<SS1> {
+    pub fn with_shutdown_signal(self, shutdown_signal: ShutdownSignal) -> PortChannels {
+        PortChannels {
+            commands: self.commands,
+            player_state: self.player_state,
+            log_message_source: self.log_message_source,
+            shutdown_signal,
+        }
+    }
+}

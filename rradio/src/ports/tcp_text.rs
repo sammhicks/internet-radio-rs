@@ -131,8 +131,13 @@ fn decode_command(
     })
 }
 
-pub async fn run(server: super::tcp::Server) -> Result<()> {
-    server
-        .run(std::module_path!(), 8001, encode_message, decode_command)
-        .await
+pub async fn run(port_channels: super::PortChannels) -> Result<()> {
+    super::tcp::run(
+        port_channels,
+        std::module_path!(),
+        8001,
+        encode_message,
+        decode_command,
+    )
+    .await
 }

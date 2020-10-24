@@ -5,18 +5,14 @@ use futures::{Stream, StreamExt};
 use tokio::{
     io::AsyncWriteExt,
     net::tcp,
-    sync::{mpsc, oneshot, watch},
+    sync::{mpsc, oneshot},
 };
 
 use rradio_messages::{Command, Track};
 
-use crate::{
-    atomic_string::AtomicString,
-    log_error::CanAttachContext,
-    pipeline::{LogMessageSource, PlayerState},
-};
+use crate::{atomic_string::AtomicString, log_error::CanAttachContext, pipeline::PlayerState};
 
-use super::{Event, ShutdownSignal, WaitGroup};
+use super::{Event, WaitGroup};
 
 pub type OutgoingMessage =
     rradio_messages::OutgoingMessage<&'static str, AtomicString, std::sync::Arc<[Track]>>;
@@ -94,102 +90,97 @@ where
     Ok(())
 }
 
-#[derive(Clone)]
-pub struct Server {
-    pub commands: mpsc::UnboundedSender<Command>,
-    pub player_state: watch::Receiver<PlayerState>,
-    pub log_message_source: LogMessageSource,
-    pub shutdown_signal: ShutdownSignal,
-}
+pub async fn run<Encode, Decode, DecodeStream>(
+    port_channels: super::PortChannels,
+    current_module: &'static str,
+    port: u16,
+    encode_message: Encode,
+    decode_command: Decode,
+) -> Result<()>
+where
+    Encode: Fn(&OutgoingMessage) -> Result<Vec<u8>> + Send + Sync + Clone + 'static,
+    Decode: FnOnce(tcp::OwnedReadHalf) -> DecodeStream + Send + Sync + Clone + 'static,
+    DecodeStream: Stream<Item = Result<Command>> + Send + Sync + 'static,
+{
+    let addr = std::net::Ipv4Addr::LOCALHOST;
+    let socket_addr = (addr, port);
 
-impl Server {
-    pub async fn run<Encode, Decode, DecodeStream>(
-        self,
-        current_module: &'static str,
-        port: u16,
-        encode_message: Encode,
-        decode_command: Decode,
-    ) -> Result<()>
-    where
-        Encode: Fn(&OutgoingMessage) -> Result<Vec<u8>> + Send + Sync + Clone + 'static,
-        Decode: FnOnce(tcp::OwnedReadHalf) -> DecodeStream + Send + Sync + Clone + 'static,
-        DecodeStream: Stream<Item = Result<Command>> + Send + Sync + 'static,
-    {
-        let addr = std::net::Ipv4Addr::LOCALHOST;
-        let socket_addr = (addr, port);
+    let wait_group = WaitGroup::new();
 
-        let wait_group = WaitGroup::new();
+    let listener = tokio::net::TcpListener::bind(socket_addr)
+        .await
+        .with_context(|| format!("Cannot listen to {:?}", socket_addr))?;
 
-        let listener = super::connection_stream::ConnectionStream(
-            tokio::net::TcpListener::bind(socket_addr)
-                .await
-                .with_context(|| format!("Cannot listen to {:?}", socket_addr))?,
-        )
-        .take_until(self.shutdown_signal.clone().wait());
+    let local_addr = listener.local_addr()?;
 
-        log::info!(target: current_module, "Listening on {:?}", socket_addr);
+    let connections = super::connection_stream::ConnectionStream(listener)
+        .take_until(port_channels.shutdown_signal.clone().wait());
 
-        pin_utils::pin_mut!(listener);
+    log::info!(target: current_module, "Listening on {:?}", local_addr);
 
-        while let Some((connection, remote_addr)) = listener.next().await.transpose()? {
-            log::info!(target: current_module, "Connection from {}", remote_addr);
+    pin_utils::pin_mut!(connections);
 
-            let (stream_rx, stream_tx) = connection.into_split();
-            let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+    while let Some((connection, remote_addr)) = connections.next().await.transpose()? {
+        log::info!(target: current_module, "Connection from {}", remote_addr);
 
-            wait_group.spawn_task({
-                let decode_command = decode_command.clone();
-                let commands = self.commands.clone();
-                async move {
-                    recieve_messages(stream_rx, decode_command, commands).await?;
+        let (stream_rx, stream_tx) = connection.into_split();
+        let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
 
-                    log::debug!(target: current_module, "Disconnection from {}", remote_addr);
+        wait_group.spawn_task({
+            let decode_command = decode_command.clone();
+            let commands = port_channels.commands.clone();
+            async move {
+                recieve_messages(stream_rx, decode_command, commands).await?;
 
-                    drop(shutdown_tx);
-                    Ok(())
-                }
-                .context(remote_addr)
-            });
+                log::debug!(target: current_module, "Disconnection from {}", remote_addr);
 
-            wait_group.spawn_task({
-                let initial_state = self.player_state.borrow().clone();
+                drop(shutdown_tx);
+                Ok(())
+            }
+            .context(remote_addr)
+        });
 
-                let player_state = self.player_state.clone().map(super::Event::StateUpdate);
-                let log_message_source = self
-                    .log_message_source
-                    .subscribe()
-                    .into_stream()
-                    .filter_map(|msg| async {
-                        match msg {
-                            Ok(msg) => Some(Event::LogMessage(msg)),
-                            Err(_) => None,
-                        }
-                    });
+        wait_group.spawn_task({
+            let initial_state = port_channels.player_state.borrow().clone();
 
-                let events = futures::stream::select(player_state, log_message_source)
-                    .take_until(shutdown_rx)
-                    .take_until(self.shutdown_signal.clone().wait());
+            let player_state = port_channels
+                .player_state
+                .clone()
+                .map(super::Event::StateUpdate);
+            let log_message_source = port_channels
+                .log_message_source
+                .subscribe()
+                .into_stream()
+                .filter_map(|msg| async {
+                    match msg {
+                        Ok(msg) => Some(Event::LogMessage(msg)),
+                        Err(_) => None,
+                    }
+                });
 
-                let encode_message = encode_message.clone();
-                async move {
-                    send_messages(initial_state, events, encode_message, stream_tx).await?;
-                    log::debug!(
-                        target: current_module,
-                        "Closing connection to {}",
-                        remote_addr
-                    );
-                    Ok(())
-                }
-                .context(remote_addr)
-            });
-        }
+            let events = futures::stream::select(player_state, log_message_source)
+                .take_until(shutdown_rx)
+                .take_until(port_channels.shutdown_signal.clone().wait());
 
-        log::debug!(target: current_module, "Shutting down");
-
-        wait_group.wait().await;
-
-        log::debug!(target: current_module, "Shut down");
-
-        Ok(())
+            let encode_message = encode_message.clone();
+            async move {
+                send_messages(initial_state, events, encode_message, stream_tx).await?;
+                log::debug!(
+                    target: current_module,
+                    "Closing connection to {}",
+                    remote_addr
+                );
+                Ok(())
+            }
+            .context(remote_addr)
+        });
     }
+
+    log::debug!(target: current_module, "Shutting down");
+
+    wait_group.wait().await;
+
+    log::debug!(target: current_module, "Shut down");
+
+    Ok(())
 }

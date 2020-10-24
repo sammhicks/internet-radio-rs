@@ -9,6 +9,7 @@ use super::playbin::{PipelineState, Playbin};
 use crate::{
     atomic_string::AtomicString,
     config::Config,
+    ports::PartialPortChannels,
     station::{Station, Track},
     tag::Tag,
 };
@@ -311,11 +312,9 @@ enum Message {
 /// Initialise the gstreamer pipeline, and process incoming commands
 pub fn run(
     config: Config,
-    commands: mpsc::UnboundedReceiver<Command>,
 ) -> Result<(
     impl std::future::Future<Output = ()>,
-    watch::Receiver<PlayerState>,
-    LogMessageSource,
+    PartialPortChannels<()>,
 )> {
     gstreamer::init()?;
     let playbin = Playbin::new()?;
@@ -326,6 +325,8 @@ pub fn run(
             log::error!("{:#}", err);
         }
     }
+
+    let (commands_tx, commands_rx) = mpsc::unbounded_channel();
 
     let published_state = PlayerState {
         pipeline_state: playbin.pipeline_state().unwrap_or(PipelineState::Null),
@@ -354,7 +355,7 @@ pub fn run(
     let task = async move {
         use futures::StreamExt;
 
-        let commands = commands.map(Message::Command);
+        let commands = commands_rx.map(Message::Command);
 
         let bus_stream = bus.stream().map(Message::GStreamerMessage);
 
@@ -373,5 +374,13 @@ pub fn run(
         }
     };
 
-    Ok((task, new_state_rx, log_message_source))
+    Ok((
+        task,
+        PartialPortChannels {
+            commands: commands_tx,
+            player_state: new_state_rx,
+            log_message_source,
+            shutdown_signal: (),
+        },
+    ))
 }
