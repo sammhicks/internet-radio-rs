@@ -121,8 +121,16 @@ pub async fn run(port_channels: super::PortChannels) -> Result<()> {
 
     let filter = events;
 
-    let addr = std::net::Ipv4Addr::LOCALHOST;
-    let port = 8000;
+    let addr = if cfg!(feature = "production-server") {
+        std::net::Ipv4Addr::UNSPECIFIED
+    } else {
+        std::net::Ipv4Addr::LOCALHOST
+    };
+    let port = if cfg!(feature = "production-server") {
+        80
+    } else {
+        8000
+    };
     let socket_addr = (addr, port);
 
     let (server_addr, server) =

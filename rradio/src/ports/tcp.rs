@@ -102,7 +102,12 @@ where
     Decode: FnOnce(tcp::OwnedReadHalf) -> DecodeStream + Send + Sync + Clone + 'static,
     DecodeStream: Stream<Item = Result<Command>> + Send + Sync + 'static,
 {
-    let addr = std::net::Ipv4Addr::LOCALHOST;
+    let addr = if cfg!(feature = "production-server") {
+        std::net::Ipv4Addr::UNSPECIFIED
+    } else {
+        std::net::Ipv4Addr::LOCALHOST
+    };
+
     let socket_addr = (addr, port);
 
     let wait_group = WaitGroup::new();
