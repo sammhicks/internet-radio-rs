@@ -17,6 +17,7 @@ use crate::{atomic_string::AtomicString, pipeline::PlayerState};
 use rradio_messages::{PlayerStateDiff, Track};
 
 type TrackList = Arc<[Track]>;
+pub type BroadcastEvent = rradio_messages::Event<&'static str, AtomicString, TrackList>;
 
 fn player_state_to_diff(state: &PlayerState) -> PlayerStateDiff<AtomicString, TrackList> {
     PlayerStateDiff {

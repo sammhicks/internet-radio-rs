@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use rradio_messages::Command;
 
-fn encode_message(message: &super::tcp::OutgoingMessage) -> Result<Vec<u8>> {
+fn encode_event(message: &super::BroadcastEvent) -> Result<Vec<u8>> {
     use std::convert::TryFrom;
 
     let mut message_buffer = rmp_serde::to_vec(message)?;
@@ -55,7 +55,7 @@ pub async fn run(port_channels: super::PortChannels) -> Result<()> {
         port_channels,
         std::module_path!(),
         8002,
-        encode_message,
+        encode_event,
         decode_command,
     )
     .await

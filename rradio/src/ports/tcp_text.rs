@@ -4,6 +4,8 @@ use anyhow::Result;
 
 use rradio_messages::Command;
 
+use super::BroadcastEvent;
+
 fn clear_lines(f: &mut Formatter, row: u16, count: u16) -> std::fmt::Result {
     use crossterm::terminal;
     Display::fmt(&crossterm::cursor::MoveTo(0, row), f)?;
@@ -96,9 +98,9 @@ impl<'a, S: AsRef<str> + Debug, TrackList: AsRef<[rradio_messages::Track]>> Disp
     }
 }
 
-fn encode_message(message: &super::tcp::OutgoingMessage) -> Result<Vec<u8>> {
+fn encode_message(message: &BroadcastEvent) -> Result<Vec<u8>> {
     Ok(match message {
-        rradio_messages::OutgoingMessage::ProtocolVersion(_) => format!(
+        BroadcastEvent::ProtocolVersion(_) => format!(
             "{}{}{}{}Version {}",
             crossterm::cursor::Hide,
             crossterm::terminal::SetSize(120, 15),
@@ -107,10 +109,8 @@ fn encode_message(message: &super::tcp::OutgoingMessage) -> Result<Vec<u8>> {
             rradio_messages::VERSION
         )
         .into_bytes(),
-        rradio_messages::OutgoingMessage::PlayerStateChanged(diff) => {
-            DisplayDiff(diff).to_string().into_bytes()
-        }
-        rradio_messages::OutgoingMessage::LogMessage(log_message) => {
+        BroadcastEvent::PlayerStateChanged(diff) => DisplayDiff(diff).to_string().into_bytes(),
+        BroadcastEvent::LogMessage(log_message) => {
             format!("{}{:?}", crossterm::cursor::MoveTo(0, 0), log_message).into_bytes()
         }
     })

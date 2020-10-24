@@ -8,28 +8,25 @@ use tokio::{
     sync::{mpsc, oneshot},
 };
 
-use rradio_messages::{Command, Track};
+use rradio_messages::Command;
 
-use crate::{atomic_string::AtomicString, log_error::CanAttachContext, pipeline::PlayerState};
+use crate::{log_error::CanAttachContext, pipeline::PlayerState};
 
-use super::{Event, WaitGroup};
-
-pub type OutgoingMessage =
-    rradio_messages::OutgoingMessage<&'static str, AtomicString, std::sync::Arc<[Track]>>;
+use super::{BroadcastEvent, Event, WaitGroup};
 
 async fn send_messages<Events, Encode>(
     initial_state: PlayerState,
     events: Events,
-    encode_message: Encode,
+    encode_event: Encode,
     mut stream_tx: tcp::OwnedWriteHalf,
 ) -> Result<()>
 where
     Events: Stream<Item = super::Event>,
-    Encode: Fn(&OutgoingMessage) -> Result<Vec<u8>> + Send + Sync,
+    Encode: Fn(&BroadcastEvent) -> Result<Vec<u8>> + Send + Sync,
 {
     stream_tx
         .write_all(
-            encode_message(&OutgoingMessage::ProtocolVersion(rradio_messages::VERSION))?.as_ref(),
+            encode_event(&BroadcastEvent::ProtocolVersion(rradio_messages::VERSION))?.as_ref(),
         )
         .await?;
 
@@ -37,7 +34,7 @@ where
 
     stream_tx
         .write_all(
-            encode_message(&OutgoingMessage::PlayerStateChanged(
+            encode_event(&BroadcastEvent::PlayerStateChanged(
                 super::player_state_to_diff(&current_state),
             ))?
             .as_ref(),
@@ -53,13 +50,13 @@ where
                 current_state = new_state;
                 stream_tx
                     .write_all(
-                        encode_message(&OutgoingMessage::PlayerStateChanged(state_diff))?.as_ref(),
+                        encode_event(&BroadcastEvent::PlayerStateChanged(state_diff))?.as_ref(),
                     )
                     .await?;
             }
             Event::LogMessage(log_message) => {
                 stream_tx
-                    .write_all(encode_message(&OutgoingMessage::LogMessage(log_message))?.as_ref())
+                    .write_all(encode_event(&BroadcastEvent::LogMessage(log_message))?.as_ref())
                     .await?;
             }
         }
@@ -94,11 +91,11 @@ pub async fn run<Encode, Decode, DecodeStream>(
     port_channels: super::PortChannels,
     current_module: &'static str,
     port: u16,
-    encode_message: Encode,
+    encode_event: Encode,
     decode_command: Decode,
 ) -> Result<()>
 where
-    Encode: Fn(&OutgoingMessage) -> Result<Vec<u8>> + Send + Sync + Clone + 'static,
+    Encode: Fn(&BroadcastEvent) -> Result<Vec<u8>> + Send + Sync + Clone + 'static,
     Decode: FnOnce(tcp::OwnedReadHalf) -> DecodeStream + Send + Sync + Clone + 'static,
     DecodeStream: Stream<Item = Result<Command>> + Send + Sync + 'static,
 {
@@ -167,9 +164,9 @@ where
                 .take_until(shutdown_rx)
                 .take_until(port_channels.shutdown_signal.clone().wait());
 
-            let encode_message = encode_message.clone();
+            let encode_event = encode_event.clone();
             async move {
-                send_messages(initial_state, events, encode_message, stream_tx).await?;
+                send_messages(initial_state, events, encode_event, stream_tx).await?;
                 log::debug!(
                     target: current_module,
                     "Closing connection to {}",

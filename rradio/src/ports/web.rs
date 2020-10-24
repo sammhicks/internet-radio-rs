@@ -3,13 +3,7 @@ use futures::{SinkExt, StreamExt};
 use tokio::sync::oneshot;
 use warp::Filter;
 
-use super::Event;
-
-type OutgoingMessage = rradio_messages::OutgoingMessage<
-    &'static str,
-    crate::atomic_string::AtomicString,
-    super::TrackList,
->;
+use super::{BroadcastEvent, Event};
 
 trait ToDebugString {
     fn to_debug_string(&self) -> String;
@@ -38,8 +32,8 @@ pub async fn run(port_channels: super::PortChannels) -> Result<()> {
                     .sink_map_err(|err| {
                         anyhow::Error::new(err).context("Could not send Websocket Message")
                     })
-                    .with(|message: OutgoingMessage| async move {
-                        rmp_serde::to_vec(&message)
+                    .with(|event: BroadcastEvent| async move {
+                        rmp_serde::to_vec(&event)
                             .map(warp::ws::Message::binary)
                             .map_err(anyhow::Error::new)
                     });
