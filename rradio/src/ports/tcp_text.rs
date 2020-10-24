@@ -99,10 +99,12 @@ impl<'a, S: AsRef<str> + Debug, TrackList: AsRef<[rradio_messages::Track]>> Disp
 fn encode_message(message: &super::tcp::OutgoingMessage) -> Result<Vec<u8>> {
     Ok(match message {
         rradio_messages::OutgoingMessage::ProtocolVersion(_) => format!(
-            "{}{}{}",
+            "{}{}{}{}Version {}",
             crossterm::cursor::Hide,
             crossterm::terminal::SetSize(120, 15),
             crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
+            crossterm::cursor::MoveTo(0, 0),
+            rradio_messages::VERSION
         )
         .into_bytes(),
         rradio_messages::OutgoingMessage::PlayerStateChanged(diff) => {
