@@ -2,6 +2,10 @@ use std::time::Duration;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+pub const VOLUME_ZERO_DB: i32 = 100;
+pub const VOLUME_MIN: i32 = 0;
+pub const VOLUME_MAX: i32 = 120;
+
 /// Commands from the user
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub enum Command {

@@ -1,8 +1,9 @@
 //! A wrapper around a gstreamer playbin
 
 use anyhow::{Context, Result};
-use glib::object::ObjectExt;
+use glib::{object::ObjectExt, Cast};
 use gstreamer::{ElementExt, ElementExtManual};
+use gstreamer_audio::StreamVolumeExt;
 use log::{debug, error};
 
 pub use rradio_messages::PipelineState;
@@ -104,26 +105,34 @@ impl Playbin {
 
     pub fn volume(&self) -> Result<i32> {
         #[allow(clippy::cast_possible_truncation)]
-        let current_volume = (100.0 * self.0.get_property("volume")?.get_some::<f64>()?) as i32;
+        let current_volume =
+            self.0
+                .dynamic_cast_ref::<gstreamer_audio::StreamVolume>()
+                .context("Playbin has no volume")?
+                .get_volume(gstreamer_audio::StreamVolumeFormat::Db) as i32;
 
-        debug!("Current Volume: {}", current_volume);
+        let scaled_volume = current_volume + rradio_messages::VOLUME_ZERO_DB;
 
-        Ok(current_volume)
+        debug!("Current Volume: {}", scaled_volume);
+
+        Ok(scaled_volume)
     }
 
     pub fn set_volume(&self, volume: i32) -> Result<i32> {
+        let volume = volume
+            .max(rradio_messages::VOLUME_MIN)
+            .min(rradio_messages::VOLUME_MAX);
         debug!("New Volume: {}", volume);
 
         self.0
-            .set_property("volume", &(f64::from(volume) / 100.0))?;
+            .dynamic_cast_ref::<gstreamer_audio::StreamVolume>()
+            .context("Playbin has no volume")?
+            .set_volume(
+                gstreamer_audio::StreamVolumeFormat::Db,
+                f64::from(volume - rradio_messages::VOLUME_ZERO_DB),
+            );
 
         Ok(volume)
-    }
-
-    pub fn change_volume(&self, offset: i32) -> Result<i32> {
-        let new_volume = (self.volume()? + offset).max(0).min(1000);
-
-        self.set_volume(new_volume)
     }
 }
 

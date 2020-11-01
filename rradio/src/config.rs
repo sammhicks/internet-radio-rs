@@ -28,8 +28,8 @@ pub struct Config {
     pub input_timeout: Duration,
 
     /// The change in volume when the user increments or decrements the volume
-    #[serde(default = "default_volume_offset_percent")]
-    pub volume_offset_percent: i32,
+    #[serde(default = "default_volume_offset")]
+    pub volume_offset: i32,
 
     /// Controls the logging level. See the [Log Specification](https://docs.rs/flexi_logger/latest/flexi_logger/struct.LogSpecification.html)
     #[serde(default = "default_log_level")]
@@ -55,7 +55,7 @@ impl Default for Config {
         Self {
             stations_directory: default_stations_directory(),
             input_timeout: default_input_timeout(),
-            volume_offset_percent: default_volume_offset_percent(),
+            volume_offset: default_volume_offset(),
             log_level: default_log_level(),
             notifications: Notifications::default(),
         }
@@ -97,8 +97,8 @@ impl<'de> de::Visitor<'de> for DurationMillisParser {
     }
 }
 
-const fn default_volume_offset_percent() -> i32 {
-    10
+const fn default_volume_offset() -> i32 {
+    5
 }
 
 fn default_log_level() -> String {

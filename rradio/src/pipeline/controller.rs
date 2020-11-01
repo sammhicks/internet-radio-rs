@@ -140,11 +140,6 @@ impl Controller {
             .ok();
     }
 
-    fn handle_volume_change(&mut self, new_volume: i32) {
-        self.published_state.volume = new_volume;
-        self.broadcast_state_change();
-    }
-
     async fn play_station(&mut self, new_station: Station) -> Result<()> {
         let playlist = new_station.into_playlist()?;
 
@@ -177,6 +172,22 @@ impl Controller {
         self.play_current_track().await
     }
 
+    fn set_volume(&mut self, volume: i32) -> Result<()> {
+        self.published_state.volume = self.playbin.set_volume(volume)?;
+        self.broadcast_state_change();
+        Ok(())
+    }
+
+    fn change_volume(&mut self, direction: i32) -> Result<()> {
+        let current_volume = self.playbin.volume()?;
+
+        #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+        let rounded_volume = self.config.volume_offset
+            * ((current_volume as f32) / (self.config.volume_offset as f32)).round() as i32;
+
+        self.set_volume(rounded_volume + direction * self.config.volume_offset)
+    }
+
     async fn handle_command(&mut self, command: Command) -> Result<()> {
         match command {
             Command::SetChannel(index) => {
@@ -190,18 +201,9 @@ impl Controller {
                 log::info!("Ignoring Seek");
                 Ok(())
             }
-            Command::VolumeUp => self
-                .playbin
-                .change_volume(self.config.volume_offset_percent)
-                .map(|new_volume| self.handle_volume_change(new_volume)),
-            Command::VolumeDown => self
-                .playbin
-                .change_volume(-self.config.volume_offset_percent)
-                .map(|new_volume| self.handle_volume_change(new_volume)),
-            Command::SetVolume(volume) => self
-                .playbin
-                .set_volume(volume)
-                .map(|new_volume| self.handle_volume_change(new_volume)),
+            Command::VolumeUp => self.change_volume(1),
+            Command::VolumeDown => self.change_volume(-1),
+            Command::SetVolume(volume) => self.set_volume(volume),
             Command::PlayUrl(url) => self.play_station(Station::singleton(url)).await,
             Command::Eject => {
                 log::info!("Ignoring Eject");

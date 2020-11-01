@@ -1,6 +1,6 @@
 [package]
 name = "rradio"
-version = "0.13.0"
+version = "0.14.0"
 authors = ["Samuel Hicks <SamMHicks@hotmail.co.uk>"]
 edition = "2018"
 description = "An internet radio with configurable two digit entry of stations"
@@ -27,6 +27,7 @@ flexi_logger = { version = "0.15", default_features = false, features = ["textfi
 futures = "0.3"
 glib = "0.10"
 gstreamer = "0.16"
+gstreamer-audio = "0.16"
 gstreamer-sys = "0.9"
 log = { version = "0.4", features = ["std"] }
 m3u = "1.0"
