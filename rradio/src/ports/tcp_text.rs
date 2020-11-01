@@ -88,10 +88,24 @@ impl<'a, S: AsRef<str> + Debug, TrackList: AsRef<[rradio_messages::Track]>> Disp
         }
 
         let buffering_row = volume_row + volume_row_count;
-        // let buffering_row_count = 1;
+        let buffering_row_count = 1;
         if let Some(buffering) = self.0.buffering {
             Display::fmt(&MoveTo(0, buffering_row), f)?;
             display_entry(f, "Buffering", buffering)?;
+        }
+
+        let track_duration_row = buffering_row + buffering_row_count;
+        let track_duration_row_count = 1;
+        if let Some(duration) = self.0.track_duration.into_option() {
+            Display::fmt(&MoveTo(0, track_duration_row), f)?;
+            display_entry(f, "Duration", duration)?;
+        }
+
+        let track_position_row = track_duration_row + track_duration_row_count;
+        // let track_position_row_count = 1;
+        if let Some(position) = self.0.track_position.into_option() {
+            Display::fmt(&MoveTo(0, track_position_row), f)?;
+            display_entry(f, "Position", position)?;
         }
 
         Ok(())
@@ -103,7 +117,7 @@ fn encode_message(message: &BroadcastEvent) -> Result<Vec<u8>> {
         BroadcastEvent::ProtocolVersion(_) => format!(
             "{}{}{}{}Version {}",
             crossterm::cursor::Hide,
-            crossterm::terminal::SetSize(120, 15),
+            crossterm::terminal::SetSize(120, 16),
             crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
             crossterm::cursor::MoveTo(0, 0),
             rradio_messages::VERSION

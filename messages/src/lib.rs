@@ -109,11 +109,21 @@ impl<S: AsRef<str>> std::default::Default for TrackTags<S> {
     }
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize)]
 pub enum OptionDiff<T> {
     NoChange,
     ChangedToNone,
     ChangedToSome(T),
+}
+
+impl<T> OptionDiff<T> {
+    pub fn into_option(self) -> Option<Option<T>> {
+        match self {
+            Self::NoChange => None,
+            Self::ChangedToNone => Some(None),
+            Self::ChangedToSome(t) => Some(Some(t)),
+        }
+    }
 }
 
 impl<T> std::convert::From<Option<T>> for OptionDiff<T> {
@@ -143,8 +153,8 @@ pub struct PlayerStateDiff<S: AsRef<str>, TrackList: AsRef<[Track]>> {
     pub current_track_tags: OptionDiff<TrackTags<S>>,
     pub volume: Option<i32>,
     pub buffering: Option<u8>,
-    pub track_duration: Option<Duration>,
-    pub track_position: Option<Duration>,
+    pub track_duration: OptionDiff<Duration>,
+    pub track_position: OptionDiff<Duration>,
 }
 
 #[derive(Copy, Clone, Debug, serde::Deserialize, serde::Serialize)]

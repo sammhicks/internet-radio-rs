@@ -1,5 +1,7 @@
 //! A wrapper around a gstreamer playbin
 
+use std::time::Duration;
+
 use anyhow::{Context, Result};
 use glib::{object::ObjectExt, Cast};
 use gstreamer::{ElementExt, ElementExtManual};
@@ -133,6 +135,20 @@ impl Playbin {
             );
 
         Ok(volume)
+    }
+
+    pub fn position(&self) -> Option<Duration> {
+        self.0
+            .query_position::<gstreamer::ClockTime>()
+            .and_then(|time| time.nanoseconds())
+            .map(Duration::from_nanos)
+    }
+
+    pub fn duration(&self) -> Option<Duration> {
+        self.0
+            .query_duration::<gstreamer::ClockTime>()
+            .and_then(|time| time.nanoseconds())
+            .map(Duration::from_nanos)
     }
 }
 

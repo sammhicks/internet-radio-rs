@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
-use std::convert::TryInto;
 use std::sync::Arc;
+use std::{convert::TryInto, time::Duration};
 use tokio::sync::{broadcast, mpsc, watch};
 
 use rradio_messages::{Command, LogMessage, TrackTags};
@@ -60,6 +60,8 @@ pub struct PlayerState {
     pub current_track_tags: Arc<Option<TrackTags<AtomicString>>>,
     pub volume: i32,
     pub buffering: u8,
+    pub track_duration: Option<Duration>,
+    pub track_position: Option<Duration>,
 }
 
 struct Controller {
@@ -128,6 +130,9 @@ impl Controller {
     }
 
     fn broadcast_state_change(&mut self) {
+        self.published_state.track_duration = self.playbin.duration();
+        self.published_state.track_position = self.playbin.position();
+
         self.new_state_tx
             .broadcast(self.published_state.clone())
             .ok();
@@ -337,6 +342,8 @@ pub fn run(
         current_track_tags: Arc::new(None),
         volume: playbin.volume().unwrap_or_default(),
         buffering: 0,
+        track_duration: None,
+        track_position: None,
     };
 
     let (new_state_tx, new_state_rx) = watch::channel(published_state.clone());
@@ -363,15 +370,23 @@ pub fn run(
 
         let mut messages = futures::stream::select(commands, bus_stream);
 
-        while let Some(message) = messages.next().await {
-            if let Err(err) = match message {
-                Message::Command(command) => controller.handle_command(command).await,
-                Message::GStreamerMessage(message) => {
-                    controller.handle_gstreamer_message(&message).await
+        let timeout = Duration::from_millis(1000 / 3);
+
+        loop {
+            match tokio::time::timeout(timeout, messages.next()).await {
+                Ok(None) => break,
+                Ok(Some(message)) => {
+                    if let Err(err) = match message {
+                        Message::Command(command) => controller.handle_command(command).await,
+                        Message::GStreamerMessage(message) => {
+                            controller.handle_gstreamer_message(&message).await
+                        }
+                    } {
+                        controller.broadcast_error_message(format!("{:#}", err));
+                        controller.play_error();
+                    }
                 }
-            } {
-                controller.broadcast_error_message(format!("{:#}", err));
-                controller.play_error();
+                Err(_) => controller.broadcast_state_change(),
             }
         }
     };
