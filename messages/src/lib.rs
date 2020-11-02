@@ -117,6 +117,10 @@ pub enum OptionDiff<T> {
 }
 
 impl<T> OptionDiff<T> {
+    pub fn is_none(&self) -> bool {
+        matches!(self, Self::NoChange)
+    }
+
     pub fn into_option(self) -> Option<Option<T>> {
         match self {
             Self::NoChange => None,

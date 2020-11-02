@@ -93,8 +93,10 @@ pub async fn run(port_channels: super::PortChannels) -> Result<()> {
                 while let Some(event) = events.next().await {
                     match event {
                         Event::StateUpdate(new_state) => {
-                            let diff = super::diff_player_state(&current_state, &new_state);
-                            ws_tx.send(diff.into()).await?;
+                            if let Some(diff) = super::diff_player_state(&current_state, &new_state)
+                            {
+                                ws_tx.send(diff.into()).await?;
+                            }
 
                             current_state = new_state;
                         }

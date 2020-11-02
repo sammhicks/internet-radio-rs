@@ -32,32 +32,52 @@ fn player_state_to_diff(state: &PlayerState) -> PlayerStateDiff<AtomicString, Tr
     }
 }
 
-fn diff_player_state(a: &PlayerState, b: &PlayerState) -> PlayerStateDiff<AtomicString, TrackList> {
-    PlayerStateDiff {
-        pipeline_state: diff_value(&a.pipeline_state, &b.pipeline_state),
-        current_station: diff_arc_with_clone(&a.current_station, &b.current_station).into(),
-        current_track_index: diff_value(&a.current_track_index, &b.current_track_index),
-        current_track_tags: diff_arc_with_clone(&a.current_track_tags, &b.current_track_tags)
+fn diff_player_state(
+    a: &PlayerState,
+    b: &PlayerState,
+) -> Option<PlayerStateDiff<AtomicString, TrackList>> {
+    let mut any_some = false;
+    let diff = PlayerStateDiff {
+        pipeline_state: diff_value(&a.pipeline_state, &b.pipeline_state, &mut any_some),
+        current_station: diff_arc_with_clone(&a.current_station, &b.current_station, &mut any_some)
             .into(),
-        volume: diff_value(&a.volume, &b.volume),
-        buffering: diff_value(&a.buffering, &b.buffering),
-        track_duration: diff_value(&a.track_duration, &b.track_duration).into(),
-        track_position: diff_value(&a.track_position, &b.track_position).into(),
+        current_track_index: diff_value(
+            &a.current_track_index,
+            &b.current_track_index,
+            &mut any_some,
+        ),
+        current_track_tags: diff_arc_with_clone(
+            &a.current_track_tags,
+            &b.current_track_tags,
+            &mut any_some,
+        )
+        .into(),
+        volume: diff_value(&a.volume, &b.volume, &mut any_some),
+        buffering: diff_value(&a.buffering, &b.buffering, &mut any_some),
+        track_duration: diff_value(&a.track_duration, &b.track_duration, &mut any_some).into(),
+        track_position: diff_value(&a.track_position, &b.track_position, &mut any_some).into(),
+    };
+    if any_some {
+        Some(diff)
+    } else {
+        None
     }
 }
 
-fn diff_value<T: Clone + std::cmp::PartialEq>(a: &T, b: &T) -> Option<T> {
+fn diff_value<T: Clone + std::cmp::PartialEq>(a: &T, b: &T, any_some: &mut bool) -> Option<T> {
     if a == b {
         None
     } else {
+        *any_some = true;
         Some(b.clone())
     }
 }
 
-fn diff_arc_with_clone<T: Clone>(a: &Arc<T>, b: &Arc<T>) -> Option<T> {
+fn diff_arc_with_clone<T: Clone>(a: &Arc<T>, b: &Arc<T>, any_some: &mut bool) -> Option<T> {
     if Arc::ptr_eq(a, b) {
         None
     } else {
+        *any_some = true;
         Some(b.as_ref().clone())
     }
 }

@@ -46,13 +46,14 @@ where
     while let Some(event) = events.next().await {
         match event {
             Event::StateUpdate(new_state) => {
-                let state_diff = super::diff_player_state(&current_state, &new_state);
+                if let Some(diff) = super::diff_player_state(&current_state, &new_state) {
+                    stream_tx
+                        .write_all(
+                            encode_event(&BroadcastEvent::PlayerStateChanged(diff))?.as_ref(),
+                        )
+                        .await?;
+                }
                 current_state = new_state;
-                stream_tx
-                    .write_all(
-                        encode_event(&BroadcastEvent::PlayerStateChanged(state_diff))?.as_ref(),
-                    )
-                    .await?;
             }
             Event::LogMessage(log_message) => {
                 stream_tx
