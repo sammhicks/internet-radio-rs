@@ -324,7 +324,7 @@ pub fn run(
     PartialPortChannels<()>,
 )> {
     gstreamer::init()?;
-    let playbin = Playbin::new()?;
+    let playbin = Playbin::new(&config)?;
     let bus = playbin.bus()?;
 
     if let Some(url) = &config.notifications.success {

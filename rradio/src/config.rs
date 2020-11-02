@@ -2,7 +2,6 @@
 
 use anyhow::{Context, Result};
 use log::LevelFilter;
-use serde::{de, Deserializer};
 use tokio::time::Duration;
 
 /// Notifications allow rradio to play sounds to notify the user of events
@@ -20,16 +19,15 @@ pub struct Config {
     pub stations_directory: String,
 
     /// The timeout when entering two digit station indices
-    #[serde(
-        rename = "input_timeout_ms",
-        default = "default_input_timeout",
-        deserialize_with = "deserialize_duration_millis"
-    )]
+    #[serde(default = "default_input_timeout", with = "humantime_serde")]
     pub input_timeout: Duration,
 
     /// The change in volume when the user increments or decrements the volume
     #[serde(default = "default_volume_offset")]
     pub volume_offset: i32,
+
+    #[serde(default = "default_buffering_duration", with = "humantime_serde")]
+    pub buffering_duration: Duration,
 
     /// Controls the logging level. See the [Log Specification](https://docs.rs/flexi_logger/latest/flexi_logger/struct.LogSpecification.html)
     #[serde(default = "default_log_level")]
@@ -56,6 +54,7 @@ impl Default for Config {
             stations_directory: default_stations_directory(),
             input_timeout: default_input_timeout(),
             volume_offset: default_volume_offset(),
+            buffering_duration: default_buffering_duration(),
             log_level: default_log_level(),
             notifications: Notifications::default(),
         }
@@ -70,35 +69,12 @@ const fn default_input_timeout() -> Duration {
     Duration::from_millis(2000)
 }
 
-fn deserialize_duration_millis<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Duration, D::Error> {
-    deserializer.deserialize_u64(DurationMillisParser)
-}
-
-struct DurationMillisParser;
-
-impl<'de> de::Visitor<'de> for DurationMillisParser {
-    type Value = Duration;
-
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(formatter, "a Duration in milliseconds")
-    }
-
-    fn visit_i64<E: de::Error>(self, v: i64) -> Result<Self::Value, E> {
-        use std::convert::TryFrom;
-        u64::try_from(v)
-            .map(Duration::from_millis)
-            .map_err(|_| de::Error::invalid_value(de::Unexpected::Signed(v), &self))
-    }
-
-    fn visit_u64<E: de::Error>(self, v: u64) -> Result<Self::Value, E> {
-        Ok(Duration::from_millis(v))
-    }
-}
-
 const fn default_volume_offset() -> i32 {
     5
+}
+
+const fn default_buffering_duration() -> Duration {
+    Duration::from_secs(40)
 }
 
 fn default_log_level() -> String {
@@ -107,14 +83,14 @@ fn default_log_level() -> String {
 
 struct LogLevelParser;
 
-impl<'de> de::Visitor<'de> for LogLevelParser {
+impl<'de> serde::de::Visitor<'de> for LogLevelParser {
     type Value = LevelFilter;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(formatter, "A log level filter")
     }
 
-    fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+    fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
         match v {
             "Off" => Ok(LevelFilter::Off),
             "Error" => Ok(LevelFilter::Error),
@@ -122,7 +98,7 @@ impl<'de> de::Visitor<'de> for LogLevelParser {
             "Info" => Ok(LevelFilter::Info),
             "Debug" => Ok(LevelFilter::Debug),
             "Trace" => Ok(LevelFilter::Trace),
-            _ => Err(de::Error::unknown_variant(
+            _ => Err(serde::de::Error::unknown_variant(
                 v,
                 &["Off", "Error", "Warn", "Info", "Debug", "Trace"],
             )),

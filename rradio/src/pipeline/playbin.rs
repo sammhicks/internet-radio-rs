@@ -1,5 +1,6 @@
 //! A wrapper around a gstreamer playbin
 
+use std::convert::TryInto;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -25,7 +26,7 @@ pub fn gstreamer_state_to_pipeline_state(state: gstreamer::State) -> Result<Pipe
 pub struct Playbin(gstreamer::Element);
 
 impl Playbin {
-    pub fn new() -> Result<Self> {
+    pub fn new(config: &crate::config::Config) -> Result<Self> {
         let playbin_element = gstreamer::ElementFactory::make("playbin", None)
             .context("Failed to create a playbin")?;
 
@@ -44,6 +45,16 @@ impl Playbin {
         playbin_element
             .set_property("flags", &flags)
             .context("Failed to set playbin flags")?;
+
+        let duration_nanos: i64 = config
+            .buffering_duration
+            .as_nanos()
+            .try_into()
+            .context("Bad buffer duration")?;
+
+        playbin_element
+            .set_property("buffer-duration", &duration_nanos)
+            .context("Failed to set buffer duration")?;
 
         Ok(Self(playbin_element))
     }

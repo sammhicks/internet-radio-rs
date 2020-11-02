@@ -6,10 +6,7 @@ use std::iter::FromIterator;
 use anyhow::Result;
 use crossterm::event::{Event, EventStream, KeyCode, KeyEvent};
 use futures::StreamExt;
-use tokio::{
-    sync::mpsc,
-    time::{self, Duration},
-};
+use tokio::{sync::mpsc, time};
 
 use rradio_messages::Command;
 
@@ -55,7 +52,7 @@ impl std::ops::Drop for RawMode {
 /// Process keyboard input and send parsed commands through channel `commands`
 pub async fn run(
     commands: mpsc::UnboundedSender<Command>,
-    station_input_timeout: Duration,
+    config: crate::config::Config,
 ) -> Result<()> {
     let mut raw_mode = RawMode::new()?;
 
@@ -69,7 +66,7 @@ pub async fn run(
 
         if let Some(digit) = current_number_entry.take() {
             // The user has recently entered a digit
-            if let Ok(event) = time::timeout(station_input_timeout, keyboard_events.next()).await {
+            if let Ok(event) = time::timeout(config.input_timeout, keyboard_events.next()).await {
                 // The user pressed a key before the timeout
                 previous_digit = Some(digit);
                 keyboard_event = event;

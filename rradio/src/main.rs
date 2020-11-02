@@ -44,8 +44,7 @@ fn main() -> Result<()> {
 
     let port_channels = port_channels.with_shutdown_signal(shutdown_signal);
 
-    let keyboard_commands_task =
-        keyboard_commands::run(port_channels.commands.clone(), config.input_timeout);
+    let keyboard_commands_task = keyboard_commands::run(port_channels.commands.clone(), config);
 
     #[cfg(feature = "web")]
     let web_task = ports::web::run(port_channels.clone());

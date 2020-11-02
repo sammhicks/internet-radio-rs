@@ -6,7 +6,9 @@
 
 ## Example Config file
     station_directory = "stations"
-    input_timeout_ms = 1000
+    input_timeout = "2s"
+    volume_offset = 5
+    buffering_duration = "40s"
     log_level = "Info"
 
     [Notifications]
@@ -21,9 +23,15 @@ Options:
   + Supported formats:
     + `.m3u` - https://en.wikipedia.org/wiki/M3U
     + `.pls` - https://en.wikipedia.org/wiki/PLS_(file_format)
-+ input_timeout_ms
-  + Default: `2000`
-  + Station indexes are two digits. This is the timeout is milliseconds between the first digit and the second.
++ input_timeout
+  + Default: `"2s"`
+  + Station indexes are two digits. This is the timeout between the first digit and the second. Uses [`humantime`](https://docs.rs/humantime/2.0.1/humantime/)
++ volume_offset
+  + Default: `5`
+  + The default volume change when incrementing and decrementing the volume
++ buffering_duration
+  + Default: `"2s"`
+  + The gstreaming buffer duration
 + log_level
   + Default: `"Warn"`
   + Options:
