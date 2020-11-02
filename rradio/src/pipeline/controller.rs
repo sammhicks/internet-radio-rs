@@ -222,7 +222,11 @@ impl Controller {
         use gstreamer::MessageView;
         match message.view() {
             MessageView::Buffering(b) => {
-                log::debug!("Buffering: {}", b.get_percent());
+                log::debug!(
+                    target: concat!(module_path!(), "::buffering"),
+                    "{}",
+                    b.get_percent()
+                );
 
                 self.published_state.buffering =
                     b.get_percent().try_into().context("Bad buffering value")?;
@@ -281,11 +285,17 @@ impl Controller {
 
                     self.broadcast_state_change();
 
-                    log::info!("{:?}", new_state);
+                    log::debug!(
+                        target: concat!(module_path!(), "::state_change"),
+                        "{:?}",
+                        new_state
+                    );
                 }
                 Ok(())
             }
             MessageView::Eos(..) => {
+                log::debug!(target: concat!(module_path!(), "::end_of_stream"), "");
+
                 if self.current_playlist.is_some() {
                     self.goto_next_track().await
                 } else {
@@ -299,8 +309,12 @@ impl Controller {
                 } else {
                     ""
                 };
-                let message: AtomicString =
-                    format!("{}{} ({:?})", prefix, err.get_error(), err.get_debug()).into();
+                let message = AtomicString::from(format!(
+                    "{}{} ({:?})",
+                    prefix,
+                    err.get_error(),
+                    err.get_debug()
+                ));
                 self.log_message_tx
                     .send(LogMessage::error(message.clone()))
                     .ok();
