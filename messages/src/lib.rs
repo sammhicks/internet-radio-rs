@@ -73,6 +73,25 @@ impl Track {
     }
 }
 
+#[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize)]
+pub enum StationType {
+    UrlList,
+    FileServer,
+    CD,
+    USB,
+}
+
+impl std::fmt::Display for StationType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.pad(match self {
+            Self::UrlList => "URL List",
+            Self::FileServer => "File Server",
+            Self::CD => "CD",
+            Self::USB => "USB",
+        })
+    }
+}
+
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub struct Station<S, TrackList>
 where
@@ -80,6 +99,7 @@ where
     TrackList: AsRef<[Track]>,
 {
     pub index: Option<S>,
+    pub source_type: StationType,
     pub title: Option<S>,
     pub tracks: TrackList,
 }

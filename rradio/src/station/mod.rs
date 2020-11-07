@@ -4,6 +4,7 @@ use std::path::Path;
 
 use anyhow::{Context, Error, Result};
 
+use rradio_messages::StationType;
 pub use rradio_messages::Track;
 
 mod parse_custom;
@@ -34,6 +35,7 @@ pub struct Credentials {
 pub struct Playlist {
     pub station_index: Option<String>,
     pub station_title: Option<String>,
+    pub station_type: rradio_messages::StationType,
     pub pause_before_playing: Option<std::time::Duration>,
     pub show_buffer: Option<bool>,
     pub tracks: Vec<Track>,
@@ -118,6 +120,7 @@ impl Station {
             } => Ok(Playlist {
                 station_index: Some(index),
                 station_title: title,
+                station_type: StationType::UrlList,
                 pause_before_playing,
                 show_buffer,
                 tracks,
@@ -126,6 +129,7 @@ impl Station {
             Station::CD { index, device } => Ok(Playlist {
                 station_index: Some(index),
                 station_title: None,
+                station_type: StationType::CD,
                 pause_before_playing: None,
                 show_buffer: None,
                 tracks: cd::tracks(&device)?,
@@ -133,6 +137,7 @@ impl Station {
             Station::Singleton { track } => Ok(Playlist {
                 station_index: None,
                 station_title: None,
+                station_type: StationType::UrlList,
                 pause_before_playing: None,
                 show_buffer: None,
                 tracks: vec![track],

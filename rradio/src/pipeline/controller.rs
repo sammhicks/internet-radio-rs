@@ -171,6 +171,7 @@ impl Controller {
         self.published_state.current_station = Arc::new(Some(rradio_messages::Station {
             index: playlist.station_index.map(From::from),
             title: playlist.station_title.map(From::from),
+            source_type: playlist.station_type,
             tracks: playlist_tracks,
         }));
 
