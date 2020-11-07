@@ -46,15 +46,16 @@ impl Playbin {
             .set_property("flags", &flags)
             .context("Failed to set playbin flags")?;
 
-        let duration_nanos: i64 = config
-            .buffering_duration
-            .as_nanos()
-            .try_into()
-            .context("Bad buffer duration")?;
+        if let Some(buffering_duration) = config.buffering_duration {
+            let duration_nanos: i64 = buffering_duration
+                .as_nanos()
+                .try_into()
+                .context("Bad buffer duration")?;
 
-        playbin_element
-            .set_property("buffer-duration", &duration_nanos)
-            .context("Failed to set buffer duration")?;
+            playbin_element
+                .set_property("buffer-duration", &duration_nanos)
+                .context("Failed to set buffer duration")?;
+        }
 
         Ok(Self(playbin_element))
     }

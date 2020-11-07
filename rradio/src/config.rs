@@ -27,7 +27,7 @@ pub struct Config {
     pub volume_offset: i32,
 
     #[serde(default = "default_buffering_duration", with = "humantime_serde")]
-    pub buffering_duration: Duration,
+    pub buffering_duration: Option<Duration>,
 
     /// Controls the logging level. See the [Log Specification](https://docs.rs/flexi_logger/latest/flexi_logger/struct.LogSpecification.html)
     #[serde(default = "default_log_level")]
@@ -73,8 +73,8 @@ const fn default_volume_offset() -> i32 {
     5
 }
 
-const fn default_buffering_duration() -> Duration {
-    Duration::from_secs(40)
+const fn default_buffering_duration() -> Option<Duration> {
+    None
 }
 
 fn default_log_level() -> String {
