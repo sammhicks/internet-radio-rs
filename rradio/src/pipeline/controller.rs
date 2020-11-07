@@ -150,16 +150,25 @@ impl Controller {
 
         log::debug!("Station tracks: {:?}", playlist.tracks);
 
-        let success_notification = self
+        let prefix_notification = self
             .config
             .notifications
-            .success
+            .playlist_prefix
             .iter()
             .cloned()
             .map(Track::notification);
 
-        let playlist_tracks = success_notification
+        let suffix_notification = self
+            .config
+            .notifications
+            .playlist_suffix
+            .iter()
+            .cloned()
+            .map(Track::notification);
+
+        let playlist_tracks = prefix_notification
             .chain(playlist.tracks)
+            .chain(suffix_notification)
             .collect::<Arc<_>>();
 
         self.current_playlist = Some(PlaylistState {
@@ -342,7 +351,7 @@ pub fn run(
     let playbin = Playbin::new(&config)?;
     let bus = playbin.bus()?;
 
-    if let Some(url) = &config.notifications.success {
+    if let Some(url) = &config.notifications.ready {
         if let Some(err) = playbin.play_url(url).err() {
             log::error!("{:#}", err);
         }

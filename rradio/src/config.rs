@@ -7,7 +7,9 @@ use tokio::time::Duration;
 /// Notifications allow rradio to play sounds to notify the user of events
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct Notifications {
-    pub success: Option<String>,
+    pub ready: Option<String>,
+    pub playlist_prefix: Option<String>,
+    pub playlist_suffix: Option<String>,
     pub error: Option<String>,
 }
 

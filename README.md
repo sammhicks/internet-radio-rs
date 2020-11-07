@@ -12,7 +12,7 @@
     log_level = "Info"
 
     [Notifications]
-    success = "file:///usr/share/sounds/success.mp3"
+    ready = "file:///usr/share/sounds/success.mp3"
     error = "file:///usr/share/sounds/error.mp3"
 
 
@@ -44,7 +44,11 @@ Options:
   + You can also specify per-module logging, using the same format as passed to [env_logger](https://docs.rs/env_logger/*/env_logger/)
 + Notifications
   + Default: None
-  + Notification sounds to play on success or error
+  + Values:
+    + `ready` - Ready for input
+    + `playlist_prefix` - Played before the station tracks
+    + `playlist_suffix` - Played after the station tracks
+    + `error` - Played when an error occurs
 
 ## Optional Features
 
