@@ -1,6 +1,9 @@
-use anyhow::{Context, Result};
-
 use super::Track;
+
+use rradio_messages::CdError;
+
+type Result<T> =
+    std::result::Result<T, rradio_messages::CdError<crate::atomic_string::AtomicString>>;
 
 #[repr(C)]
 #[derive(Debug, Default)]
@@ -121,40 +124,42 @@ unsafe fn check_errno(result: libc::c_int) -> Result<()> {
     if result < 0 {
         let message_cstr = std::ffi::CStr::from_ptr(libc::strerror(*libc::__errno_location()));
         let message = message_cstr.to_string_lossy().into_owned();
-        anyhow::bail!(message);
+        Err(CdError::IoCtlError(message.into()))
+    } else {
+        Ok(())
     }
-    Ok(())
 }
 
 pub fn tracks(device: &str) -> Result<Vec<Track>> {
     use libc::c_uint;
     use std::os::unix::io::AsRawFd;
 
-    let device = std::fs::File::open(device).context("Cannot open CD device")?;
+    let device = std::fs::File::open(device)
+        .map_err(|err| CdError::CannotOpenDevice(err.to_string().into()))?;
 
     let fd = device.as_raw_fd();
 
     match unsafe { libc::ioctl(fd, IoCtlRequest::CDROM_DRIVE_STATUS as c_uint, 0) } {
-        0 => anyhow::bail!("No CD info"),           // CDS_NO_INFO
-        1 => anyhow::bail!("No CD"),                // CDS_NO_DISC
-        2 => anyhow::bail!("CD tray is open"),      // CDS_TRAY_OPEN
-        3 => anyhow::bail!("CD tray is not ready"), // CDS_DRIVE_NOT_READY
+        0 => return Err(CdError::NoCdInfo),         // CDS_NO_INFO
+        1 => return Err(CdError::NoCd),             // CDS_NO_DISC
+        2 => return Err(CdError::CdTrayIsOpen),     // CDS_TRAY_OPEN
+        3 => return Err(CdError::CdTrayIsNotReady), // CDS_DRIVE_NOT_READY
         4 => log::debug!("CD drive OK"),            // CDS_DISC_OK
-        n => anyhow::bail!("Unknown CDROM_DRIVE_STATUS: {}", n),
+        n => return Err(CdError::UnknownDriveStatus(n as isize)),
     }
 
     match unsafe { libc::ioctl(fd, IoCtlRequest::CDROM_DISC_STATUS as c_uint, 0) } {
-        0 => anyhow::bail!("No CD info"),           // CDS_NO_INFO
-        1 => anyhow::bail!("No CD"),                // CDS_NO_DISC
-        2 => anyhow::bail!("CD tray is open"),      // CDS_TRAY_OPEN
-        3 => anyhow::bail!("CD tray is not ready"), // CDS_DRIVE_NOT_READY
+        0 => return Err(CdError::NoCdInfo),         // CDS_NO_INFO
+        1 => return Err(CdError::NoCd),             // CDS_NO_DISC
+        2 => return Err(CdError::CdTrayIsOpen),     // CDS_TRAY_OPEN
+        3 => return Err(CdError::CdTrayIsNotReady), // CDS_DRIVE_NOT_READY
         100 => log::debug!("Audio CD"),             // CDS_AUDIO
-        101 => anyhow::bail!("CD is CDS_DATA_1"),   // CDS_DATA_1
-        102 => anyhow::bail!("CD is CDS_DATA_2"),   // CDS_DATA_2
-        103 => anyhow::bail!("CD is CDS_XA_2_1"),   // CDS_XA_2_1
-        104 => anyhow::bail!("CD is CDS_XA_2_2"),   // CDS_XA_2_2
+        101 => return Err(CdError::CdIsData1),      // CDS_DATA_1
+        102 => return Err(CdError::CdIsData2),      // CDS_DATA_2
+        103 => return Err(CdError::CdIsXA21),       // CDS_XA_2_1
+        104 => return Err(CdError::CdIsXA22),       // CDS_XA_2_2
         105 => log::debug!("Mixed CD"),             // CDS_MIXED
-        n => anyhow::bail!("Unknown CDROM_DISC_STATUS: {}", n),
+        n => return Err(CdError::UnknownDriveStatus(n as isize)),
     }
 
     let mut toc = CdToc::default();
@@ -200,4 +205,5 @@ fn cd_track(fd: libc::c_int, track_index: u8) -> Result<Option<Track>> {
             url: format!("cdda://{}", track_index),
             is_notification: false,
         }))
-    }}
+    }
+}

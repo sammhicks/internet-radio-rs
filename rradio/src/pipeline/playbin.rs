@@ -3,7 +3,6 @@
 use std::convert::TryInto;
 use std::time::Duration;
 
-use anyhow::{Context, Result};
 use glib::{object::ObjectExt, Cast};
 use gstreamer::{ElementExt, ElementExtManual};
 use gstreamer_audio::StreamVolumeExt;
@@ -11,14 +10,20 @@ use log::{debug, error};
 
 pub use rradio_messages::PipelineState;
 
-pub fn gstreamer_state_to_pipeline_state(state: gstreamer::State) -> Result<PipelineState> {
+type PipelineError = rradio_messages::PipelineError<crate::atomic_string::AtomicString>;
+
+pub fn gstreamer_state_to_pipeline_state(
+    state: gstreamer::State,
+) -> Result<PipelineState, PipelineError> {
     match state {
         gstreamer::State::VoidPending => Ok(PipelineState::VoidPending),
         gstreamer::State::Null => Ok(PipelineState::Null),
         gstreamer::State::Ready => Ok(PipelineState::Ready),
         gstreamer::State::Paused => Ok(PipelineState::Paused),
         gstreamer::State::Playing => Ok(PipelineState::Playing),
-        _ => Err(anyhow::Error::msg(format!("Unknown state {:?}", state))),
+        _ => Err(rradio_messages::PipelineError(
+            format!("Unknown state {:?}", state).into(),
+        )),
     }
 }
 
@@ -26,7 +31,9 @@ pub fn gstreamer_state_to_pipeline_state(state: gstreamer::State) -> Result<Pipe
 pub struct Playbin(gstreamer::Element);
 
 impl Playbin {
-    pub fn new(config: &crate::config::Config) -> Result<Self> {
+    pub fn new(config: &crate::config::Config) -> Result<Self, anyhow::Error> {
+        use anyhow::Context;
+
         let playbin_element = gstreamer::ElementFactory::make("playbin", None)
             .context("Failed to create a playbin")?;
 
@@ -60,34 +67,35 @@ impl Playbin {
         Ok(Self(playbin_element))
     }
 
-    pub fn bus(&self) -> Result<gstreamer::Bus> {
+    pub fn bus(&self) -> Result<gstreamer::Bus, anyhow::Error> {
+        use anyhow::Context;
         self.0.get_bus().context("Playbin has no bus")
     }
 
-    pub fn pipeline_state(&self) -> Result<PipelineState> {
+    pub fn pipeline_state(&self) -> Result<PipelineState, PipelineError> {
         let (success, state, _) = self.0.get_state(gstreamer::ClockTime::none());
-        success.context("Unable to get state")?;
-        gstreamer_state_to_pipeline_state(state)
+        if success.is_ok() {
+            gstreamer_state_to_pipeline_state(state)
+        } else {
+            Err(rradio_messages::PipelineError("Cannot get state".into()))
+        }
     }
 
-    pub fn set_pipeline_state(&self, state: PipelineState) -> Result<()> {
-        let state = match state {
+    pub fn set_pipeline_state(&self, state: PipelineState) -> Result<(), PipelineError> {
+        let gstreamer_state = match state {
             PipelineState::VoidPending => gstreamer::State::VoidPending,
             PipelineState::Null => gstreamer::State::Null,
             PipelineState::Ready => gstreamer::State::Ready,
             PipelineState::Paused => gstreamer::State::Paused,
             PipelineState::Playing => gstreamer::State::Playing,
         };
-        self.0.set_state(state).with_context(|| {
-            format!(
-                "Unable to set the playbin pipeline to the `{:?}` state",
-                state
-            )
+        self.0.set_state(gstreamer_state).map_err(|_| {
+            rradio_messages::PipelineError(format!("Cannot set state to {}", state).into())
         })?;
         Ok(())
     }
 
-    pub fn play_pause(&self) -> Result<()> {
+    pub fn play_pause(&self) -> Result<(), PipelineError> {
         match self.pipeline_state()? {
             PipelineState::Paused => self.set_pipeline_state(PipelineState::Playing),
             PipelineState::Playing => self.set_pipeline_state(PipelineState::Paused),
@@ -95,18 +103,20 @@ impl Playbin {
         }
     }
 
-    pub fn set_url(&self, url: &str) -> Result<()> {
+    pub fn set_url(&self, url: &str) -> Result<(), PipelineError> {
         self.set_pipeline_state(PipelineState::Null)?;
         self.0
             .set_property("uri", &glib::Value::from(url))
-            .with_context(|| format!("Unable to set the playbin url to `{}`", url))?;
-        Ok(())
+            .map_err(|err| {
+                rradio_messages::PipelineError(
+                    format!("Unable to set the playbin url to {:?}: {}", url, err).into(),
+                )
+            })
     }
 
-    pub fn play_url(&self, url: &str) -> Result<()> {
+    pub fn play_url(&self, url: &str) -> Result<(), PipelineError> {
         self.set_url(url)?;
-        self.set_pipeline_state(PipelineState::Playing)?;
-        Ok(())
+        self.set_pipeline_state(PipelineState::Playing)
     }
 
     pub fn is_src_of(&self, message: gstreamer_sys::GstMessage) -> bool {
@@ -117,12 +127,12 @@ impl Playbin {
         playbin_ptr == message_src_ptr
     }
 
-    pub fn volume(&self) -> Result<i32> {
+    pub fn volume(&self) -> Result<i32, PipelineError> {
         #[allow(clippy::cast_possible_truncation)]
         let current_volume =
             self.0
                 .dynamic_cast_ref::<gstreamer_audio::StreamVolume>()
-                .context("Playbin has no volume")?
+                .ok_or_else(|| rradio_messages::PipelineError("Playbin has no volume".into()))?
                 .get_volume(gstreamer_audio::StreamVolumeFormat::Db) as i32;
 
         let scaled_volume = current_volume + rradio_messages::VOLUME_ZERO_DB;
@@ -132,7 +142,7 @@ impl Playbin {
         Ok(scaled_volume)
     }
 
-    pub fn set_volume(&self, volume: i32) -> Result<i32> {
+    pub fn set_volume(&self, volume: i32) -> Result<i32, PipelineError> {
         let volume = volume
             .max(rradio_messages::VOLUME_MIN)
             .min(rradio_messages::VOLUME_MAX);
@@ -140,7 +150,7 @@ impl Playbin {
 
         self.0
             .dynamic_cast_ref::<gstreamer_audio::StreamVolume>()
-            .context("Playbin has no volume")?
+            .ok_or_else(|| rradio_messages::PipelineError("Playbin has no volume".into()))?
             .set_volume(
                 gstreamer_audio::StreamVolumeFormat::Db,
                 f64::from(volume - rradio_messages::VOLUME_ZERO_DB),

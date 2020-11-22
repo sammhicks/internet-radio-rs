@@ -1,6 +1,5 @@
 //! A description of the rradio configuration file
 
-use anyhow::{Context, Result};
 use log::LevelFilter;
 use tokio::time::Duration;
 
@@ -43,9 +42,11 @@ pub struct Config {
 impl Config {
     pub fn load(path: impl AsRef<std::path::Path>) -> Self {
         std::fs::read_to_string(path)
-            .context("Failed to read config file")
-            .and_then(|config| toml::from_str(&config).context("Failed to parse config file"))
-            .map_err(|err| log::error!("{:#}", err))
+            .map_err(|err| log::error!("Failed to read config file: {:?}", err))
+            .and_then(|config| {
+                toml::from_str(&config)
+                    .map_err(|err| log::error!("Failed to parse config file: {:?}", err))
+            })
             .unwrap_or_default()
     }
 }

@@ -2,10 +2,8 @@
 
 use std::path::Path;
 
-use anyhow::{Context, Error, Result};
-
 use rradio_messages::StationType;
-pub use rradio_messages::Track;
+pub use rradio_messages::{StationError, Track};
 
 mod parse_custom;
 mod parse_m3u;
@@ -13,8 +11,11 @@ mod parse_pls;
 
 #[cfg(not(feature = "cd"))]
 mod cd {
-    pub fn tracks(_device: &str) -> anyhow::Result<Vec<super::Track>> {
-        anyhow::bail!("CD support not enabled");
+    pub fn tracks(
+        _device: &str,
+    ) -> Result<Vec<super::Track>, rradio_messages::CdError<crate::atomic_string::AtomicString>>
+    {
+        Err(rradio_messages::CdError::CdNotEnabled)
     }
 }
 
@@ -25,6 +26,9 @@ compile_error!("CD only supported on unix");
 mod cd_unix;
 #[cfg(all(feature = "cd", unix))]
 use cd_unix as cd;
+
+type Result<T> =
+    std::result::Result<T, rradio_messages::StationError<crate::atomic_string::AtomicString>>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Credentials {
@@ -67,11 +71,21 @@ pub enum Station {
     },
 }
 
+fn stations_directory_io_error<T>(result: std::io::Result<T>) -> Result<T> {
+    result.map_err(|err| {
+        rradio_messages::StationError::StationsDirectoryIoError(err.to_string().into())
+    })
+}
+
+fn playlist_error<T>(result: anyhow::Result<T>) -> Result<T> {
+    result.map_err(|err| rradio_messages::StationError::BadStationFile(format!("{:#}", err).into()))
+}
+
 impl Station {
     /// Load the station with the given index from the given directory, if the index exists
     pub fn load(directory: impl AsRef<Path>, index: String) -> Result<Self> {
-        for entry in std::fs::read_dir(&directory)? {
-            let entry = entry?;
+        for entry in stations_directory_io_error(std::fs::read_dir(directory.as_ref()))? {
+            let entry = stations_directory_io_error(entry)?;
             let name = entry.file_name();
 
             if name.to_string_lossy().starts_with(&index) {
@@ -79,23 +93,24 @@ impl Station {
                 return match entry
                     .path()
                     .extension()
-                    .context("File has no extension")?
+                    .ok_or_else(|| StationError::BadStationFile("File has no extension".into()))?
                     .to_string_lossy()
                     .as_ref()
                 {
-                    "m3u" => parse_m3u::parse(path, index),
-                    "pls" => parse_pls::parse(path, index),
-                    "txt" => parse_custom::parse(path, index),
-                    extension => Err(Error::msg(format!("Unsupported format: \"{}\"", extension))),
+                    "m3u" => playlist_error(parse_m3u::parse(path, index)),
+                    "pls" => playlist_error(parse_pls::parse(path, index)),
+                    "txt" => playlist_error(parse_custom::parse(path, index)),
+                    extension => Err(StationError::BadStationFile(
+                        format!("Unsupported format: \"{}\"", extension).into(),
+                    )),
                 };
             }
         }
 
-        Err(anyhow::Error::msg(format!(
-            "No station {} specified in \"{}\"",
-            index,
-            directory.as_ref().display()
-        )))
+        Err(rradio_messages::StationError::StationNotFound {
+            index: index.into(),
+            directory: directory.as_ref().display().to_string().into(),
+        })
     }
 
     /// Create a station consisting of a single url.
@@ -125,7 +140,7 @@ impl Station {
                 show_buffer,
                 tracks,
             }),
-            Station::FileServer { .. } => anyhow::bail!("FileServer not supported yet"),
+            Station::FileServer { .. } => Err(StationError::FileServerNotEnabled),
             Station::CD { index, device } => Ok(Playlist {
                 station_index: Some(index),
                 station_title: None,

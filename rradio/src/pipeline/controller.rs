@@ -1,14 +1,14 @@
-use anyhow::{Context, Result};
 use std::sync::Arc;
 use std::{convert::TryInto, time::Duration};
 use tokio::sync::{broadcast, mpsc, watch};
 
-use rradio_messages::{Command, LogMessage, TrackTags};
+use rradio_messages::{Command, LogMessage, PipelineError, TrackTags};
 
 use super::playbin::{PipelineState, Playbin};
 use crate::{
     atomic_string::AtomicString,
     config::Config,
+    errors::{Error, Result},
     ports::PartialPortChannels,
     station::{Station, Track},
     tag::Tag,
@@ -33,7 +33,9 @@ impl PlaylistState {
     fn current_track(&self) -> Result<&Track> {
         self.tracks
             .get(self.current_track_index)
-            .context("Invalid track index")
+            .ok_or(rradio_messages::Error::InvalidTrackIndex(
+                self.current_track_index,
+            ))
     }
 
     fn goto_previous_track(&mut self) {
@@ -76,14 +78,17 @@ struct Controller {
 impl Controller {
     fn play_pause(&mut self) -> Result<()> {
         if self.current_playlist.is_some() {
-            self.playbin.play_pause()
+            self.playbin.play_pause().map_err(Error::from)
         } else {
             Ok(())
         }
     }
 
     async fn play_current_track(&mut self) -> Result<()> {
-        let current_playlist = self.current_playlist.as_mut().context("No playlist")?;
+        let current_playlist = self
+            .current_playlist
+            .as_mut()
+            .ok_or(rradio_messages::Error::NoPlaylist)?;
 
         let track = current_playlist.current_track()?;
         let pause_before_playing = current_playlist.pause_before_playing;
@@ -105,7 +110,7 @@ impl Controller {
     async fn goto_previous_track(&mut self) -> Result<()> {
         self.current_playlist
             .as_mut()
-            .context("No playlist")?
+            .ok_or(rradio_messages::Error::NoPlaylist)?
             .goto_previous_track();
         self.play_current_track().await
     }
@@ -113,7 +118,7 @@ impl Controller {
     async fn goto_next_track(&mut self) -> Result<()> {
         self.current_playlist
             .as_mut()
-            .context("No playlist")?
+            .ok_or(rradio_messages::Error::NoPlaylist)?
             .goto_next_track();
         self.play_current_track().await
     }
@@ -138,11 +143,9 @@ impl Controller {
             .ok();
     }
 
-    fn broadcast_error_message(&mut self, message: String) {
-        log::error!("{}", message);
-        self.log_message_tx
-            .send(LogMessage::error(message.into()))
-            .ok();
+    fn broadcast_error_message(&mut self, error: crate::errors::Error) {
+        log::error!("{}", error);
+        self.log_message_tx.send(error.into()).ok();
     }
 
     async fn play_station(&mut self, new_station: Station) -> Result<()> {
@@ -238,8 +241,9 @@ impl Controller {
                     b.get_percent()
                 );
 
-                self.published_state.buffering =
-                    b.get_percent().try_into().context("Bad buffering value")?;
+                self.published_state.buffering = b.get_percent().try_into().map_err(|_| {
+                    PipelineError(format!("Bad buffering value: {}", b.get_percent()).into())
+                })?;
 
                 self.broadcast_state_change();
 
@@ -270,7 +274,9 @@ impl Controller {
                         Ok(Tag::Comment(comment)) => new_tags.comment = Some(comment.into()),
                         Ok(Tag::Unknown { .. }) => {}
                         Err(err) => {
-                            self.broadcast_error_message(format!("{:#}", err));
+                            self.broadcast_error_message(
+                                rradio_messages::TagError(format!("{:#}", err).into()).into(),
+                            );
                         }
                     }
                 }
@@ -309,7 +315,9 @@ impl Controller {
                 if self.current_playlist.is_some() {
                     self.goto_next_track().await
                 } else {
-                    self.playbin.set_pipeline_state(PipelineState::Null)
+                    self.playbin
+                        .set_pipeline_state(PipelineState::Null)
+                        .map_err(rradio_messages::Error::from)
                 }
             }
             MessageView::Error(err) => {
@@ -319,16 +327,8 @@ impl Controller {
                 } else {
                     ""
                 };
-                let message = AtomicString::from(format!(
-                    "{}{} ({:?})",
-                    prefix,
-                    err.get_error(),
-                    err.get_debug()
-                ));
-                self.log_message_tx
-                    .send(LogMessage::error(message.clone()))
-                    .ok();
-                Err(anyhow::Error::msg(message))
+                let message = format!("{}{} ({:?})", prefix, err.get_error(), err.get_debug());
+                Err(PipelineError(message.into()).into())
             }
             _ => Ok(()),
         }
@@ -343,7 +343,7 @@ enum Message {
 /// Initialise the gstreamer pipeline, and process incoming commands
 pub fn run(
     config: Config,
-) -> Result<(
+) -> anyhow::Result<(
     impl std::future::Future<Output = ()>,
     PartialPortChannels<()>,
 )> {
@@ -406,7 +406,7 @@ pub fn run(
                             controller.handle_gstreamer_message(&message).await
                         }
                     } {
-                        controller.broadcast_error_message(format!("{:#}", err));
+                        controller.broadcast_error_message(err);
                         controller.play_error();
                     }
                 }

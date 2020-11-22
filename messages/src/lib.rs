@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{fmt::Debug, time::Duration};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -181,58 +181,91 @@ pub struct PlayerStateDiff<S: AsRef<str>, TrackList: AsRef<[Track]>> {
     pub track_position: OptionDiff<Duration>,
 }
 
-#[derive(Copy, Clone, Debug, serde::Deserialize, serde::Serialize)]
-pub enum LogLevel {
-    Error,
-    Warn,
-    Info,
-    Debug,
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, thiserror::Error)]
+#[error("Pipeline Error: {}", .0.as_ref())]
+pub struct PipelineError<S: AsRef<str> + Debug>(pub S);
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, thiserror::Error)]
+pub enum CdError<S: AsRef<str> + Debug> {
+    #[error("CD support is not enabled")]
+    CdNotEnabled,
+    #[error("Cannot open CD device: {}", .0.as_ref())]
+    CannotOpenDevice(S),
+    #[error("ioctl Error: {}", .0.as_ref())]
+    IoCtlError(S),
+    #[error("No CD info")]
+    NoCdInfo,
+    #[error("No CD")]
+    NoCd,
+    #[error("CD tray is open")]
+    CdTrayIsOpen,
+    #[error("CD tray is not ready")]
+    CdTrayIsNotReady,
+    #[error("CD is CDS_DATA_1")]
+    CdIsData1,
+    #[error("CD is CDS_DATA_2")]
+    CdIsData2,
+    #[error("CD is CDS_XA_2_1")]
+    CdIsXA21,
+    #[error("CD is CDS_XA_2_2")]
+    CdIsXA22,
+    #[error("Unknown Drive Status: {0}")]
+    UnknownDriveStatus(isize),
+    #[error("Unknown Disc Status: {0}")]
+    UnknownDiscStatus(isize),
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, thiserror::Error)]
+pub enum StationError<S: AsRef<str> + Debug + 'static> {
+    #[error("File Server support is not enabled")]
+    FileServerNotEnabled,
+    #[error("CD Error: {0}")]
+    CdError(#[from] CdError<S>),
+    #[error("Cannot read from stations directory: {}", .0.as_ref())]
+    StationsDirectoryIoError(S),
+    #[error("Station {} not found in {}", index.as_ref(), directory.as_ref())]
+    StationNotFound { index: S, directory: S },
+    #[error("Bad Station File: {}", .0.as_ref())]
+    BadStationFile(S),
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, thiserror::Error)]
+#[error("Tag Error: {}", .0.as_ref())]
+pub struct TagError<S: AsRef<str> + Debug>(pub S);
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, thiserror::Error)]
+pub enum Error<S: AsRef<str> + Debug + 'static> {
+    #[error("No Playlist")]
+    NoPlaylist,
+    #[error("Invalid track index: {0}")]
+    InvalidTrackIndex(usize),
+    #[error(transparent)]
+    PipelineError(#[from] PipelineError<S>),
+    #[error("Station Error: {0}")]
+    StationError(#[from] StationError<S>),
+    #[error(transparent)]
+    TagError(#[from] TagError<S>),
 }
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-pub struct LogMessage<S: AsRef<str>> {
-    pub level: LogLevel,
-    pub message: S,
+pub enum LogMessage<S: AsRef<str> + Debug + 'static> {
+    Error(Error<S>),
 }
 
-impl<S: AsRef<str>> LogMessage<S> {
-    pub fn error(message: S) -> Self {
-        Self {
-            level: LogLevel::Error,
-            message,
-        }
-    }
-
-    pub fn warn(message: S) -> Self {
-        Self {
-            level: LogLevel::Warn,
-            message,
-        }
-    }
-
-    pub fn info(message: S) -> Self {
-        Self {
-            level: LogLevel::Info,
-            message,
-        }
-    }
-
-    pub fn debug(message: S) -> Self {
-        Self {
-            level: LogLevel::Debug,
-            message,
-        }
+impl<S: AsRef<str> + Debug> std::convert::From<Error<S>> for LogMessage<S> {
+    fn from(error: Error<S>) -> Self {
+        Self::Error(error)
     }
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
-pub enum Event<Version: AsRef<str>, S: AsRef<str>, Tracklist: AsRef<[Track]>> {
+pub enum Event<Version: AsRef<str>, S: AsRef<str> + Debug + 'static, Tracklist: AsRef<[Track]>> {
     ProtocolVersion(Version),
     PlayerStateChanged(PlayerStateDiff<S, Tracklist>),
     LogMessage(LogMessage<S>),
 }
 
-impl<Version: AsRef<str>, S: AsRef<str>, Tracklist: AsRef<[Track]>>
+impl<Version: AsRef<str>, S: AsRef<str> + Debug, Tracklist: AsRef<[Track]>>
     std::convert::From<PlayerStateDiff<S, Tracklist>> for Event<Version, S, Tracklist>
 {
     fn from(diff: PlayerStateDiff<S, Tracklist>) -> Self {
@@ -240,7 +273,7 @@ impl<Version: AsRef<str>, S: AsRef<str>, Tracklist: AsRef<[Track]>>
     }
 }
 
-impl<Version: AsRef<str>, S: AsRef<str>, Tracklist: AsRef<[Track]>>
+impl<Version: AsRef<str>, S: AsRef<str> + Debug, Tracklist: AsRef<[Track]>>
     std::convert::From<LogMessage<S>> for Event<Version, S, Tracklist>
 {
     fn from(message: LogMessage<S>) -> Self {
@@ -248,7 +281,7 @@ impl<Version: AsRef<str>, S: AsRef<str>, Tracklist: AsRef<[Track]>>
     }
 }
 
-pub fn protocol_version_message<S: AsRef<str>, TrackList: AsRef<[Track]>>(
+pub fn protocol_version_message<S: AsRef<str> + Debug, TrackList: AsRef<[Track]>>(
 ) -> Event<&'static str, S, TrackList> {
     Event::ProtocolVersion(VERSION)
 }
