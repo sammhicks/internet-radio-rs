@@ -1,6 +1,6 @@
 [package]
 name = "rradio"
-version = "0.22.0"
+version = "0.23.0"
 authors = ["Samuel Hicks <SamMHicks@hotmail.co.uk>"]
 edition = "2018"
 description = "An internet radio with configurable two digit entry of stations"
@@ -16,6 +16,7 @@ categories = ["audio", "internet"]
 [features]
 cd = [ "libc" ]
 production-server = []
+usb = [ "rand", "sys-mount", "tempdir" ]
 web = [ "warp" ]
 default = [ "web" ]
 
@@ -35,8 +36,11 @@ m3u = "1.0"
 pin-project = "1.0"
 pin-utils = "0.1"
 pls = "0.2"
+rand = { version = "0.8", optional = true }
 rmp-serde = "0.14"
 serde = { version = "1.0", features = ["derive", "rc"] }
+sys-mount = { version = "1.2", optional = true }
+tempdir = { version = "0.3", optional = true }
 thiserror = "1.0"
 tokio = { version = "0.2", features = [ "io-util", "macros", "rt-threaded", "stream", "sync", "tcp", "time"] }
 toml = "0.5"

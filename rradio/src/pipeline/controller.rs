@@ -27,6 +27,7 @@ struct PlaylistState {
     pause_before_playing: Option<std::time::Duration>,
     tracks: Arc<[Track]>,
     current_track_index: usize,
+    _station_handle: crate::station::Handle,
 }
 
 impl PlaylistState {
@@ -149,6 +150,8 @@ impl Controller {
     }
 
     async fn play_station(&mut self, new_station: Station) -> Result<()> {
+        self.current_playlist.take();
+
         let playlist = new_station.into_playlist()?;
 
         log::debug!("Station tracks: {:?}", playlist.tracks);
@@ -178,6 +181,7 @@ impl Controller {
             pause_before_playing: playlist.pause_before_playing,
             tracks: playlist_tracks.clone(),
             current_track_index: 0,
+            _station_handle: playlist.handle,
         });
 
         self.published_state.current_station = Arc::new(Some(rradio_messages::Station {

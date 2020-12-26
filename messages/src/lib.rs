@@ -216,11 +216,27 @@ pub enum CdError<S: AsRef<str> + Debug> {
 }
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize, thiserror::Error)]
+pub enum UsbError<S: AsRef<str> + Debug> {
+    #[error("USB support is not enabled")]
+    UsbNotEnabled,
+    #[error("Could not create temporary directory: {}", .0.as_ref())]
+    CouldNotCreateTemporaryDirectory(S),
+    #[error("Could not mount device: {}", .0.as_ref())]
+    CouldNotMountDevice(S),
+    #[error("Error finding tracks: {}", .0.as_ref())]
+    ErrorFindTracks(S),
+    #[error("Tracks not found")]
+    TracksNotFound,
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, thiserror::Error)]
 pub enum StationError<S: AsRef<str> + Debug + 'static> {
     #[error("File Server support is not enabled")]
     FileServerNotEnabled,
     #[error("CD Error: {0}")]
     CdError(#[from] CdError<S>),
+    #[error("USB Error: {0}")]
+    UsbError(#[from] UsbError<S>),
     #[error("Cannot read from stations directory: {}", .0.as_ref())]
     StationsDirectoryIoError(S),
     #[error("Station {} not found in {}", index.as_ref(), directory.as_ref())]

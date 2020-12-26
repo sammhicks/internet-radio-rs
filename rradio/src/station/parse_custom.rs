@@ -85,6 +85,7 @@ fn parse_data(
     let mut password = None;
     let mut pause_before_playing = None;
     let mut cd_device = None;
+    let mut usb_device = None;
     let mut url_list = Vec::new();
     let mut show_buffer = None;
     let mut http_found = false;
@@ -92,49 +93,54 @@ fn parse_data(
 
     for (line_index, one_line) in buffered_file.lines().enumerate() {
         let one_line = one_line.map_err(ParsePlaylistError::IoError)?;
+        let one_line = one_line.trim();
 
         if one_line.is_empty() {
             continue; //skip empty lines
         }
 
-        if let Some(title_value) = extract_command(&one_line, "title") {
+        if let Some(title_value) = extract_command(one_line, "title") {
             title = Some(title_value.to_string());
-        } else if let Some(username_value) = extract_command(&one_line, "username") {
+        } else if let Some(username_value) = extract_command(one_line, "username") {
             username = Some(username_value.to_string());
-        } else if let Some(password_value) = extract_command(&one_line, "password") {
+        } else if let Some(password_value) = extract_command(one_line, "password") {
             password = Some(password_value.to_string());
         } else if let Some(pause_before_playing_value) =
-            extract_command(&one_line, "pause_before_playing")
+            extract_command(one_line, "pause_before_playing")
         {
             match pause_before_playing_value.parse() {
                 Ok(value) => pause_before_playing = Some(std::time::Duration::from_secs(value)),
-                Err(err) => eprintln!("pause_before_playing not an integer: {:?}", err),
+                Err(err) => log::error!("pause_before_playing not an integer: {:?}", err),
             };
-        } else if let Some(show_buffer_value) = extract_command(&one_line, "show_buffer") {
+        } else if let Some(show_buffer_value) = extract_command(one_line, "show_buffer") {
             match bool::from_str(show_buffer_value) {
                 Ok(value) => show_buffer = Some(value),
-                Err(err) => eprintln!("show_buffer not a boolean: {:?}", err),
+                Err(err) => log::error!("show_buffer not a boolean: {:?}", err),
             };
         } else if let Some(comment) = one_line.strip_prefix('#') {
-            println!("Found comment or unrecognised parameter '{:?}'", comment);
+            log::error!("Found comment or unrecognised parameter '{:?}'", comment);
         } else if one_line.starts_with("http") {
             // caters for http:// and also https://
-            url_list.push(one_line);
+            url_list.push(one_line.to_string());
             http_found = true;
         } else if one_line.starts_with("//") {
-            url_list.push(one_line.trim().to_string());
+            url_list.push(one_line.to_string());
             file_path_found = true;
         } else if one_line.starts_with("/dev/") {
-            cd_device = Some(one_line.trim().to_string());
+            if let "/dev/cdrom" = one_line {
+                cd_device = Some(one_line.to_string());
+            } else {
+                usb_device = Some(one_line.to_string());
+            }
         } else {
             return Err(ParsePlaylistError::BadPlaylistLine {
                 line_number: line_index + 1,
-                line: one_line,
+                line: one_line.to_string(),
             });
         }
     }
 
-    if url_list.is_empty() && cd_device.is_none() {
+    if url_list.is_empty() && cd_device.is_none() && usb_device.is_none() {
         return Err(ParsePlaylistError::EmptyPlaylist);
     }
 
@@ -146,15 +152,19 @@ fn parse_data(
         credentials,
         pause_before_playing,
         cd_device,
+        usb_device,
         show_buffer,
         http_found,
         file_path_found,
         url_list.as_slice(),
     ) {
-        (None, None, None, Some(device), None, false, false, []) => {
+        (None, None, None, Some(device), None, None, false, false, []) => {
             Ok(Station::CD { index, device })
         }
-        (title, Some(credentials), None, None, show_buffer, false, true, [_]) => {
+        (None, None, None, None, Some(device), None, false, false, []) => {
+            Ok(Station::USB { index, device })
+        }
+        (title, Some(credentials), None, None, None, show_buffer, false, true, [_]) => {
             Ok(Station::FileServer {
                 index,
                 title,
@@ -163,7 +173,7 @@ fn parse_data(
                 remote_address: url_list.pop().unwrap(),
             })
         }
-        (title, None, pause_before_playing, None, show_buffer, true, false, _) => {
+        (title, None, pause_before_playing, None, None, show_buffer, true, false, _) => {
             Ok(Station::UrlList {
                 index,
                 title,
