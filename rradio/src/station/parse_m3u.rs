@@ -13,6 +13,8 @@ pub fn parse(path: impl AsRef<std::path::Path> + Clone, index: String) -> Result
                 let entry = entry?;
                 Ok(Track {
                     title: Some(entry.extinf.name),
+                    album: None,
+                    artist: None,
                     url: m3u_entry_url(entry.entry)?,
                     is_notification: false,
                 })
@@ -27,6 +29,8 @@ pub fn parse(path: impl AsRef<std::path::Path> + Clone, index: String) -> Result
                 .map(|entry| {
                     Ok(Track {
                         title: None,
+                        album: None,
+                        artist: None,
                         url: m3u_entry_url(entry?)?,
                         is_notification: false,
                     })

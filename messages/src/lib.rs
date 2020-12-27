@@ -51,6 +51,8 @@ impl std::fmt::Display for PipelineState {
 #[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct Track {
     pub title: Option<String>,
+    pub album: Option<String>,
+    pub artist: Option<String>,
     pub url: String,
     pub is_notification: bool,
 }
@@ -59,6 +61,8 @@ impl Track {
     pub fn url(url: String) -> Self {
         Self {
             title: None,
+            album: None,
+            artist: None,
             url,
             is_notification: false,
         }
@@ -67,6 +71,8 @@ impl Track {
     pub fn notification(url: String) -> Self {
         Self {
             title: None,
+            album: None,
+            artist: None,
             url,
             is_notification: true,
         }
@@ -219,12 +225,14 @@ pub enum CdError<S: AsRef<str> + Debug> {
 pub enum UsbError<S: AsRef<str> + Debug> {
     #[error("USB support is not enabled")]
     UsbNotEnabled,
+    #[error("USB device is not connected")]
+    UsbNotConnected,
     #[error("Could not create temporary directory: {}", .0.as_ref())]
     CouldNotCreateTemporaryDirectory(S),
-    #[error("Could not mount device: {}", .0.as_ref())]
-    CouldNotMountDevice(S),
+    #[error("Could not mount {}: {}", .device.as_ref(), .err.as_ref())]
+    CouldNotMountDevice { device: S, err: S },
     #[error("Error finding tracks: {}", .0.as_ref())]
-    ErrorFindTracks(S),
+    ErrorFindingTracks(S),
     #[error("Tracks not found")]
     TracksNotFound,
 }

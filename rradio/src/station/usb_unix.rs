@@ -18,7 +18,16 @@ pub fn mount(device: &str) -> Result<UsbHandle> {
         sys_mount::MountFlags::empty(),
         None,
     )
-    .map_err(|err| UsbError::CouldNotMountDevice(err.to_string().into()))?
+    .map_err(|err| {
+        if let std::io::ErrorKind::NotFound = err.kind() {
+            UsbError::UsbNotConnected
+        } else {
+            UsbError::CouldNotMountDevice {
+                device: device.into(),
+                err: err.to_string().into(),
+            }
+        }
+    })?
     .into_unmount_drop(sys_mount::UnmountFlags::DETACH);
 
     Ok(UsbHandle {

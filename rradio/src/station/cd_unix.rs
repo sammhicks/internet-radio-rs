@@ -202,6 +202,8 @@ fn cd_track(fd: libc::c_int, track_index: u8) -> Result<Option<Track>> {
     } else {
         Ok(Some(Track {
             title: Some(format!("Track {}", track_index)),
+            album: None,
+            artist: None,
             url: format!("cdda://{}", track_index),
             is_notification: false,
         }))

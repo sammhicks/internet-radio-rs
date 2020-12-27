@@ -126,12 +126,10 @@ fn parse_data(
         } else if one_line.starts_with("//") {
             url_list.push(one_line.to_string());
             file_path_found = true;
+        } else if let Some(device) = one_line.strip_prefix("cd:") {
+            cd_device = Some(device.to_string());
         } else if one_line.starts_with("/dev/") {
-            if let "/dev/cdrom" = one_line {
-                cd_device = Some(one_line.to_string());
-            } else {
-                usb_device = Some(one_line.to_string());
-            }
+            usb_device = Some(one_line.to_string());
         } else {
             return Err(ParsePlaylistError::BadPlaylistLine {
                 line_number: line_index + 1,
