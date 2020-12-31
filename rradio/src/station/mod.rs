@@ -27,16 +27,11 @@ mod cd_unix;
 #[cfg(all(feature = "cd", unix))]
 use cd_unix as cd;
 
-#[cfg(all(feature = "usb", not(unix)))]
-compile_error!("USB only supported on unix");
+#[cfg(all(feature = "mount", not(unix)))]
+compile_error!("Mounting only supported on unix");
 
-#[cfg(all(feature = "usb", unix))]
-mod usb_unix;
-#[cfg(all(feature = "usb", unix))]
-use usb_unix as usb;
-
-#[cfg(all(feature = "usb", unix))]
-mod directory_search;
+#[cfg(all(feature = "mount", unix))]
+mod mount;
 
 type Result<T> =
     std::result::Result<T, rradio_messages::StationError<crate::atomic_string::AtomicString>>;
@@ -47,16 +42,10 @@ pub struct Credentials {
     password: String,
 }
 
-#[cfg(all(feature = "usb", unix))]
-pub struct UsbHandle {
-    _mount: sys_mount::UnmountDrop<sys_mount::Mount>,
-    mounted_directory: tempdir::TempDir,
-}
-
 enum InnerHandle {
     None,
-    #[cfg(all(feature = "usb", unix))]
-    USB(UsbHandle),
+    #[cfg(all(feature = "mount", unix))]
+    Mount(mount::Handle),
 }
 
 impl Default for InnerHandle {
@@ -88,7 +77,7 @@ pub enum Station {
         show_buffer: Option<bool>, // Show the user how full the gstreamer buffer is
         tracks: Vec<Track>,
     },
-    FileServer {
+    SambaServer {
         index: String,
         title: Option<String>,
         credentials: Credentials,
@@ -180,7 +169,27 @@ impl Station {
                 tracks,
                 handle: Handle::default(),
             }),
-            Station::FileServer { .. } => Err(StationError::FileServerNotEnabled),
+            #[cfg(not(all(feature = "samba", unix)))]
+            Station::SambaServer { .. } => Err(rradio_messages::MountError::SambaNotEnabled.into()),
+            #[cfg(all(feature = "samba", unix))]
+            Station::SambaServer {
+                index,
+                title,
+                credentials,
+                show_buffer,
+                remote_address,
+            } => {
+                let (handle, tracks) = mount::samba(&remote_address, &credentials)?;
+                Ok(Playlist {
+                    station_index: Some(index),
+                    station_title: title,
+                    station_type: StationType::Samba,
+                    pause_before_playing: None,
+                    show_buffer,
+                    tracks,
+                    handle: Handle(InnerHandle::Mount(handle)),
+                })
+            }
             Station::CD { index, device } => Ok(Playlist {
                 station_index: Some(index),
                 station_title: None,
@@ -191,16 +200,10 @@ impl Station {
                 handle: Handle::default(),
             }),
             #[cfg(not(all(feature = "usb", unix)))]
-            Station::USB { .. } => Err(rradio_messages::UsbError::UsbNotEnabled.into()),
+            Station::USB { .. } => Err(rradio_messages::MountError::UsbNotEnabled.into()),
             #[cfg(all(feature = "usb", unix))]
             Station::USB { index, device } => {
-                let handle = usb::mount(&device)?;
-                let tracks =
-                    directory_search::random_music_directory(handle.mounted_directory.as_ref())
-                        .map_err(|err| {
-                            rradio_messages::UsbError::ErrorFindingTracks(err.to_string().into())
-                        })?
-                        .ok_or(rradio_messages::UsbError::TracksNotFound)?;
+                let (handle, tracks) = mount::usb(&device)?;
                 Ok(Playlist {
                     station_index: Some(index),
                     station_title: None,
@@ -208,7 +211,7 @@ impl Station {
                     pause_before_playing: None,
                     show_buffer: None,
                     tracks,
-                    handle: Handle(InnerHandle::USB(handle)),
+                    handle: Handle(InnerHandle::Mount(handle)),
                 })
             }
             Station::Singleton { track } => Ok(Playlist {

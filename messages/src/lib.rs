@@ -82,7 +82,7 @@ impl Track {
 #[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize)]
 pub enum StationType {
     UrlList,
-    FileServer,
+    Samba,
     CD,
     USB,
 }
@@ -91,7 +91,7 @@ impl std::fmt::Display for StationType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.pad(match self {
             Self::UrlList => "URL List",
-            Self::FileServer => "File Server",
+            Self::Samba => "Samba Server",
             Self::CD => "CD",
             Self::USB => "USB",
         })
@@ -222,11 +222,13 @@ pub enum CdError<S: AsRef<str> + Debug> {
 }
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize, thiserror::Error)]
-pub enum UsbError<S: AsRef<str> + Debug> {
+pub enum MountError<S: AsRef<str> + Debug> {
     #[error("USB support is not enabled")]
     UsbNotEnabled,
-    #[error("USB device is not connected")]
-    UsbNotConnected,
+    #[error("Samba support is not enabled")]
+    SambaNotEnabled,
+    #[error("Not found")]
+    NotFound,
     #[error("Could not create temporary directory: {}", .0.as_ref())]
     CouldNotCreateTemporaryDirectory(S),
     #[error("Could not mount {}: {}", .device.as_ref(), .err.as_ref())]
@@ -239,12 +241,10 @@ pub enum UsbError<S: AsRef<str> + Debug> {
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize, thiserror::Error)]
 pub enum StationError<S: AsRef<str> + Debug + 'static> {
-    #[error("File Server support is not enabled")]
-    FileServerNotEnabled,
     #[error("CD Error: {0}")]
     CdError(#[from] CdError<S>),
-    #[error("USB Error: {0}")]
-    UsbError(#[from] UsbError<S>),
+    #[error("Mount Error: {0}")]
+    MountError(#[from] MountError<S>),
     #[error("Cannot read from stations directory: {}", .0.as_ref())]
     StationsDirectoryIoError(S),
     #[error("Station {} not found in {}", index.as_ref(), directory.as_ref())]

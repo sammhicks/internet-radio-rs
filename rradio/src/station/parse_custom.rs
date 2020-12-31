@@ -163,7 +163,7 @@ fn parse_data(
             Ok(Station::USB { index, device })
         }
         (title, Some(credentials), None, None, None, show_buffer, false, true, [_]) => {
-            Ok(Station::FileServer {
+            Ok(Station::SambaServer {
                 index,
                 title,
                 credentials,
@@ -251,7 +251,7 @@ mod tests {
         let playlist = parse_data(source.as_bytes(), TEST_INDEX.into()).unwrap();
         assert_eq!(
             playlist,
-            Station::FileServer {
+            Station::SambaServer {
                 index: TEST_INDEX.into(),
                 title: None,
                 credentials: Credentials {
@@ -273,7 +273,7 @@ mod tests {
         let playlist = parse_data(source.as_bytes(), TEST_INDEX.into()).unwrap();
         assert_eq!(
             playlist,
-            Station::FileServer {
+            Station::SambaServer {
                 index: TEST_INDEX.into(),
                 title: Some(TEST_TITLE.into()),
                 credentials: Credentials {
@@ -295,7 +295,7 @@ mod tests {
         let playlist = parse_data(source.as_bytes(), TEST_INDEX.into()).unwrap();
         assert_eq!(
             playlist,
-            Station::FileServer {
+            Station::SambaServer {
                 index: TEST_INDEX.into(),
                 title: Some(TEST_TITLE.into()),
                 credentials: Credentials {

@@ -48,7 +48,6 @@ fn random_artist_directory<R: Rng>(
     Ok(None)
 }
 
-#[cfg(all(feature = "usb", unix))]
 fn random_album_directory<R: rand::Rng>(
     directory_path: &Path,
     artist: &str,
@@ -66,7 +65,6 @@ fn random_album_directory<R: rand::Rng>(
     Ok(None)
 }
 
-#[cfg(all(feature = "usb", unix))]
 fn album_directory(directory_path: &Path, artist: &str, album: &str) -> Result<Option<Vec<Track>>> {
     log::debug!("Creating playlist from {}", directory_path.display());
     let handled_extensions = ["mp3", "wma", "aac", "ogg", "wav"];

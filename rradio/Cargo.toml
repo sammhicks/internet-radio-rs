@@ -1,6 +1,6 @@
 [package]
 name = "rradio"
-version = "0.24.0"
+version = "0.25.0"
 authors = ["Samuel Hicks <SamMHicks@hotmail.co.uk>"]
 edition = "2018"
 description = "An internet radio with configurable two digit entry of stations"
@@ -15,8 +15,10 @@ categories = ["audio", "internet"]
 
 [features]
 cd = [ "libc" ]
+mount = [ "rand", "sys-mount", "tempdir" ]
 production-server = []
-usb = [ "rand", "sys-mount", "tempdir" ]
+samba = [ "mount" ]
+usb = [ "mount" ]
 web = [ "warp" ]
 default = [ "web" ]
 
