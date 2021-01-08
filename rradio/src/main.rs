@@ -7,11 +7,11 @@ mod atomic_string;
 mod config;
 mod errors;
 mod keyboard_commands;
-mod log_error;
 mod pipeline;
 mod ports;
 mod station;
 mod tag;
+mod task;
 
 fn main() -> Result<()> {
     let mut logger = flexi_logger::Logger::with_str("error")
@@ -39,7 +39,7 @@ fn main() -> Result<()> {
 
     logger.parse_new_spec(&config.log_level);
 
-    let (shutdown_handle, shutdown_signal) = ports::ShutdownSignal::new();
+    let (shutdown_handle, shutdown_signal) = task::ShutdownSignal::new();
 
     let (pipeline_task, port_channels) = pipeline::run(config.clone())?;
 
@@ -59,7 +59,7 @@ fn main() -> Result<()> {
     runtime.spawn(pipeline_task);
 
     runtime.block_on(async move {
-        let wait_group = ports::WaitGroup::new();
+        let wait_group = task::WaitGroup::new();
 
         // These tasks have a special shutdown procedure
         wait_group.spawn_task(tcp_text_task);
@@ -67,7 +67,7 @@ fn main() -> Result<()> {
         #[cfg(feature = "web")]
         wait_group.spawn_task(web_task);
 
-        log_error::log_error(keyboard_commands_task).await;
+        keyboard_commands_task.await;
 
         drop(shutdown_handle);
 

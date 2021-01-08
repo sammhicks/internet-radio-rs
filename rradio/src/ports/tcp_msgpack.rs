@@ -1,13 +1,19 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use rradio_messages::Command;
 
-fn encode_event(message: &super::BroadcastEvent) -> Result<Vec<u8>> {
+fn encode_event_length(len: usize) -> Result<[u8; 2]> {
     use std::convert::TryFrom;
 
-    let mut message_buffer = rmp_serde::to_vec(message)?;
+    Ok(u16::try_from(len)
+        .with_context(|| format!("Failed to encode event length of {}", len))?
+        .to_be_bytes())
+}
 
-    let mut buffer = Vec::from(u16::try_from(message_buffer.len())?.to_be_bytes());
+fn encode_event(message: &super::BroadcastEvent) -> Result<Vec<u8>> {
+    let mut message_buffer = rmp_serde::to_vec(message).context("Failed to encode event")?;
+
+    let mut buffer = Vec::from(encode_event_length(message_buffer.len())?);
     buffer.append(&mut message_buffer);
 
     Ok(buffer)
@@ -33,13 +39,19 @@ async fn read_command<Stream: tokio::io::AsyncRead + Unpin>(
 ) -> Result<Command> {
     use tokio::io::AsyncReadExt;
 
-    let byte_count = stream.read_u16().await?;
+    let byte_count = stream
+        .read_u16()
+        .await
+        .context("Failed to read command message size")?;
 
     let mut buffer = vec![0; byte_count as usize];
 
-    stream.read_exact(&mut buffer).await?;
+    stream
+        .read_exact(&mut buffer)
+        .await
+        .context("Failed to read message")?;
 
-    rmp_serde::from_slice(buffer.as_ref()).map_err(anyhow::Error::new)
+    rmp_serde::from_slice(buffer.as_ref()).context("Failed to decode msgpack")
 }
 
 fn decode_command(
@@ -50,7 +62,7 @@ fn decode_command(
     })
 }
 
-pub async fn run(port_channels: super::PortChannels) -> Result<()> {
+pub async fn run(port_channels: super::PortChannels) {
     super::tcp::run(
         port_channels,
         std::module_path!(),

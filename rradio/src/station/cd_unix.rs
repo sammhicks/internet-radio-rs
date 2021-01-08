@@ -135,7 +135,7 @@ pub fn tracks(device: &str) -> Result<Vec<Track>> {
     use std::os::unix::io::AsRawFd;
 
     let device = std::fs::File::open(device)
-        .map_err(|err| CdError::CannotOpenDevice(err.to_string().into()))?;
+        .map_err(|err| CdError::FailedToOpenDevice(err.to_string().into()))?;
 
     let fd = device.as_raw_fd();
 

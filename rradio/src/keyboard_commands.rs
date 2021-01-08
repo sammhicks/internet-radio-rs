@@ -10,6 +10,8 @@ use tokio::{sync::mpsc, time};
 
 use rradio_messages::Command;
 
+use crate::task::FailableFuture;
+
 /// `RawMode` is an RAII guard for the raw mode of stdin (and stdout).
 ///
 /// Upon creation, raw mode is enabled for stdin and stdout.
@@ -50,75 +52,77 @@ impl std::ops::Drop for RawMode {
 }
 
 /// Process keyboard input and send parsed commands through channel `commands`
-pub async fn run(
-    commands: mpsc::UnboundedSender<Command>,
-    config: crate::config::Config,
-) -> Result<()> {
-    let mut raw_mode = RawMode::new()?;
+pub async fn run(commands: mpsc::UnboundedSender<Command>, config: crate::config::Config) {
+    async move {
+        let mut raw_mode = RawMode::new()?;
 
-    let mut keyboard_events = EventStream::new();
+        let mut keyboard_events = EventStream::new();
 
-    let mut current_number_entry: Option<char> = None;
+        let mut current_number_entry: Option<char> = None;
 
-    loop {
-        let previous_digit;
-        let keyboard_event;
+        loop {
+            let previous_digit;
+            let keyboard_event;
 
-        if let Some(digit) = current_number_entry.take() {
-            // The user has recently entered a digit
-            if let Ok(event) = time::timeout(config.input_timeout, keyboard_events.next()).await {
-                // The user pressed a key before the timeout
-                previous_digit = Some(digit);
-                keyboard_event = event;
-            } else {
-                // The user didn't press a second key, so continue (discarding the previous key entry)
-                log::debug!("Station number input timeout");
-                continue;
-            }
-        } else {
-            // The user has not recently entered a digit
-            previous_digit = None;
-            keyboard_event = keyboard_events.next().await;
-        }
-
-        let key_code = match keyboard_event {
-            // Key event => extract key code
-            Some(Ok(Event::Key(KeyEvent { code, .. }))) => code,
-            // Other event => ignore and write value back to current_number_entry
-            Some(Ok(_)) => {
-                current_number_entry = previous_digit;
-                continue;
-            }
-            // Error => return early with error
-            Some(Err(err)) => anyhow::bail!(err),
-            // No more events => break out of event loop
-            None => break,
-        };
-
-        let command = match key_code {
-            KeyCode::Esc => break,
-            KeyCode::Enter | KeyCode::Char(' ') => Command::PlayPause,
-            KeyCode::Char('-') => Command::PreviousItem,
-            KeyCode::Char('+') => Command::NextItem,
-            KeyCode::Char('*') => Command::VolumeUp,
-            KeyCode::Char('/') => Command::VolumeDown,
-            KeyCode::Char(c) if c.is_ascii_digit() => {
-                log::debug!("ASCII entry: {}", c);
-                if let Some(previous_digit) = previous_digit {
-                    Command::SetChannel(String::from_iter([previous_digit, c].iter()))
+            if let Some(digit) = current_number_entry.take() {
+                // The user has recently entered a digit
+                if let Ok(event) = time::timeout(config.input_timeout, keyboard_events.next()).await
+                {
+                    // The user pressed a key before the timeout
+                    previous_digit = Some(digit);
+                    keyboard_event = event;
                 } else {
-                    current_number_entry = Some(c);
+                    // The user didn't press a second key, so continue (discarding the previous key entry)
+                    log::debug!("Station number input timeout");
                     continue;
                 }
+            } else {
+                // The user has not recently entered a digit
+                previous_digit = None;
+                keyboard_event = keyboard_events.next().await;
             }
-            code => {
-                log::debug!("Unhandled key: {:?}", code);
-                continue;
-            }
-        };
 
-        commands.send(command)?;
+            let key_code = match keyboard_event {
+                // Key event => extract key code
+                Some(Ok(Event::Key(KeyEvent { code, .. }))) => code,
+                // Other event => ignore and write value back to current_number_entry
+                Some(Ok(_)) => {
+                    current_number_entry = previous_digit;
+                    continue;
+                }
+                // Error => return early with error
+                Some(Err(err)) => anyhow::bail!(err),
+                // No more events => break out of event loop
+                None => break,
+            };
+
+            let command = match key_code {
+                KeyCode::Esc => break,
+                KeyCode::Enter | KeyCode::Char(' ') => Command::PlayPause,
+                KeyCode::Char('-') => Command::PreviousItem,
+                KeyCode::Char('+') => Command::NextItem,
+                KeyCode::Char('*') => Command::VolumeUp,
+                KeyCode::Char('/') => Command::VolumeDown,
+                KeyCode::Char(c) if c.is_ascii_digit() => {
+                    log::debug!("ASCII entry: {}", c);
+                    if let Some(previous_digit) = previous_digit {
+                        Command::SetChannel(String::from_iter([previous_digit, c].iter()))
+                    } else {
+                        current_number_entry = Some(c);
+                        continue;
+                    }
+                }
+                code => {
+                    log::debug!("Unhandled key: {:?}", code);
+                    continue;
+                }
+            };
+
+            commands.send(command)?;
+        }
+
+        raw_mode.disable()
     }
-
-    raw_mode.disable()
+    .log_error(std::module_path!())
+    .await
 }

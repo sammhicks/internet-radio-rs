@@ -10,9 +10,9 @@ use tokio::{
 
 use rradio_messages::Command;
 
-use crate::{log_error::CanAttachContext, pipeline::PlayerState};
+use crate::{pipeline::PlayerState, task::FailableFuture};
 
-use super::{BroadcastEvent, Event, WaitGroup};
+use super::{BroadcastEvent, Event};
 
 async fn send_messages<Events, Encode>(
     initial_state: PlayerState,
@@ -94,96 +94,103 @@ pub async fn run<Encode, Decode, DecodeStream>(
     port: u16,
     encode_event: Encode,
     decode_command: Decode,
-) -> Result<()>
-where
+) where
     Encode: Fn(&BroadcastEvent) -> Result<Vec<u8>> + Send + Sync + Clone + 'static,
     Decode: FnOnce(tcp::OwnedReadHalf) -> DecodeStream + Send + Sync + Clone + 'static,
     DecodeStream: Stream<Item = Result<Command>> + Send + Sync + 'static,
 {
-    let addr = if cfg!(feature = "production-server") {
-        std::net::Ipv4Addr::UNSPECIFIED
-    } else {
-        std::net::Ipv4Addr::LOCALHOST
-    };
+    async move {
+        let addr = if cfg!(feature = "production-server") {
+            std::net::Ipv4Addr::UNSPECIFIED
+        } else {
+            std::net::Ipv4Addr::LOCALHOST
+        };
 
-    let socket_addr = (addr, port);
+        let socket_addr = (addr, port);
 
-    let wait_group = WaitGroup::new();
+        let wait_group = crate::task::WaitGroup::new();
 
-    let listener = tokio::net::TcpListener::bind(socket_addr)
-        .await
-        .with_context(|| format!("Cannot listen to {:?}", socket_addr))?;
+        let listener = tokio::net::TcpListener::bind(socket_addr)
+            .await
+            .with_context(|| format!("Failed to listen to {:?}", socket_addr))?;
 
-    let local_addr = listener.local_addr()?;
+        let local_addr = listener
+            .local_addr()
+            .context("Failed to get local address")?;
 
-    let connections = super::connection_stream::ConnectionStream(listener)
-        .take_until(port_channels.shutdown_signal.clone().wait());
+        let connections = super::connection_stream::ConnectionStream(listener)
+            .take_until(port_channels.shutdown_signal.clone().wait());
 
-    log::info!(target: current_module, "Listening on {:?}", local_addr);
+        log::info!(target: current_module, "Listening on {:?}", local_addr);
 
-    pin_utils::pin_mut!(connections);
+        pin_utils::pin_mut!(connections);
 
-    while let Some((connection, remote_addr)) = connections.next().await.transpose()? {
-        log::info!(target: current_module, "Connection from {}", remote_addr);
+        while let Some((connection, remote_addr)) = connections.next().await.transpose()? {
+            log::info!(target: current_module, "Connection from {}", remote_addr);
 
-        let (stream_rx, stream_tx) = connection.into_split();
-        let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+            let (stream_rx, stream_tx) = connection.into_split();
+            let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
 
-        wait_group.spawn_task({
-            let decode_command = decode_command.clone();
-            let commands = port_channels.commands.clone();
-            async move {
-                recieve_messages(stream_rx, decode_command, commands).await?;
+            wait_group.spawn_task({
+                let decode_command = decode_command.clone();
+                let commands = port_channels.commands.clone();
+                async move {
+                    recieve_messages(stream_rx, decode_command, commands).await?;
 
-                log::debug!(target: current_module, "Disconnection from {}", remote_addr);
+                    log::debug!(target: current_module, "Disconnection from {}", remote_addr);
 
-                drop(shutdown_tx);
-                Ok(())
-            }
-            .context(remote_addr)
-        });
+                    drop(shutdown_tx);
+                    Ok(())
+                }
+                .context(remote_addr)
+                .log_error(current_module)
+            });
 
-        wait_group.spawn_task({
-            let initial_state = port_channels.player_state.borrow().clone();
+            wait_group.spawn_task({
+                let initial_state = port_channels.player_state.borrow().clone();
 
-            let player_state = port_channels
-                .player_state
-                .clone()
-                .map(super::Event::StateUpdate);
-            let log_message_source = port_channels
-                .log_message_source
-                .subscribe()
-                .into_stream()
-                .filter_map(|msg| async {
-                    match msg {
-                        Ok(msg) => Some(Event::LogMessage(msg)),
-                        Err(_) => None,
-                    }
-                });
+                let player_state = port_channels
+                    .player_state
+                    .clone()
+                    .map(super::Event::StateUpdate);
+                let log_message_source = port_channels
+                    .log_message_source
+                    .subscribe()
+                    .into_stream()
+                    .filter_map(|msg| async {
+                        match msg {
+                            Ok(msg) => Some(Event::LogMessage(msg)),
+                            Err(_) => None,
+                        }
+                    });
 
-            let events = futures::stream::select(player_state, log_message_source)
-                .take_until(shutdown_rx)
-                .take_until(port_channels.shutdown_signal.clone().wait());
+                let events = futures::stream::select(player_state, log_message_source)
+                    .take_until(shutdown_rx)
+                    .take_until(port_channels.shutdown_signal.clone().wait());
 
-            let encode_event = encode_event.clone();
-            async move {
-                send_messages(initial_state, events, encode_event, stream_tx).await?;
-                log::debug!(
-                    target: current_module,
-                    "Closing connection to {}",
-                    remote_addr
-                );
-                Ok(())
-            }
-            .context(remote_addr)
-        });
+                let encode_event = encode_event.clone();
+                async move {
+                    send_messages(initial_state, events, encode_event, stream_tx).await?;
+                    log::debug!(
+                        target: current_module,
+                        "Closing connection to {}",
+                        remote_addr
+                    );
+                    Ok(())
+                }
+                .context(remote_addr)
+                .log_error(current_module)
+            });
+        }
+
+        log::debug!(target: current_module, "Shutting down");
+
+        wait_group.wait().await;
+
+        log::debug!(target: current_module, "Shut down");
+
+        Ok(())
     }
-
-    log::debug!(target: current_module, "Shutting down");
-
-    wait_group.wait().await;
-
-    log::debug!(target: current_module, "Shut down");
-
-    Ok(())
+    .log_error(current_module)
+    .await
 }

@@ -54,8 +54,8 @@ impl Tag {
                 let image_buffer = image.get_buffer().context("No Buffer")?;
                 let all_mem = image_buffer
                     .get_all_memory()
-                    .context("Cannot get all memory")?;
-                let readable_mem = all_mem.map_readable().context("Cannot read buffer")?;
+                    .context("Failed to get all memory")?;
+                let readable_mem = all_mem.map_readable().context("Failed to read buffer")?;
 
                 let caps = image.get_caps().context("No Caps")?;
 

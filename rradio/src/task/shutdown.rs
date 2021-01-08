@@ -1,7 +1,10 @@
+//! Notification of shutdown
+
 use std::sync::Arc;
 
 use tokio::sync::Semaphore;
 
+/// A handle which notifies signals when it is dropped
 pub struct Handle(Arc<Semaphore>);
 
 impl std::ops::Drop for Handle {
@@ -11,6 +14,7 @@ impl std::ops::Drop for Handle {
     }
 }
 
+/// A signal that the handle has been dropped
 #[derive(Clone)]
 pub struct Signal(Arc<Semaphore>);
 
@@ -22,6 +26,7 @@ impl Signal {
         (handle, signal)
     }
 
+    /// Wait for the handle to be dropped
     pub async fn wait(self) {
         drop(self.0.acquire().await);
     }

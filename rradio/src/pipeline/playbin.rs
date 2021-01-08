@@ -77,7 +77,7 @@ impl Playbin {
         if success.is_ok() {
             gstreamer_state_to_pipeline_state(state)
         } else {
-            Err(rradio_messages::PipelineError("Cannot get state".into()))
+            Err(rradio_messages::PipelineError("Failed to get state".into()))
         }
     }
 
@@ -89,8 +89,8 @@ impl Playbin {
             PipelineState::Paused => gstreamer::State::Paused,
             PipelineState::Playing => gstreamer::State::Playing,
         };
-        self.0.set_state(gstreamer_state).map_err(|_| {
-            rradio_messages::PipelineError(format!("Cannot set state to {}", state).into())
+        self.0.set_state(gstreamer_state).map_err(|_err| {
+            rradio_messages::PipelineError(format!("Failed to set state to {}", state).into())
         })?;
         Ok(())
     }

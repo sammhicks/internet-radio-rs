@@ -1,20 +1,16 @@
 mod connection_stream;
-mod shutdown;
 pub mod tcp;
 pub mod tcp_msgpack;
 pub mod tcp_text;
-mod wait_group;
 
 #[cfg(feature = "web")]
 pub mod web;
 
-pub use shutdown::Signal as ShutdownSignal;
-pub use wait_group::{Handle as WaitGroupHandle, WaitGroup};
-
 use std::sync::Arc;
 
-use crate::{atomic_string::AtomicString, pipeline::PlayerState};
 use rradio_messages::{PlayerStateDiff, Track};
+
+use crate::{atomic_string::AtomicString, pipeline::PlayerState, task::ShutdownSignal};
 
 type TrackList = Arc<[Track]>;
 pub type BroadcastEvent = rradio_messages::Event<&'static str, AtomicString, TrackList>;
@@ -97,7 +93,7 @@ pub struct PartialPortChannels<SS> {
 
 pub type PortChannels = PartialPortChannels<ShutdownSignal>;
 
-impl<SS1> PartialPortChannels<SS1> {
+impl<SS> PartialPortChannels<SS> {
     pub fn with_shutdown_signal(self, shutdown_signal: ShutdownSignal) -> PortChannels {
         PortChannels {
             commands: self.commands,

@@ -147,7 +147,7 @@ fn decode_command(
     })
 }
 
-pub async fn run(port_channels: super::PortChannels) -> Result<()> {
+pub async fn run(port_channels: super::PortChannels) {
     super::tcp::run(
         port_channels,
         std::module_path!(),

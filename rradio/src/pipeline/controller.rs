@@ -239,13 +239,10 @@ impl Controller {
         use gstreamer::MessageView;
         match message.view() {
             MessageView::Buffering(b) => {
-                log::debug!(
-                    target: concat!(module_path!(), "::buffering"),
-                    "{}",
-                    b.get_percent()
-                );
+                let buffering_target = concat!(module_path!(), "::buffering");
+                log::debug!(target: buffering_target, "{}", b.get_percent());
 
-                self.published_state.buffering = b.get_percent().try_into().map_err(|_| {
+                self.published_state.buffering = b.get_percent().try_into().map_err(|_err| {
                     PipelineError(format!("Bad buffering value: {}", b.get_percent()).into())
                 })?;
 
@@ -258,13 +255,9 @@ impl Controller {
 
                 for (i, (name, value)) in tag.get_tags().as_ref().iter().enumerate() {
                     let tag = Tag::from_value(name, &value);
+                    let tag_target = concat!(module_path!(), "::tag");
 
-                    log::debug!(
-                        target: concat!(module_path!(), "::tag"),
-                        "{} - {:?}",
-                        i,
-                        tag
-                    );
+                    log::debug!(target: tag_target, "{} - {:?}", i, tag);
 
                     match tag {
                         Ok(Tag::Title(title)) => new_tags.title = Some(title.into()),
@@ -305,16 +298,15 @@ impl Controller {
 
                     self.broadcast_state_change();
 
-                    log::debug!(
-                        target: concat!(module_path!(), "::state_change"),
-                        "{:?}",
-                        new_state
-                    );
+                    let state_change_target = concat!(module_path!(), "::state_change");
+
+                    log::debug!(target: state_change_target, "{:?}", new_state);
                 }
                 Ok(())
             }
             MessageView::Eos(..) => {
-                log::debug!(target: concat!(module_path!(), "::end_of_stream"), "");
+                let end_of_stream_target = concat!(module_path!(), "::end_of_stream");
+                log::debug!(target: end_of_stream_target, "");
 
                 if self.current_playlist.is_some() {
                     self.goto_next_track().await

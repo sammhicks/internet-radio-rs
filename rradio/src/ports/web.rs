@@ -1,9 +1,10 @@
-use anyhow::Result;
 use futures::{SinkExt, StreamExt};
 use tokio::sync::oneshot;
 use warp::Filter;
 
-use super::{BroadcastEvent, Event};
+use super::Event;
+
+use crate::task::FailableFuture;
 
 trait ToDebugString {
     fn to_debug_string(&self) -> String;
@@ -15,8 +16,8 @@ impl<T: std::fmt::Debug> ToDebugString for T {
     }
 }
 
-pub async fn run(port_channels: super::PortChannels) -> Result<()> {
-    let wait_group = super::wait_group::WaitGroup::new();
+pub async fn run(port_channels: super::PortChannels) {
+    let wait_group = crate::task::WaitGroup::new();
     let wait_handle = wait_group.clone_handle();
 
     let ws_shutdown_signal = port_channels.shutdown_signal.clone();
@@ -25,14 +26,14 @@ pub async fn run(port_channels: super::PortChannels) -> Result<()> {
         let port_channels = port_channels.clone();
         let wait_handle = wait_handle.clone();
         ws.on_upgrade(|websocket| {
-            crate::log_error::log_error(async move {
+            async move {
                 let (ws_tx, mut ws_rx) = websocket.split();
 
                 let ws_tx = ws_tx
                     .sink_map_err(|err| {
-                        anyhow::Error::new(err).context("Could not send Websocket Message")
+                        anyhow::Error::new(err).context("Failed to send Websocket message")
                     })
-                    .with(|event: BroadcastEvent| async move {
+                    .with(|event: super::BroadcastEvent| async move {
                         rmp_serde::to_vec(&event)
                             .map(warp::ws::Message::binary)
                             .map_err(anyhow::Error::new)
@@ -54,23 +55,26 @@ pub async fn run(port_channels: super::PortChannels) -> Result<()> {
 
                 let commands = port_channels.commands;
 
-                wait_handle.spawn_task(async move {
-                    while let Some(message) = ws_rx.next().await {
-                        let message = message?;
+                wait_handle.spawn_task(
+                    async move {
+                        while let Some(message) = ws_rx.next().await {
+                            let message = message?;
 
-                        if message.is_close() {
-                            break;
+                            if message.is_close() {
+                                break;
+                            }
+
+                            commands.send(rmp_serde::from_slice(message.as_bytes())?)?
                         }
 
-                        commands.send(rmp_serde::from_slice(message.as_bytes())?)?
+                        drop(shutdown_tx);
+
+                        log::debug!("Close message received");
+
+                        Ok(())
                     }
-
-                    drop(shutdown_tx);
-
-                    log::debug!("Close message received");
-
-                    Ok(())
-                });
+                    .log_error(std::module_path!()),
+                );
 
                 let player_state = port_channels.player_state.map(Event::StateUpdate);
                 let log_message = port_channels
@@ -111,7 +115,8 @@ pub async fn run(port_channels: super::PortChannels) -> Result<()> {
                 drop(wait_handle);
 
                 Ok(())
-            })
+            }
+            .log_error(std::module_path!())
         })
     });
 
@@ -122,6 +127,7 @@ pub async fn run(port_channels: super::PortChannels) -> Result<()> {
     } else {
         std::net::Ipv4Addr::LOCALHOST
     };
+
     let port = if cfg!(feature = "production-server") {
         80
     } else {
@@ -141,6 +147,4 @@ pub async fn run(port_channels: super::PortChannels) -> Result<()> {
     wait_group.wait().await;
 
     log::debug!("Shut down");
-
-    Ok(())
 }

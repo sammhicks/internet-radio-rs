@@ -195,8 +195,8 @@ pub struct PipelineError<S: AsRef<str> + Debug>(pub S);
 pub enum CdError<S: AsRef<str> + Debug> {
     #[error("CD support is not enabled")]
     CdNotEnabled,
-    #[error("Cannot open CD device: {}", .0.as_ref())]
-    CannotOpenDevice(S),
+    #[error("Failed to open CD device: {}", .0.as_ref())]
+    FailedToOpenDevice(S),
     #[error("ioctl Error: {}", .0.as_ref())]
     IoCtlError(S),
     #[error("No CD info")]
@@ -229,9 +229,9 @@ pub enum MountError<S: AsRef<str> + Debug> {
     SambaNotEnabled,
     #[error("Not found")]
     NotFound,
-    #[error("Could not create temporary directory: {}", .0.as_ref())]
+    #[error("Failed to create temporary directory: {}", .0.as_ref())]
     CouldNotCreateTemporaryDirectory(S),
-    #[error("Could not mount {}: {}", .device.as_ref(), .err.as_ref())]
+    #[error("Failed to mount {}: {}", .device.as_ref(), .err.as_ref())]
     CouldNotMountDevice { device: S, err: S },
     #[error("Error finding tracks: {}", .0.as_ref())]
     ErrorFindingTracks(S),
@@ -245,7 +245,7 @@ pub enum StationError<S: AsRef<str> + Debug + 'static> {
     CdError(#[from] CdError<S>),
     #[error("Mount Error: {0}")]
     MountError(#[from] MountError<S>),
-    #[error("Cannot read from stations directory: {}", .0.as_ref())]
+    #[error("Failed to read from stations directory: {}", .0.as_ref())]
     StationsDirectoryIoError(S),
     #[error("Station {} not found in {}", index.as_ref(), directory.as_ref())]
     StationNotFound { index: S, directory: S },
