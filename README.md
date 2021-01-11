@@ -32,6 +32,12 @@ Options:
 + buffering_duration
   + Default: `"2s"`
   + The gstreaming buffer duration
++ pause_before_playing_increment
+  + Default: `"1s"`
+  + The additional amount to wait if an infinite stream terminates unexpectedly before attempting to reconnect
++ max_pause_before_playing
+  + Default: `"5s"`
+  + The maximum amount to wait if an infinite stream terminates unexpectedly before giving up
 + log_level
   + Default: `"Warn"`
   + Options:
@@ -53,3 +59,8 @@ Options:
 ## Optional Features
 
 + `cd` - Support playing CDs
++ `production-server` - Bind to `0.0.0.0` over TCP
++ `samba` - Support playing music from remote samba servers
++ `usb` - Support playing music from usb devices
++ `web` (Enabled by default) - Support for a web interface
+  + `production-server` - Bind to port `80`

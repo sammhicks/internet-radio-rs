@@ -30,6 +30,15 @@ pub struct Config {
     #[serde(default = "default_buffering_duration", with = "humantime_serde")]
     pub buffering_duration: Option<Duration>,
 
+    #[serde(
+        default = "default_pause_before_playing_increment",
+        with = "humantime_serde"
+    )]
+    pub pause_before_playing_increment: Duration,
+
+    #[serde(default = "default_max_pause_before_playing", with = "humantime_serde")]
+    pub max_pause_before_playing: Duration,
+
     /// Controls the logging level. See the [Log Specification](https://docs.rs/flexi_logger/latest/flexi_logger/struct.LogSpecification.html)
     #[serde(default = "default_log_level")]
     pub log_level: String,
@@ -58,6 +67,8 @@ impl Default for Config {
             input_timeout: default_input_timeout(),
             volume_offset: default_volume_offset(),
             buffering_duration: default_buffering_duration(),
+            pause_before_playing_increment: default_pause_before_playing_increment(),
+            max_pause_before_playing: default_max_pause_before_playing(),
             log_level: default_log_level(),
             notifications: Notifications::default(),
         }
@@ -78,6 +89,14 @@ const fn default_volume_offset() -> i32 {
 
 const fn default_buffering_duration() -> Option<Duration> {
     None
+}
+
+const fn default_pause_before_playing_increment() -> Duration {
+    Duration::from_secs(1)
+}
+
+const fn default_max_pause_before_playing() -> Duration {
+    Duration::from_secs(5)
 }
 
 fn default_log_level() -> String {

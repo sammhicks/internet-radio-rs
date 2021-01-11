@@ -88,7 +88,7 @@ impl Controller {
     async fn play_current_track(&mut self) -> Result<()> {
         let current_playlist = self
             .current_playlist
-            .as_mut()
+            .as_ref()
             .ok_or(rradio_messages::Error::NoPlaylist)?;
 
         let track = current_playlist.current_track()?;
@@ -309,7 +309,29 @@ impl Controller {
                 log::debug!(target: end_of_stream_target, "");
 
                 if self.current_playlist.is_some() {
-                    self.goto_next_track().await
+                    if self.published_state.track_duration.is_some() {
+                        self.goto_next_track().await
+                    } else {
+                        let current_playlist = self
+                            .current_playlist
+                            .as_mut()
+                            .ok_or(rradio_messages::Error::NoPlaylist)?;
+
+                        let pause_before_playing =
+                            current_playlist.pause_before_playing.unwrap_or_default()
+                                + self.config.pause_before_playing_increment;
+
+                        current_playlist.pause_before_playing = Some(pause_before_playing);
+
+                        if pause_before_playing > self.config.max_pause_before_playing {
+                            Err(rradio_messages::PipelineError(
+                                "Max pause_before_playing timeout exceeded".into(),
+                            )
+                            .into())
+                        } else {
+                            self.play_current_track().await
+                        }
+                    }
                 } else {
                     self.playbin
                         .set_pipeline_state(PipelineState::Null)
