@@ -41,7 +41,7 @@ where
         )
         .await?;
 
-    pin_utils::pin_mut!(events);
+    tokio::pin!(events);
 
     while let Some(event) = events.next().await {
         match event {
@@ -79,7 +79,7 @@ where
 {
     let decoded_messages = decode_command(stream_rx);
 
-    pin_utils::pin_mut!(decoded_messages);
+    tokio::pin!(decoded_messages);
 
     while let Some(next_command) = decoded_messages.next().await.transpose()? {
         commands.send(next_command)?;
@@ -123,7 +123,7 @@ pub async fn run<Encode, Decode, DecodeStream>(
 
         log::info!(target: current_module, "Listening on {:?}", local_addr);
 
-        pin_utils::pin_mut!(connections);
+        tokio::pin!(connections);
 
         while let Some((connection, remote_addr)) = connections.next().await.transpose()? {
             log::info!(target: current_module, "Connection from {}", remote_addr);

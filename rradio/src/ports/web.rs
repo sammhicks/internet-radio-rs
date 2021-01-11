@@ -39,7 +39,7 @@ pub async fn run(port_channels: super::PortChannels) {
                             .map_err(anyhow::Error::new)
                     });
 
-                pin_utils::pin_mut!(ws_tx);
+                tokio::pin!(ws_tx);
 
                 ws_tx
                     .send(rradio_messages::protocol_version_message())
@@ -92,7 +92,7 @@ pub async fn run(port_channels: super::PortChannels) {
                     .take_until(shutdown_rx)
                     .take_until(port_channels.shutdown_signal.wait());
 
-                pin_utils::pin_mut!(events);
+                tokio::pin!(events);
 
                 while let Some(event) = events.next().await {
                     match event {

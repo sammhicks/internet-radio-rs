@@ -1,6 +1,6 @@
 [package]
 name = "rradio"
-version = "0.25.1"
+version = "0.25.2"
 authors = ["Samuel Hicks <SamMHicks@hotmail.co.uk>"]
 edition = "2018"
 description = "An internet radio with configurable two digit entry of stations"
@@ -35,8 +35,6 @@ gstreamer-sys = "0.9"
 humantime-serde = "1.0"
 log = { version = "0.4", features = ["std"] }
 m3u = "1.0"
-pin-project = "1.0"
-pin-utils = "0.1"
 pls = "0.2"
 rand = { version = "0.8", optional = true }
 rmp-serde = "0.14"
