@@ -5,6 +5,7 @@ use tokio::time::Duration;
 
 /// Notifications allow rradio to play sounds to notify the user of events
 #[derive(Clone, Debug, Default, serde::Deserialize)]
+#[serde(default)]
 pub struct Notifications {
     pub ready: Option<String>,
     pub playlist_prefix: Option<String>,
@@ -14,37 +15,32 @@ pub struct Notifications {
 
 /// A description of the rradio configuration file
 #[derive(Clone, Debug, serde::Deserialize)]
+#[serde(default)]
 pub struct Config {
     /// Where to find stations
-    #[serde(default = "default_stations_directory")]
     pub stations_directory: String,
 
     /// The timeout when entering two digit station indices
-    #[serde(default = "default_input_timeout", with = "humantime_serde")]
+    #[serde(with = "humantime_serde")]
     pub input_timeout: Duration,
 
     /// The change in volume when the user increments or decrements the volume
-    #[serde(default = "default_volume_offset")]
     pub volume_offset: i32,
 
-    #[serde(default = "default_buffering_duration", with = "humantime_serde")]
+    #[serde(with = "humantime_serde")]
     pub buffering_duration: Option<Duration>,
 
-    #[serde(
-        default = "default_pause_before_playing_increment",
-        with = "humantime_serde"
-    )]
+    #[serde(with = "humantime_serde")]
     pub pause_before_playing_increment: Duration,
 
-    #[serde(default = "default_max_pause_before_playing", with = "humantime_serde")]
+    #[serde(with = "humantime_serde")]
     pub max_pause_before_playing: Duration,
 
     /// Controls the logging level. See the [Log Specification](https://docs.rs/flexi_logger/latest/flexi_logger/struct.LogSpecification.html)
-    #[serde(default = "default_log_level")]
     pub log_level: String,
 
     /// Notification sounds
-    #[serde(default, rename = "Notifications")]
+    #[serde(rename = "Notifications")]
     pub notifications: Notifications,
 }
 
@@ -63,44 +59,16 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            stations_directory: default_stations_directory(),
-            input_timeout: default_input_timeout(),
-            volume_offset: default_volume_offset(),
-            buffering_duration: default_buffering_duration(),
-            pause_before_playing_increment: default_pause_before_playing_increment(),
-            max_pause_before_playing: default_max_pause_before_playing(),
-            log_level: default_log_level(),
+            stations_directory: String::from("stations"),
+            input_timeout: Duration::from_millis(2000),
+            volume_offset: 5,
+            buffering_duration: None,
+            pause_before_playing_increment: Duration::from_secs(1),
+            max_pause_before_playing: Duration::from_secs(5),
+            log_level: String::from("Warn"),
             notifications: Notifications::default(),
         }
     }
-}
-
-fn default_stations_directory() -> String {
-    String::from("stations")
-}
-
-const fn default_input_timeout() -> Duration {
-    Duration::from_millis(2000)
-}
-
-const fn default_volume_offset() -> i32 {
-    5
-}
-
-const fn default_buffering_duration() -> Option<Duration> {
-    None
-}
-
-const fn default_pause_before_playing_increment() -> Duration {
-    Duration::from_secs(1)
-}
-
-const fn default_max_pause_before_playing() -> Duration {
-    Duration::from_secs(5)
-}
-
-fn default_log_level() -> String {
-    String::from("Warn")
 }
 
 struct LogLevelParser;
