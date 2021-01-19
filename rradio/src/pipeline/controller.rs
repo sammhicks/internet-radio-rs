@@ -59,6 +59,7 @@ impl PlaylistState {
 pub struct PlayerState {
     pub pipeline_state: PipelineState,
     pub current_station: Arc<Option<rradio_messages::Station<AtomicString, Arc<[Track]>>>>,
+    pub pause_before_playing: Option<Duration>,
     pub current_track_index: usize,
     pub current_track_tags: Arc<Option<TrackTags<AtomicString>>>,
     pub volume: i32,
@@ -191,6 +192,8 @@ impl Controller {
             tracks: playlist_tracks,
         }));
 
+        self.published_state.pause_before_playing = playlist.pause_before_playing;
+
         self.play_current_track().await
     }
 
@@ -322,6 +325,7 @@ impl Controller {
                                 + self.config.pause_before_playing_increment;
 
                         current_playlist.pause_before_playing = Some(pause_before_playing);
+                        self.published_state.pause_before_playing = Some(pause_before_playing);
 
                         if pause_before_playing > self.config.max_pause_before_playing {
                             Err(rradio_messages::PipelineError(
@@ -380,6 +384,7 @@ pub fn run(
     let published_state = PlayerState {
         pipeline_state: playbin.pipeline_state().unwrap_or(PipelineState::Null),
         current_station: Arc::new(None),
+        pause_before_playing: None,
         current_track_index: 0,
         current_track_tags: Arc::new(None),
         volume: playbin.volume().unwrap_or_default(),

@@ -57,7 +57,14 @@ impl<'a, S: AsRef<str> + Debug, TrackList: AsRef<[rradio_messages::Track]>> Disp
             }
         }
 
-        let current_track_index_row = station_row + station_row_count;
+        let pause_before_playing_row = station_row + station_row_count;
+        let pause_before_playing_row_count = 1;
+        if let Some(pause_before_playing) = self.0.pause_before_playing.into_option() {
+            Display::fmt(&MoveTo(0, pause_before_playing_row), f)?;
+            display_entry(f, "Pause Before Playing", pause_before_playing)?;
+        }
+
+        let current_track_index_row = pause_before_playing_row + pause_before_playing_row_count;
         let current_track_index_row_count = 1;
         if let Some(track_index) = self.0.current_track_index {
             Display::fmt(&MoveTo(0, current_track_index_row), f)?;
@@ -117,7 +124,7 @@ fn encode_message(message: &BroadcastEvent) -> Result<Vec<u8>> {
         BroadcastEvent::ProtocolVersion(_) => format!(
             "{}{}{}{}Version {}",
             crossterm::cursor::Hide,
-            crossterm::terminal::SetSize(120, 16),
+            crossterm::terminal::SetSize(120, 20),
             crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
             crossterm::cursor::MoveTo(0, 0),
             rradio_messages::VERSION
