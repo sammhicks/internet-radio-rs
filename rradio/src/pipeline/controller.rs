@@ -234,6 +234,10 @@ impl Controller {
                 log::info!("Ignoring Eject");
                 Ok(())
             }
+            Command::DebugPipeline => {
+                self.playbin.debug_pipeline();
+                Ok(())
+            }
         }
     }
 

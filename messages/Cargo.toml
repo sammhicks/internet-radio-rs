@@ -1,6 +1,6 @@
 [package]
 name = "rradio-messages"
-version = "0.13.0"
+version = "0.14.0"
 authors = ["Samuel Hicks <SamMHicks@hotmail.co.uk>"]
 edition = "2018"
 

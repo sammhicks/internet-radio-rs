@@ -19,6 +19,7 @@ pub enum Command {
     SetVolume(i32),
     PlayUrl(String),
     Eject,
+    DebugPipeline,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]

@@ -112,6 +112,7 @@ pub async fn run(commands: mpsc::UnboundedSender<Command>, config: crate::config
                         continue;
                     }
                 }
+                KeyCode::Char('d') => Command::DebugPipeline,
                 code => {
                     log::debug!("Unhandled key: {:?}", code);
                     continue;

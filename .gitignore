@@ -13,3 +13,6 @@
 
 # Directory of Notification Sounds
 /sounds
+
+# Pipeline Debug Dotfiles
+/*.dot

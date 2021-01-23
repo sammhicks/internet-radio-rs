@@ -6,7 +6,6 @@ use std::time::Duration;
 use glib::{object::ObjectExt, Cast};
 use gstreamer::{ElementExt, ElementExtManual};
 use gstreamer_audio::StreamVolumeExt;
-use log::{debug, error};
 
 pub use rradio_messages::PipelineState;
 
@@ -137,7 +136,7 @@ impl Playbin {
 
         let scaled_volume = current_volume + rradio_messages::VOLUME_ZERO_DB;
 
-        debug!("Current Volume: {}", scaled_volume);
+        log::debug!("Current Volume: {}", scaled_volume);
 
         Ok(scaled_volume)
     }
@@ -146,7 +145,7 @@ impl Playbin {
         let volume = volume
             .max(rradio_messages::VOLUME_MIN)
             .min(rradio_messages::VOLUME_MAX);
-        debug!("New Volume: {}", volume);
+        log::debug!("New Volume: {}", volume);
 
         self.0
             .dynamic_cast_ref::<gstreamer_audio::StreamVolume>()
@@ -172,12 +171,40 @@ impl Playbin {
             .and_then(|time| time.nanoseconds())
             .map(Duration::from_nanos)
     }
+
+    fn do_debug_pipeline(&self) -> anyhow::Result<()> {
+        use anyhow::Context;
+
+        let gst_debug_dump_dot_dir = std::env::var("GST_DEBUG_DUMP_DOT_DIR")
+            .context("Failed to get GST_DEBUG_DUMP_DOT_DIR")?;
+
+        let bin = self
+            .0
+            .downcast_ref::<gstreamer::Bin>()
+            .context("Playbin is not a bin")?;
+
+        gstreamer::GstBinExtManual::debug_to_dot_file_with_ts(
+            bin,
+            gstreamer::DebugGraphDetails::all(),
+            env!("CARGO_PKG_NAME"),
+        );
+
+        log::info!("Created dotfile in {}", gst_debug_dump_dot_dir);
+
+        Ok(())
+    }
+
+    pub fn debug_pipeline(&self) {
+        if let Err(err) = self.do_debug_pipeline() {
+            log::error!("{:#}", err);
+        }
+    }
 }
 
 impl Drop for Playbin {
     fn drop(&mut self) {
         if let Err(err) = self.set_pipeline_state(PipelineState::Null) {
-            error!("{:?}", err);
+            log::error!("{:#}", err);
         }
     }
 }
