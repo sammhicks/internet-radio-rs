@@ -5,7 +5,7 @@
 + `RRADIO_CONFIG_PATH` - The default location of the config path if not set using command line option `-c`. Defaults to `config.toml`
 
 ## Example Config file
-    station_directory = "stations"
+    stations_directory = "stations"
     input_timeout = "2s"
     volume_offset = 5
     buffering_duration = "40s"
@@ -17,7 +17,7 @@
 
 
 Options:
-+ channels_directory
++ stations_directory
   + Default: `"stations"`
   + A directory where radio stations are found. The filename must start with the two digits of the channel, and must have an appropriate file extension.
   + Supported formats:
