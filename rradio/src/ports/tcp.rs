@@ -1,5 +1,3 @@
-use std::net::Shutdown;
-
 use anyhow::{Context, Result};
 use futures::{Stream, StreamExt};
 use tokio::{
@@ -10,12 +8,11 @@ use tokio::{
 
 use rradio_messages::Command;
 
-use crate::{pipeline::PlayerState, task::FailableFuture};
+use crate::task::FailableFuture;
 
 use super::{BroadcastEvent, Event};
 
 async fn send_messages<Events, Encode>(
-    initial_state: PlayerState,
     events: Events,
     encode_event: Encode,
     mut stream_tx: tcp::OwnedWriteHalf,
@@ -30,30 +27,14 @@ where
         )
         .await?;
 
-    let mut current_state = initial_state;
-
-    stream_tx
-        .write_all(
-            encode_event(&BroadcastEvent::PlayerStateChanged(
-                super::player_state_to_diff(&current_state),
-            ))?
-            .as_ref(),
-        )
-        .await?;
-
     tokio::pin!(events);
 
     while let Some(event) = events.next().await {
         match event {
-            Event::StateUpdate(new_state) => {
-                if let Some(diff) = super::diff_player_state(&current_state, &new_state) {
-                    stream_tx
-                        .write_all(
-                            encode_event(&BroadcastEvent::PlayerStateChanged(diff))?.as_ref(),
-                        )
-                        .await?;
-                }
-                current_state = new_state;
+            Event::StateUpdate(diff) => {
+                stream_tx
+                    .write_all(encode_event(&BroadcastEvent::PlayerStateChanged(diff))?.as_ref())
+                    .await?;
             }
             Event::LogMessage(log_message) => {
                 stream_tx
@@ -62,8 +43,6 @@ where
             }
         }
     }
-
-    stream_tx.as_ref().shutdown(Shutdown::Write)?;
 
     Ok(())
 }
@@ -118,8 +97,11 @@ pub async fn run<Encode, Decode, DecodeStream>(
             .local_addr()
             .context("Failed to get local address")?;
 
-        let connections = super::connection_stream::ConnectionStream(listener)
-            .take_until(port_channels.shutdown_signal.clone().wait());
+        let connections = futures::stream::unfold(listener, |listener| async {
+            let value = listener.accept().await;
+            Some((value, listener))
+        })
+        .take_until(port_channels.shutdown_signal.clone().wait());
 
         log::info!(target: current_module, "Listening on {:?}", local_addr);
 
@@ -147,30 +129,16 @@ pub async fn run<Encode, Decode, DecodeStream>(
             });
 
             wait_group.spawn_task({
-                let initial_state = port_channels.player_state.borrow().clone();
-
-                let player_state = port_channels
-                    .player_state
-                    .clone()
-                    .map(super::Event::StateUpdate);
-                let log_message_source = port_channels
-                    .log_message_source
-                    .subscribe()
-                    .into_stream()
-                    .filter_map(|msg| async {
-                        match msg {
-                            Ok(msg) => Some(Event::LogMessage(msg)),
-                            Err(_) => None,
-                        }
-                    });
-
-                let events = futures::stream::select(player_state, log_message_source)
-                    .take_until(shutdown_rx)
-                    .take_until(port_channels.shutdown_signal.clone().wait());
+                let events = super::event_stream(
+                    port_channels.player_state.clone(),
+                    port_channels.log_message_source.subscribe(),
+                )
+                .take_until(shutdown_rx)
+                .take_until(port_channels.shutdown_signal.clone().wait());
 
                 let encode_event = encode_event.clone();
                 async move {
-                    send_messages(initial_state, events, encode_event, stream_tx).await?;
+                    send_messages(events, encode_event, stream_tx).await?;
                     log::debug!(
                         target: current_module,
                         "Closing connection to {}",

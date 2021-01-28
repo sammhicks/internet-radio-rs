@@ -53,7 +53,7 @@ fn main() -> Result<()> {
     let tcp_msgpack_task = ports::tcp_msgpack::run(port_channels.clone());
     let tcp_text_task = ports::tcp_text::run(port_channels);
 
-    let mut runtime = tokio::runtime::Runtime::new()?;
+    let runtime = tokio::runtime::Runtime::new()?;
 
     // These tasks don't need special shutdown
     runtime.spawn(pipeline_task);

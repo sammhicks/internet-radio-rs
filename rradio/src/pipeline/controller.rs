@@ -102,7 +102,7 @@ impl Controller {
             log::info!("Pausing for {}s", pause_duration.as_secs());
             self.playbin.set_pipeline_state(PipelineState::Paused)?;
             self.broadcast_state_change();
-            tokio::time::delay_for(pause_duration).await;
+            tokio::time::sleep(pause_duration).await;
         }
         self.playbin.set_pipeline_state(PipelineState::Playing)?;
         self.broadcast_state_change();
@@ -140,9 +140,7 @@ impl Controller {
         self.published_state.track_duration = self.playbin.duration();
         self.published_state.track_position = self.playbin.position();
 
-        self.new_state_tx
-            .broadcast(self.published_state.clone())
-            .ok();
+        self.new_state_tx.send(self.published_state.clone()).ok();
     }
 
     fn broadcast_error_message(&mut self, error: crate::errors::Error) {
@@ -415,7 +413,12 @@ pub fn run(
     let task = async move {
         use futures::StreamExt;
 
-        let commands = commands_rx.map(Message::Command);
+        let commands = futures::stream::unfold(commands_rx, |mut rx| async {
+            let message = Message::Command(rx.recv().await?);
+            Some((message, rx))
+        });
+
+        tokio::pin!(commands);
 
         let bus_stream = bus.stream().map(Message::GStreamerMessage);
 

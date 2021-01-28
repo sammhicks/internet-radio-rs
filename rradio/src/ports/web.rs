@@ -34,7 +34,7 @@ pub async fn run(port_channels: super::PortChannels) {
                         anyhow::Error::new(err).context("Failed to send Websocket message")
                     })
                     .with(|event: super::BroadcastEvent| async move {
-                        rmp_serde::to_vec(&event)
+                        rmp_serde::to_vec_named(&event)
                             .map(warp::ws::Message::binary)
                             .map_err(anyhow::Error::new)
                     });
@@ -43,12 +43,6 @@ pub async fn run(port_channels: super::PortChannels) {
 
                 ws_tx
                     .send(rradio_messages::protocol_version_message())
-                    .await?;
-
-                let mut current_state = (*port_channels.player_state.borrow()).clone();
-
-                ws_tx
-                    .send(super::player_state_to_diff(&current_state).into())
                     .await?;
 
                 let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
@@ -76,33 +70,19 @@ pub async fn run(port_channels: super::PortChannels) {
                     .log_error(std::module_path!()),
                 );
 
-                let player_state = port_channels.player_state.map(Event::StateUpdate);
-                let log_message = port_channels
-                    .log_message_source
-                    .subscribe()
-                    .into_stream()
-                    .filter_map(|msg| async {
-                        match msg {
-                            Ok(msg) => Some(Event::LogMessage(msg)),
-                            Err(_) => None,
-                        }
-                    });
-
-                let events = futures::stream::select(player_state, log_message)
-                    .take_until(shutdown_rx)
-                    .take_until(port_channels.shutdown_signal.wait());
+                let events = super::event_stream(
+                    port_channels.player_state.clone(),
+                    port_channels.log_message_source.subscribe(),
+                )
+                .take_until(shutdown_rx)
+                .take_until(port_channels.shutdown_signal.clone().wait());
 
                 tokio::pin!(events);
 
                 while let Some(event) = events.next().await {
                     match event {
-                        Event::StateUpdate(new_state) => {
-                            if let Some(diff) = super::diff_player_state(&current_state, &new_state)
-                            {
-                                ws_tx.send(diff.into()).await?;
-                            }
-
-                            current_state = new_state;
+                        Event::StateUpdate(diff) => {
+                            ws_tx.send(diff.into()).await?;
                         }
                         Event::LogMessage(log_message) => {
                             ws_tx.send(log_message.into()).await?;

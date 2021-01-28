@@ -1,4 +1,3 @@
-mod connection_stream;
 pub mod tcp;
 pub mod tcp_msgpack;
 pub mod tcp_text;
@@ -86,8 +85,42 @@ fn diff_arc_with_clone<T: Clone>(a: &Arc<T>, b: &Arc<T>, any_some: &mut bool) ->
 }
 
 enum Event {
-    StateUpdate(PlayerState),
+    StateUpdate(PlayerStateDiff<AtomicString, TrackList>),
     LogMessage(rradio_messages::LogMessage<AtomicString>),
+}
+
+fn event_stream(
+    state: tokio::sync::watch::Receiver<PlayerState>,
+    log_messages: tokio::sync::broadcast::Receiver<rradio_messages::LogMessage<AtomicString>>,
+) -> impl futures::Stream<Item = Event> {
+    use futures::StreamExt;
+
+    let current_value = state.borrow().clone();
+    let initial_value = player_state_to_diff(&current_value);
+    let state_stream =
+        futures::stream::once(async move { Event::StateUpdate(initial_value) }).chain(
+            futures::stream::unfold((state, current_value), |(mut rx, value)| async move {
+                loop {
+                    rx.changed().await.ok()?;
+                    let new_value = rx.borrow().clone();
+                    if let Some(diff) = diff_player_state(&value, &new_value) {
+                        return Some((Event::StateUpdate(diff), (rx, new_value)));
+                    }
+                }
+            }),
+        );
+
+    let log_stream = futures::stream::unfold(log_messages, |mut rx| async {
+        loop {
+            return match rx.recv().await {
+                Ok(message) => Some((Event::LogMessage(message), rx)),
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => None,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+            };
+        }
+    });
+
+    futures::stream::select(state_stream, log_stream)
 }
 
 #[derive(Clone)]
