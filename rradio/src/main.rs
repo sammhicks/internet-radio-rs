@@ -35,7 +35,7 @@ fn main() -> Result<()> {
         }
     }
 
-    let config = config::Config::load(config_path);
+    let config = config::Config::load(&config_path);
 
     logger.parse_new_spec(&config.log_level);
 

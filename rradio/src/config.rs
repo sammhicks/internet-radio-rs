@@ -45,12 +45,23 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn load(path: impl AsRef<std::path::Path>) -> Self {
+    pub fn load(path: impl AsRef<std::path::Path> + Copy) -> Self {
         std::fs::read_to_string(path)
-            .map_err(|err| log::error!("Failed to read config file: {:?}", err))
+            .map_err(|err| {
+                log::error!(
+                    "Failed to read config file {:?}: {}",
+                    path.as_ref().display(),
+                    err
+                )
+            })
             .and_then(|config| {
-                toml::from_str(&config)
-                    .map_err(|err| log::error!("Failed to parse config file: {:?}", err))
+                toml::from_str(&config).map_err(|err| {
+                    log::error!(
+                        "Failed to parse config file {:?}: {}",
+                        path.as_ref().display(),
+                        err
+                    )
+                })
             })
             .unwrap_or_default()
     }

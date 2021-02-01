@@ -247,8 +247,8 @@ pub enum StationError<S: AsRef<str> + Debug + 'static> {
     CdError(#[from] CdError<S>),
     #[error("Mount Error: {0}")]
     MountError(#[from] MountError<S>),
-    #[error("Failed to read from stations directory: {}", .0.as_ref())]
-    StationsDirectoryIoError(S),
+    #[error("Failed to read from stations directory {:?}: {}", directory.as_ref(), err.as_ref())]
+    StationsDirectoryIoError { directory: S, err: S },
     #[error("Station {} not found in {}", index.as_ref(), directory.as_ref())]
     StationNotFound { index: S, directory: S },
     #[error("Bad Station File: {}", .0.as_ref())]

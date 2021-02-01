@@ -1330,7 +1330,7 @@ dependencies = [
 
 [[package]]
 name = "rradio"
-version = "0.29.1"
+version = "0.29.2"
 dependencies = [
  "anyhow",
  "base64",
@@ -1360,7 +1360,7 @@ dependencies = [
 
 [[package]]
 name = "rradio-messages"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "serde",
  "thiserror",

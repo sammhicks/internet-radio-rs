@@ -97,10 +97,16 @@ pub enum Station {
     },
 }
 
-fn stations_directory_io_error<T>(result: std::io::Result<T>) -> Result<T> {
-    result.map_err(|err| {
-        rradio_messages::StationError::StationsDirectoryIoError(err.to_string().into())
-    })
+fn stations_directory_io_error<T>(
+    directory_name: impl AsRef<Path>,
+    result: std::io::Result<T>,
+) -> Result<T> {
+    result.map_err(
+        |err| rradio_messages::StationError::StationsDirectoryIoError {
+            directory: directory_name.as_ref().display().to_string().into(),
+            err: err.to_string().into(),
+        },
+    )
 }
 
 fn playlist_error<T>(result: anyhow::Result<T>) -> Result<T> {
@@ -109,9 +115,10 @@ fn playlist_error<T>(result: anyhow::Result<T>) -> Result<T> {
 
 impl Station {
     /// Load the station with the given index from the given directory, if the index exists
-    pub fn load(directory: impl AsRef<Path>, index: String) -> Result<Self> {
-        for entry in stations_directory_io_error(std::fs::read_dir(directory.as_ref()))? {
-            let entry = stations_directory_io_error(entry)?;
+    pub fn load(directory: impl AsRef<Path> + Copy, index: String) -> Result<Self> {
+        for entry in stations_directory_io_error(directory, std::fs::read_dir(directory.as_ref()))?
+        {
+            let entry = stations_directory_io_error(directory, entry)?;
             let name = entry.file_name();
 
             if name.to_string_lossy().starts_with(&index) {
