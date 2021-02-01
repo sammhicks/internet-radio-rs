@@ -65,7 +65,7 @@ impl Default for Config {
             buffering_duration: None,
             pause_before_playing_increment: Duration::from_secs(1),
             max_pause_before_playing: Duration::from_secs(5),
-            log_level: String::from("Warn"),
+            log_level: String::from("Info"),
             notifications: Notifications::default(),
         }
     }

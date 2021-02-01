@@ -56,6 +56,8 @@ pub async fn run(commands: mpsc::UnboundedSender<Command>, config: crate::config
     async move {
         let mut raw_mode = RawMode::new()?;
 
+        log::info!("Ready");
+
         let mut keyboard_events = EventStream::new();
 
         let mut current_number_entry: Option<char> = None;
@@ -122,7 +124,13 @@ pub async fn run(commands: mpsc::UnboundedSender<Command>, config: crate::config
             commands.send(command)?;
         }
 
-        raw_mode.disable()
+        log::debug!("Shutting down");
+
+        raw_mode.disable()?;
+
+        log::debug!("Shut down");
+
+        Ok(())
     }
     .log_error(std::module_path!())
     .await
