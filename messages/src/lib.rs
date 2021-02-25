@@ -187,6 +187,7 @@ pub struct PlayerStateDiff<S: AsRef<str>, TrackList: AsRef<[Track]>> {
     pub buffering: Option<u8>,
     pub track_duration: OptionDiff<Duration>,
     pub track_position: OptionDiff<Duration>,
+    pub ping_time: OptionDiff<Duration>,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize, thiserror::Error)]

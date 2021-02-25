@@ -66,6 +66,7 @@ pub struct PlayerState {
     pub buffering: u8,
     pub track_duration: Option<Duration>,
     pub track_position: Option<Duration>,
+    pub ping_time: Option<Duration>,
 }
 
 struct Controller {
@@ -75,9 +76,27 @@ struct Controller {
     published_state: PlayerState,
     new_state_tx: watch::Sender<PlayerState>,
     log_message_tx: broadcast::Sender<LogMessage<AtomicString>>,
+    #[cfg(feature = "ping")]
+    ping_requests_tx: std::sync::mpsc::Sender<Option<String>>,
 }
 
 impl Controller {
+    #[cfg(feature = "ping")]
+    fn clear_ping(&mut self) {
+        log::info!("Clearing ping");
+        if self.ping_requests_tx.send(None).is_err() {
+            log::error!("Failed to clear ping requests");
+        }
+        self.handle_ping_time(None);
+    }
+
+    #[cfg(feature = "ping")]
+    fn request_ping(&mut self, url: String) {
+        if self.ping_requests_tx.send(Some(url)).is_err() {
+            log::error!("Failed to set ping request");
+        }
+    }
+
     fn play_pause(&mut self) -> Result<()> {
         if self.current_playlist.is_some() {
             self.playbin.play_pause().map_err(Error::from)
@@ -87,6 +106,9 @@ impl Controller {
     }
 
     async fn play_current_track(&mut self) -> Result<()> {
+        #[cfg(feature = "ping")]
+        self.clear_ping();
+
         let current_playlist = self
             .current_playlist
             .as_ref()
@@ -94,6 +116,9 @@ impl Controller {
 
         let track = current_playlist.current_track()?;
         let pause_before_playing = current_playlist.pause_before_playing;
+
+        #[cfg(feature = "ping")]
+        let track_url = track.url.clone();
 
         self.playbin.set_url(&track.url)?;
         self.published_state.current_track_index = current_playlist.current_track_index;
@@ -106,6 +131,10 @@ impl Controller {
         }
         self.playbin.set_pipeline_state(PipelineState::Playing)?;
         self.broadcast_state_change();
+
+        #[cfg(feature = "ping")]
+        self.request_ping(track_url);
+
         Ok(())
     }
 
@@ -126,6 +155,9 @@ impl Controller {
     }
 
     fn play_error(&mut self) {
+        #[cfg(feature = "ping")]
+        self.clear_ping();
+
         self.current_playlist = None;
         if let Some(url) = &self.config.notifications.error {
             if let Err(err) = self.playbin.play_url(&url) {
@@ -149,6 +181,9 @@ impl Controller {
     }
 
     async fn play_station(&mut self, new_station: Station) -> Result<()> {
+        #[cfg(feature = "ping")]
+        self.clear_ping();
+
         self.current_playlist.take();
 
         let playlist = new_station.into_playlist()?;
@@ -357,11 +392,19 @@ impl Controller {
             _ => Ok(()),
         }
     }
+
+    #[cfg(feature = "ping")]
+    fn handle_ping_time(&mut self, ping_time: Option<Duration>) {
+        self.published_state.ping_time = ping_time;
+        self.broadcast_state_change();
+    }
 }
 
 enum Message {
     Command(Command),
-    GStreamerMessage(gstreamer::Message),
+    FromGStreamer(gstreamer::Message),
+    #[cfg(feature = "ping")]
+    PingTime(Option<Duration>),
 }
 
 /// Initialise the gstreamer pipeline, and process incoming commands
@@ -369,6 +412,7 @@ pub fn run(
     config: Config,
 ) -> anyhow::Result<(
     impl std::future::Future<Output = ()>,
+    std::thread::JoinHandle<()>,
     PartialPortChannels<()>,
 )> {
     gstreamer::init()?;
@@ -393,6 +437,7 @@ pub fn run(
         buffering: 0,
         track_duration: None,
         track_position: None,
+        ping_time: None,
     };
 
     let (new_state_tx, new_state_rx) = watch::channel(published_state.clone());
@@ -401,6 +446,12 @@ pub fn run(
 
     let log_message_source = LogMessageSource(log_message_tx.clone());
 
+    #[cfg(feature = "ping")]
+    let (ping_handle, ping_requests_tx, ping_times_rx) = super::ping::run(config.ping_count)?;
+
+    #[cfg(not(feature = "ping"))]
+    let ping_handle = std::thread::spawn(|| ());
+
     let mut controller = Controller {
         config,
         playbin,
@@ -408,6 +459,8 @@ pub fn run(
         published_state,
         new_state_tx,
         log_message_tx,
+        #[cfg(feature = "ping")]
+        ping_requests_tx,
     };
 
     let task = async move {
@@ -418,11 +471,26 @@ pub fn run(
             Some((message, rx))
         });
 
-        tokio::pin!(commands);
+        let bus_stream = bus.stream().map(Message::FromGStreamer);
 
-        let bus_stream = bus.stream().map(Message::GStreamerMessage);
+        #[cfg(feature = "ping")]
+        let messages = {
+            let ping_stream = futures::stream::unfold(ping_times_rx, |mut rx| async {
+                let ping_time = rx.recv().await?;
+                Some((Message::PingTime(ping_time), rx))
+            });
 
-        let mut messages = futures::stream::select(commands, bus_stream);
+            futures::stream::select_all(vec![
+                commands.boxed(),
+                bus_stream.boxed(),
+                ping_stream.boxed(),
+            ])
+        };
+
+        #[cfg(not(feature = "ping"))]
+        let messages = futures::stream::select(commands, bus_stream);
+
+        tokio::pin!(messages);
 
         let timeout = Duration::from_millis(1000 / 3);
 
@@ -432,8 +500,13 @@ pub fn run(
                 Ok(Some(message)) => {
                     if let Err(err) = match message {
                         Message::Command(command) => controller.handle_command(command).await,
-                        Message::GStreamerMessage(message) => {
+                        Message::FromGStreamer(message) => {
                             controller.handle_gstreamer_message(&message).await
+                        }
+                        #[cfg(feature = "ping")]
+                        Message::PingTime(ping_time) => {
+                            controller.handle_ping_time(ping_time);
+                            Ok(())
                         }
                     } {
                         controller.broadcast_error_message(err);
@@ -447,6 +520,7 @@ pub fn run(
 
     Ok((
         task,
+        ping_handle,
         PartialPortChannels {
             commands: commands_tx,
             player_state: new_state_rx,

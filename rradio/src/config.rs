@@ -42,6 +42,8 @@ pub struct Config {
     /// Notification sounds
     #[serde(rename = "Notifications")]
     pub notifications: Notifications,
+
+    pub ping_count: usize,
 }
 
 impl Config {
@@ -78,6 +80,7 @@ impl Default for Config {
             max_pause_before_playing: Duration::from_secs(5),
             log_level: String::from("Info"),
             notifications: Notifications::default(),
+            ping_count: 30,
         }
     }
 }

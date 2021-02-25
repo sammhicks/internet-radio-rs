@@ -109,10 +109,17 @@ impl<'a, S: AsRef<str> + Debug, TrackList: AsRef<[rradio_messages::Track]>> Disp
         }
 
         let track_position_row = track_duration_row + track_duration_row_count;
-        // let track_position_row_count = 1;
+        let track_position_row_count = 1;
         if let Some(position) = self.0.track_position.into_option() {
             Display::fmt(&MoveTo(0, track_position_row), f)?;
             display_entry(f, "Position", position)?;
+        }
+
+        let ping_time_row = track_position_row + track_position_row_count;
+        // let ping_time_row_count = 1;
+        if let Some(position) = self.0.ping_time.into_option() {
+            Display::fmt(&MoveTo(0, ping_time_row), f)?;
+            display_entry(f, "Ping Time", position)?;
         }
 
         Ok(())

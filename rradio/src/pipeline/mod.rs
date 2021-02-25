@@ -3,4 +3,7 @@
 mod controller;
 mod playbin;
 
+#[cfg(feature = "ping")]
+mod ping;
+
 pub use controller::{run, LogMessageSource, PlayerState};

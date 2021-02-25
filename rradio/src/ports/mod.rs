@@ -25,6 +25,7 @@ fn player_state_to_diff(state: &PlayerState) -> PlayerStateDiff<AtomicString, Tr
         buffering: Some(state.buffering),
         track_duration: state.track_duration.into(),
         track_position: state.track_position.into(),
+        ping_time: state.ping_time.into(),
     }
 }
 
@@ -58,6 +59,7 @@ fn diff_player_state(
         buffering: diff_value(&a.buffering, &b.buffering, &mut any_some),
         track_duration: diff_value(&a.track_duration, &b.track_duration, &mut any_some).into(),
         track_position: diff_value(&a.track_position, &b.track_position, &mut any_some).into(),
+        ping_time: diff_value(&a.ping_time, &b.ping_time, &mut any_some).into(),
     };
     if any_some {
         Some(diff)
