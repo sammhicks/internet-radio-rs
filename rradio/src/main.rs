@@ -41,7 +41,7 @@ fn main() -> Result<()> {
 
     let (shutdown_handle, shutdown_signal) = task::ShutdownSignal::new();
 
-    let (pipeline_task, ping_handle, port_channels) = pipeline::run(config.clone())?;
+    let (pipeline_task, port_channels) = pipeline::run(config.clone())?;
 
     let port_channels = port_channels.with_shutdown_signal(shutdown_signal);
 
@@ -81,11 +81,7 @@ fn main() -> Result<()> {
 
     drop(runtime);
 
-    let ping_error = ping_handle.join();
-
     logger.shutdown();
-
-    ping_error.unwrap();
 
     Ok(())
 }

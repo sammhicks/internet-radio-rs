@@ -77,7 +77,7 @@ struct Controller {
     new_state_tx: watch::Sender<PlayerState>,
     log_message_tx: broadcast::Sender<LogMessage<AtomicString>>,
     #[cfg(feature = "ping")]
-    ping_requests_tx: std::sync::mpsc::Sender<Option<String>>,
+    ping_requests_tx: tokio::sync::mpsc::UnboundedSender<Option<String>>,
 }
 
 impl Controller {
@@ -412,7 +412,6 @@ pub fn run(
     config: Config,
 ) -> anyhow::Result<(
     impl std::future::Future<Output = ()>,
-    std::thread::JoinHandle<()>,
     PartialPortChannels<()>,
 )> {
     gstreamer::init()?;
@@ -447,10 +446,7 @@ pub fn run(
     let log_message_source = LogMessageSource(log_message_tx.clone());
 
     #[cfg(feature = "ping")]
-    let (ping_handle, ping_requests_tx, ping_times_rx) = super::ping::run(config.clone())?;
-
-    #[cfg(not(feature = "ping"))]
-    let ping_handle = std::thread::spawn(|| ());
+    let (ping_task, ping_requests_tx, ping_times_rx) = super::ping::run(&config)?;
 
     let mut controller = Controller {
         config,
@@ -465,6 +461,9 @@ pub fn run(
 
     let task = async move {
         use futures::StreamExt;
+
+        #[cfg(feature = "ping")]
+        let ping_handle = tokio::spawn(ping_task);
 
         let commands = futures::stream::unfold(commands_rx, |mut rx| async {
             let message = Message::Command(rx.recv().await?);
@@ -516,11 +515,18 @@ pub fn run(
                 Err(_) => controller.broadcast_state_change(),
             }
         }
+
+        #[cfg(feature = "ping")]
+        {
+            drop(controller.ping_requests_tx);
+            if let Err(err) = ping_handle.await {
+                log::error!("Error with ping routine: {}", err);
+            }
+        }
     };
 
     Ok((
         task,
-        ping_handle,
         PartialPortChannels {
             commands: commands_tx,
             player_state: new_state_rx,
