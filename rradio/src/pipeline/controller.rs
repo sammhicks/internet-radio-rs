@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::{convert::TryInto, time::Duration};
 use tokio::sync::{broadcast, mpsc, watch};
 
-use rradio_messages::{Command, LogMessage, PipelineError, TrackTags};
+use rradio_messages::{Command, LogMessage, PingTimes, PipelineError, TrackTags};
 
 use super::playbin::{PipelineState, Playbin};
 use crate::{
@@ -66,7 +66,7 @@ pub struct PlayerState {
     pub buffering: u8,
     pub track_duration: Option<Duration>,
     pub track_position: Option<Duration>,
-    pub ping_time: Option<Duration>,
+    pub ping_times: PingTimes,
 }
 
 struct Controller {
@@ -87,7 +87,7 @@ impl Controller {
         if self.ping_requests_tx.send(None).is_err() {
             log::error!("Failed to clear ping requests");
         }
-        self.handle_ping_time(None);
+        self.handle_ping_times(PingTimes::None);
     }
 
     #[cfg(feature = "ping")]
@@ -394,8 +394,8 @@ impl Controller {
     }
 
     #[cfg(feature = "ping")]
-    fn handle_ping_time(&mut self, ping_time: Option<Duration>) {
-        self.published_state.ping_time = ping_time;
+    fn handle_ping_times(&mut self, ping_times: rradio_messages::PingTimes) {
+        self.published_state.ping_times = ping_times;
         self.broadcast_state_change();
     }
 }
@@ -404,7 +404,7 @@ enum Message {
     Command(Command),
     FromGStreamer(gstreamer::Message),
     #[cfg(feature = "ping")]
-    PingTime(Option<Duration>),
+    PingTimes(PingTimes),
 }
 
 /// Initialise the gstreamer pipeline, and process incoming commands
@@ -437,7 +437,7 @@ pub fn run(
         buffering: 0,
         track_duration: None,
         track_position: None,
-        ping_time: None,
+        ping_times: rradio_messages::PingTimes::None,
     };
 
     let (new_state_tx, new_state_rx) = watch::channel(published_state.clone());
@@ -447,7 +447,7 @@ pub fn run(
     let log_message_source = LogMessageSource(log_message_tx.clone());
 
     #[cfg(feature = "ping")]
-    let (ping_handle, ping_requests_tx, ping_times_rx) = super::ping::run(config.ping_count)?;
+    let (ping_handle, ping_requests_tx, ping_times_rx) = super::ping::run(config.clone())?;
 
     #[cfg(not(feature = "ping"))]
     let ping_handle = std::thread::spawn(|| ());
@@ -476,8 +476,8 @@ pub fn run(
         #[cfg(feature = "ping")]
         let messages = {
             let ping_stream = futures::stream::unfold(ping_times_rx, |mut rx| async {
-                let ping_time = rx.recv().await?;
-                Some((Message::PingTime(ping_time), rx))
+                let ping_times = rx.recv().await?;
+                Some((Message::PingTimes(ping_times), rx))
             });
 
             futures::stream::select_all(vec![
@@ -504,8 +504,8 @@ pub fn run(
                             controller.handle_gstreamer_message(&message).await
                         }
                         #[cfg(feature = "ping")]
-                        Message::PingTime(ping_time) => {
-                            controller.handle_ping_time(ping_time);
+                        Message::PingTimes(ping_times) => {
+                            controller.handle_ping_times(ping_times);
                             Ok(())
                         }
                     } {

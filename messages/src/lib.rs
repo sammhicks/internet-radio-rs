@@ -176,6 +176,16 @@ impl<T> std::convert::From<Option<Option<T>>> for OptionDiff<T> {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+pub enum PingTimes {
+    None,
+    OnlyGateway(Duration),
+    RemoteAndGateway {
+        remote_ping: Duration,
+        gateway_ping: Duration,
+    },
+}
+
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct PlayerStateDiff<S: AsRef<str>, TrackList: AsRef<[Track]>> {
     pub pipeline_state: Option<PipelineState>,
@@ -187,7 +197,7 @@ pub struct PlayerStateDiff<S: AsRef<str>, TrackList: AsRef<[Track]>> {
     pub buffering: Option<u8>,
     pub track_duration: OptionDiff<Duration>,
     pub track_position: OptionDiff<Duration>,
-    pub ping_time: OptionDiff<Duration>,
+    pub ping_times: Option<PingTimes>,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize, thiserror::Error)]

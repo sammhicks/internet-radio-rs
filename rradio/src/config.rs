@@ -43,7 +43,11 @@ pub struct Config {
     #[serde(rename = "Notifications")]
     pub notifications: Notifications,
 
+    #[cfg(feature = "ping")]
     pub ping_count: usize,
+
+    #[cfg(feature = "ping")]
+    pub gateway_address: std::net::Ipv4Addr,
 }
 
 impl Config {
@@ -80,7 +84,10 @@ impl Default for Config {
             max_pause_before_playing: Duration::from_secs(5),
             log_level: String::from("Info"),
             notifications: Notifications::default(),
+            #[cfg(feature = "ping")]
             ping_count: 30,
+            #[cfg(feature = "ping")]
+            gateway_address: std::net::Ipv4Addr::LOCALHOST,
         }
     }
 }

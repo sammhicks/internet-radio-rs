@@ -1,35 +1,192 @@
-use std::{net::SocketAddr, time::Duration};
+use std::{
+    net::{Ipv4Addr, SocketAddr},
+    time::Duration,
+};
 
-use anyhow::Context;
+use rradio_messages::PingTimes;
 
 mod ipv4;
 
-struct Pinger {
-    ipv4: ipv4::Pinger,
+const PING_INTERVAL: Duration = Duration::from_secs(1);
+
+#[allow(clippy::clippy::empty_enum)]
+#[derive(Debug)]
+enum Never {}
+
+enum PingInterruption {
+    Finished,
+    SuspendUntilNewTrack,
+    NewTrack(String),
 }
 
-fn parse_address(address: &str) -> anyhow::Result<Option<std::net::Ipv4Addr>> {
-    let address_url = url::Url::parse(address)?;
+impl From<tokio::sync::mpsc::error::SendError<PingTimes>> for PingInterruption {
+    fn from(_: tokio::sync::mpsc::error::SendError<PingTimes>) -> Self {
+        log::error!("Could not send ping times");
+        Self::Finished
+    }
+}
 
-    let scheme = address_url.scheme();
-    if let "file" | "cdda" = scheme {
-        log::info!("Ignoring {}", scheme);
-        return Ok(None);
+struct Pinger {
+    gateway_address: Ipv4Addr,
+    ping_count: usize,
+    ipv4_pinger: ipv4::Pinger,
+    track_urls: std::sync::mpsc::Receiver<Option<String>>,
+    ping_times: tokio::sync::mpsc::UnboundedSender<PingTimes>,
+}
+
+impl Pinger {
+    fn check_for_new_track(&mut self) -> Result<(), PingInterruption> {
+        match self.track_urls.try_recv() {
+            Ok(Some(track)) => Err(PingInterruption::NewTrack(track)),
+            Ok(None) => Err(PingInterruption::SuspendUntilNewTrack),
+            Err(std::sync::mpsc::TryRecvError::Empty) => Ok(()),
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => Err(PingInterruption::Finished),
+        }
     }
 
-    let host = address_url.host_str().context("No Host")?;
+    fn ping_address(
+        &mut self,
+        name: &str,
+        address: Ipv4Addr,
+    ) -> Result<Result<Duration, ()>, PingInterruption> {
+        self.check_for_new_track()?;
 
-    let mut dns_addresses =
-        std::net::ToSocketAddrs::to_socket_addrs(&(host, 0)).context("Failed to get addresses")?;
+        Ok(self.ipv4_pinger.ping(address).map_err(|err| {
+            log::error!("Failed to ping {} ({:?}): {}", name, address, err);
+        }))
+    }
 
-    loop {
-        match dns_addresses.next() {
-            Some(SocketAddr::V4(ipv4_address)) => break Ok(Some(*ipv4_address.ip())),
-            Some(SocketAddr::V6(ipv6_address)) => {
-                log::info!("Ignoring IPV6 Address {} ({:?})", ipv6_address, address);
-                continue;
+    fn ping_gateway(&mut self) -> Result<Result<Duration, ()>, PingInterruption> {
+        self.ping_address("gateway", self.gateway_address)
+    }
+
+    fn ping_remote(&mut self, address: Ipv4Addr) -> Result<Result<Duration, ()>, PingInterruption> {
+        self.ping_address("remote", address)
+    }
+
+    #[allow(clippy::needless_pass_by_value)]
+    fn run_sequence(&mut self, track_url_str: String) -> Result<Never, PingInterruption> {
+        let track_url = url::Url::parse(&track_url_str).map_err(|err| {
+            log::error!("Bad url ({:?}): {}", track_url_str, err);
+            PingInterruption::SuspendUntilNewTrack
+        })?;
+
+        let scheme = track_url.scheme();
+        if let "file" | "cdda" = scheme {
+            log::info!("Ignoring {}", scheme);
+            return Err(PingInterruption::SuspendUntilNewTrack);
+        }
+
+        let host = track_url.host_str().ok_or_else(|| {
+            log::error!("No host ({:?})", track_url_str);
+            PingInterruption::SuspendUntilNewTrack
+        })?;
+
+        let mut dns_addresses = loop {
+            match self.ping_gateway()? {
+                Ok(gateway_ping) => self.ping_times.send(PingTimes::OnlyGateway(gateway_ping))?,
+                Err(()) => {
+                    std::thread::sleep(PING_INTERVAL);
+                    continue;
+                }
             }
-            None => anyhow::bail!("No valid addresses"),
+
+            match std::net::ToSocketAddrs::to_socket_addrs(&(host, 0)) {
+                Ok(addrs) => break addrs,
+                Err(err) => {
+                    log::error!("Could not resolve DNS ({:?}): {}", host, err);
+                }
+            }
+        };
+
+        let remote_address = loop {
+            match dns_addresses.next() {
+                Some(SocketAddr::V4(ipv4_address)) => break *ipv4_address.ip(),
+                Some(SocketAddr::V6(ipv6_address)) => {
+                    log::debug!("Ignoring ipv6 address ({:?}): {}", host, ipv6_address)
+                }
+                None => {
+                    log::error!("No addresses ({:?})", host);
+                    return Err(PingInterruption::SuspendUntilNewTrack);
+                }
+            }
+        };
+
+        'retry: loop {
+            std::thread::sleep(PING_INTERVAL);
+            let gateway_ping = match self.ping_gateway()? {
+                Ok(ping) => ping,
+                Err(()) => continue,
+            };
+
+            self.ping_times.send(PingTimes::OnlyGateway(gateway_ping))?;
+
+            {
+                let mut gateway_ping = gateway_ping;
+                let mut remote_ping;
+
+                let mut remote_pings_remaining = self.ping_count;
+
+                while remote_pings_remaining > 0 {
+                    remote_pings_remaining -= 1;
+
+                    std::thread::sleep(PING_INTERVAL);
+
+                    remote_ping = match self.ping_remote(remote_address)? {
+                        Ok(ping) => ping,
+                        Err(()) => continue 'retry,
+                    };
+
+                    self.ping_times.send(PingTimes::RemoteAndGateway {
+                        remote_ping,
+                        gateway_ping,
+                    })?;
+
+                    std::thread::sleep(PING_INTERVAL);
+
+                    gateway_ping = match self.ping_gateway()? {
+                        Ok(ping) => ping,
+                        Err(()) => continue 'retry,
+                    };
+
+                    self.ping_times.send(PingTimes::RemoteAndGateway {
+                        remote_ping,
+                        gateway_ping,
+                    })?;
+                }
+            }
+
+            loop {
+                std::thread::sleep(PING_INTERVAL);
+
+                match self.ping_gateway()? {
+                    Ok(gateway_ping) => {
+                        self.ping_times.send(PingTimes::OnlyGateway(gateway_ping))?
+                    }
+                    Err(()) => continue 'retry,
+                };
+            }
+        }
+    }
+
+    fn run(mut self) {
+        loop {
+            let mut track_url_str = match self.track_urls.recv() {
+                Ok(Some(track_url)) => track_url,
+                Ok(None) => continue,
+                Err(std::sync::mpsc::RecvError) => return,
+            };
+
+            loop {
+                match self.run_sequence(track_url_str).unwrap_err() {
+                    PingInterruption::Finished => return,
+                    PingInterruption::SuspendUntilNewTrack => break,
+                    PingInterruption::NewTrack(new_track_url_str) => {
+                        track_url_str = new_track_url_str;
+                        continue;
+                    }
+                }
+            }
         }
     }
 }
@@ -37,65 +194,26 @@ fn parse_address(address: &str) -> anyhow::Result<Option<std::net::Ipv4Addr>> {
 pub type Handles = (
     std::thread::JoinHandle<()>,
     std::sync::mpsc::Sender<Option<String>>,
-    tokio::sync::mpsc::UnboundedReceiver<Option<Duration>>,
+    tokio::sync::mpsc::UnboundedReceiver<PingTimes>,
 );
 
-pub fn run(ping_count: usize) -> Result<Handles, ipv4::PermissionsError> {
-    let mut pinger = Pinger {
-        ipv4: ipv4::Pinger::new()?,
-    };
+pub fn run(config: crate::config::Config) -> Result<Handles, ipv4::PermissionsError> {
+    let ipv4_pinger = ipv4::Pinger::new()?;
 
-    let (ping_address_tx, ping_address_rx) = std::sync::mpsc::channel::<Option<String>>();
+    let (track_url_tx, track_url_rx) = std::sync::mpsc::channel::<Option<String>>();
 
     let (ping_time_tx, ping_time_rx) = tokio::sync::mpsc::unbounded_channel();
 
-    let handle = std::thread::spawn(move || loop {
-        let mut current_address = match ping_address_rx.recv() {
-            Ok(Some(address)) => address,
-            Ok(None) => continue,
-            Err(std::sync::mpsc::RecvError) => return,
-        };
-
-        'parse_loop: loop {
-            let ping_ip = match parse_address(&current_address) {
-                Ok(Some(ip_address)) => ip_address,
-                Ok(None) => break 'parse_loop,
-                Err(err) => {
-                    log::error!("{:#}: {:?}", err, current_address);
-                    break 'parse_loop;
-                }
-            };
-
-            let mut ping_iter = 0..ping_count;
-
-            current_address = loop {
-                if ping_iter.next().is_none() {
-                    break 'parse_loop;
-                }
-
-                match pinger.ipv4.ping(ping_ip) {
-                    Ok(ping_time) => {
-                        if ping_time_tx.send(Some(ping_time)).is_err() {
-                            return;
-                        }
-                    }
-                    Err(err) => log::error!("Failed to ping: {}", err),
-                }
-                std::thread::sleep(std::time::Duration::from_secs(1));
-
-                match ping_address_rx.try_recv() {
-                    Ok(Some(address)) => break address,
-                    Ok(None) => break 'parse_loop,
-                    Err(std::sync::mpsc::TryRecvError::Empty) => (),
-                    Err(std::sync::mpsc::TryRecvError::Disconnected) => return,
-                }
-            };
+    let handle = std::thread::spawn(move || {
+        Pinger {
+            gateway_address: config.gateway_address,
+            ping_count: config.ping_count,
+            ipv4_pinger,
+            track_urls: track_url_rx,
+            ping_times: ping_time_tx,
         }
-
-        if ping_time_tx.send(None).is_err() {
-            return;
-        }
+        .run();
     });
 
-    Ok((handle, ping_address_tx, ping_time_rx))
+    Ok((handle, track_url_tx, ping_time_rx))
 }
