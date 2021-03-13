@@ -25,7 +25,7 @@ fn player_state_to_diff(state: &PlayerState) -> PlayerStateDiff<AtomicString, Tr
         buffering: Some(state.buffering),
         track_duration: state.track_duration.into(),
         track_position: state.track_position.into(),
-        ping_times: state.ping_times.into(),
+        ping_times: state.ping_times.clone().into(),
     }
 }
 

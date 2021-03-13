@@ -176,12 +176,39 @@ impl<T> std::convert::From<Option<Option<T>>> for OptionDiff<T> {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
-pub enum PingTimes {
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+pub enum RemotePingErrorKind {
+    Dns,
+    Ping,
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct RemotePingError<S> {
+    pub kind: RemotePingErrorKind,
+    pub message: S,
+}
+
+impl<S> std::cmp::PartialEq for RemotePingError<S> {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind
+    }
+}
+
+impl<S> std::cmp::Eq for RemotePingError<S> {}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+pub enum PingTimes<S: AsRef<str>> {
     None,
-    OnlyGateway(Duration),
-    RemoteAndGateway {
-        remote_ping: Duration,
+    BadUrl {
+        url: S,
+        error_message: S,
+    },
+    Gateway(Result<Duration, S>),
+    GatewayAndRemote {
+        gateway_ping: Duration,
+        remote_ping: Result<Duration, RemotePingError<S>>,
+    },
+    FinishedPingingRemote {
         gateway_ping: Duration,
     },
 }
@@ -197,7 +224,7 @@ pub struct PlayerStateDiff<S: AsRef<str>, TrackList: AsRef<[Track]>> {
     pub buffering: Option<u8>,
     pub track_duration: OptionDiff<Duration>,
     pub track_position: OptionDiff<Duration>,
-    pub ping_times: Option<PingTimes>,
+    pub ping_times: Option<PingTimes<S>>,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize, thiserror::Error)]

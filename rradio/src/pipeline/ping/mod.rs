@@ -3,12 +3,16 @@ use std::{
     time::Duration,
 };
 
-use rradio_messages::PingTimes;
 use tokio::sync::mpsc;
+
+use crate::atomic_string::AtomicString;
 
 mod ipv4;
 
 const PING_INTERVAL: Duration = Duration::from_secs(1);
+
+type RemotePingError = rradio_messages::RemotePingError<AtomicString>;
+type PingTimes = rradio_messages::PingTimes<AtomicString>;
 
 #[allow(clippy::clippy::empty_enum)]
 #[derive(Debug)]
@@ -36,6 +40,20 @@ struct Pinger {
 }
 
 impl Pinger {
+    fn parse_url(&mut self, url_str: String) -> Result<(String, url::Url), PingInterruption> {
+        match url::Url::parse(&url_str) {
+            Ok(parsed_url) => Ok((url_str, parsed_url)),
+            Err(err) => {
+                log::error!("Bad url ({:?}): {}", url_str, err);
+                self.ping_times.send(PingTimes::BadUrl {
+                    url: url_str.into(),
+                    error_message: err.to_string().into(),
+                })?;
+                Err(PingInterruption::SuspendUntilNewTrack)
+            }
+        }
+    }
+
     async fn check_for_new_track(&mut self) -> Result<(), PingInterruption> {
         match tokio::time::timeout(PING_INTERVAL, self.track_urls.recv()).await {
             Ok(Some(Some(track))) => Err(PingInterruption::NewTrack(track)),
@@ -45,37 +63,92 @@ impl Pinger {
         }
     }
 
-    async fn ping_address(
+    async fn ping_address<E: Clone>(
         &mut self,
         name: &str,
         address: Ipv4Addr,
-    ) -> Result<Result<Duration, ()>, PingInterruption> {
+        f: impl FnOnce(Result<Duration, E>) -> PingTimes,
+        e: impl FnOnce(AtomicString) -> E,
+    ) -> Result<Result<Duration, E>, PingInterruption> {
         self.check_for_new_track().await?;
 
-        tokio::task::block_in_place(|| {
-            Ok(self.ipv4_pinger.ping(address).map_err(|err| {
-                log::error!("Failed to ping {} ({:?}): {}", name, address, err);
-            }))
+        let ping_time_result = tokio::task::block_in_place(|| self.ipv4_pinger.ping(address));
+
+        Ok(match ping_time_result {
+            Ok(ping_time) => {
+                self.ping_times.send(f(Ok(ping_time)))?;
+                Ok(ping_time)
+            }
+            Err(err) => {
+                let error_message = format!("Failed to ping {} ({:?}): {}", name, address, err);
+                log::error!("{}", error_message);
+                let err = e(AtomicString::from(error_message));
+                self.ping_times.send(f(Err(err.clone())))?;
+                Err(err)
+            }
         })
     }
 
-    async fn ping_gateway(&mut self) -> Result<Result<Duration, ()>, PingInterruption> {
-        self.ping_address("gateway", self.gateway_address).await
+    async fn ping_gateway(
+        &mut self,
+        f: impl FnOnce(Result<Duration, AtomicString>) -> PingTimes,
+    ) -> Result<Result<Duration, AtomicString>, PingInterruption> {
+        self.ping_address("gateway", self.gateway_address, f, |m| m)
+            .await
     }
 
     async fn ping_remote(
         &mut self,
         address: Ipv4Addr,
-    ) -> Result<Result<Duration, ()>, PingInterruption> {
-        self.ping_address("remote", address).await
+        f: impl FnOnce(Result<Duration, RemotePingError>) -> PingTimes,
+    ) -> Result<Result<Duration, RemotePingError>, PingInterruption> {
+        self.ping_address("remote", address, f, |message| RemotePingError {
+            kind: rradio_messages::RemotePingErrorKind::Ping,
+            message,
+        })
+        .await
     }
 
-    #[allow(clippy::needless_pass_by_value)]
+    async fn get_remote_address(&mut self, host: &str) -> Result<Ipv4Addr, PingInterruption> {
+        let dns_addresses = loop {
+            let gateway_ping = match self.ping_gateway(PingTimes::Gateway).await? {
+                Ok(ping) => ping,
+                Err(_) => continue,
+            };
+
+            match std::net::ToSocketAddrs::to_socket_addrs(&(host, 0)) {
+                Ok(addrs) => break addrs,
+                Err(err) => {
+                    let message =
+                        AtomicString::from(format!("Could not resolve DNS ({:?}): {}", host, err));
+                    log::error!("{}", message);
+                    self.ping_times
+                        .send(rradio_messages::PingTimes::GatewayAndRemote {
+                            gateway_ping,
+                            remote_ping: Err(RemotePingError {
+                                kind: rradio_messages::RemotePingErrorKind::Dns,
+                                message,
+                            }),
+                        })?;
+                }
+            }
+        };
+
+        for address in dns_addresses {
+            match address {
+                SocketAddr::V4(ipv4_address) => return Ok(*ipv4_address.ip()),
+                SocketAddr::V6(ipv6_address) => {
+                    log::debug!("Ignoring ipv6 address ({:?}): {}", host, ipv6_address)
+                }
+            }
+        }
+
+        log::error!("No addresses ({:?})", host);
+        return Err(PingInterruption::SuspendUntilNewTrack);
+    }
+
     async fn run_sequence(&mut self, track_url_str: String) -> Result<Never, PingInterruption> {
-        let track_url = url::Url::parse(&track_url_str).map_err(|err| {
-            log::error!("Bad url ({:?}): {}", track_url_str, err);
-            PingInterruption::SuspendUntilNewTrack
-        })?;
+        let (track_url_str, track_url) = self.parse_url(track_url_str)?;
 
         let scheme = track_url.scheme();
         if let "file" | "cdda" = scheme {
@@ -88,80 +161,74 @@ impl Pinger {
             PingInterruption::SuspendUntilNewTrack
         })?;
 
-        let mut dns_addresses = loop {
-            match self.ping_gateway().await? {
-                Ok(gateway_ping) => self.ping_times.send(PingTimes::OnlyGateway(gateway_ping))?,
-                Err(()) => {
-                    continue;
-                }
-            }
+        let remote_address = self.get_remote_address(host).await?;
 
-            match std::net::ToSocketAddrs::to_socket_addrs(&(host, 0)) {
-                Ok(addrs) => break addrs,
-                Err(err) => {
-                    log::error!("Could not resolve DNS ({:?}): {}", host, err);
-                }
-            }
-        };
-
-        let remote_address = loop {
-            match dns_addresses.next() {
-                Some(SocketAddr::V4(ipv4_address)) => break *ipv4_address.ip(),
-                Some(SocketAddr::V6(ipv6_address)) => {
-                    log::debug!("Ignoring ipv6 address ({:?}): {}", host, ipv6_address)
-                }
-                None => {
-                    log::error!("No addresses ({:?})", host);
-                    return Err(PingInterruption::SuspendUntilNewTrack);
-                }
-            }
-        };
+        let mut maybe_remote_ping: Option<Result<Duration, RemotePingError>> = None;
 
         'retry: loop {
-            let gateway_ping = match self.ping_gateway().await? {
+            let mut gateway_ping = match self
+                .ping_gateway(
+                    |gateway_ping| match (gateway_ping, maybe_remote_ping.clone()) {
+                        (Err(err), _) => PingTimes::Gateway(Err(err)),
+                        (Ok(gateway_ping), Some(remote_ping)) => PingTimes::GatewayAndRemote {
+                            gateway_ping,
+                            remote_ping,
+                        },
+                        (Ok(gateway_ping), None) => PingTimes::Gateway(Ok(gateway_ping)),
+                    },
+                )
+                .await?
+            {
                 Ok(ping) => ping,
-                Err(()) => continue,
+                Err(_) => continue 'retry,
             };
 
-            self.ping_times.send(PingTimes::OnlyGateway(gateway_ping))?;
+            let mut remote_pings_remaining = self.ping_count;
 
-            {
-                let mut gateway_ping = gateway_ping;
-                let mut remote_ping;
+            while remote_pings_remaining > 0 {
+                remote_pings_remaining -= 1;
 
-                let mut remote_pings_remaining = self.ping_count;
-
-                while remote_pings_remaining > 0 {
-                    remote_pings_remaining -= 1;
-
-                    remote_ping = match self.ping_remote(remote_address).await? {
-                        Ok(ping) => ping,
-                        Err(()) => continue 'retry,
-                    };
-
-                    self.ping_times.send(PingTimes::RemoteAndGateway {
-                        remote_ping,
+                let remote_ping_result = self
+                    .ping_remote(remote_address, |remote_ping| PingTimes::GatewayAndRemote {
                         gateway_ping,
-                    })?;
-
-                    gateway_ping = match self.ping_gateway().await? {
-                        Ok(ping) => ping,
-                        Err(()) => continue 'retry,
-                    };
-
-                    self.ping_times.send(PingTimes::RemoteAndGateway {
                         remote_ping,
-                        gateway_ping,
-                    })?;
+                    })
+                    .await?;
+
+                maybe_remote_ping = Some(remote_ping_result.clone());
+
+                let remote_ping = match remote_ping_result {
+                    Ok(ping) => ping,
+                    Err(_) => continue 'retry,
+                };
+
+                match self
+                    .ping_gateway(|result| match result {
+                        Ok(gateway_ping) => PingTimes::GatewayAndRemote {
+                            gateway_ping,
+                            remote_ping: Ok(remote_ping),
+                        },
+                        Err(err) => PingTimes::Gateway(Err(err)),
+                    })
+                    .await?
+                {
+                    Ok(ping) => gateway_ping = ping,
+                    Err(_) => continue 'retry,
                 }
             }
 
+            maybe_remote_ping.take();
+
             loop {
-                match self.ping_gateway().await? {
-                    Ok(gateway_ping) => {
-                        self.ping_times.send(PingTimes::OnlyGateway(gateway_ping))?
-                    }
-                    Err(()) => continue 'retry,
+                if self
+                    .ping_gateway(|result| match result {
+                        Ok(gateway_ping) => PingTimes::FinishedPingingRemote { gateway_ping },
+                        Err(err) => PingTimes::Gateway(Err(err)),
+                    })
+                    .await?
+                    .is_err()
+                {
+                    continue 'retry;
                 };
             }
         }
@@ -169,6 +236,10 @@ impl Pinger {
 
     async fn run(mut self) {
         loop {
+            if self.ping_times.send(PingTimes::None).is_err() {
+                return;
+            }
+
             let mut track_url_str = match self.track_urls.recv().await {
                 Some(Some(track_url)) => track_url,
                 Some(None) => continue,
@@ -176,14 +247,11 @@ impl Pinger {
             };
 
             loop {
-                match self.run_sequence(track_url_str).await.unwrap_err() {
+                track_url_str = match self.run_sequence(track_url_str).await.unwrap_err() {
                     PingInterruption::Finished => return,
                     PingInterruption::SuspendUntilNewTrack => break,
-                    PingInterruption::NewTrack(new_track_url_str) => {
-                        track_url_str = new_track_url_str;
-                        continue;
-                    }
-                }
+                    PingInterruption::NewTrack(new_track_url_str) => new_track_url_str,
+                };
             }
         }
     }
