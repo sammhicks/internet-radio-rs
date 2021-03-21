@@ -18,6 +18,8 @@ use pnet::{
     },
 };
 
+use rradio_messages::PingError;
+
 pub struct Pinger {
     sender: TransportSender,
     receiver: TransportReceiver,
@@ -26,16 +28,6 @@ pub struct Pinger {
 #[derive(Debug, thiserror::Error)]
 #[error("Permission Error. Try running as root.")]
 pub struct PermissionsError(#[from] std::io::Error);
-
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("Failed to send ICMP Echo Request to {0}: {1}")]
-    FailedToSend(Ipv4Addr, std::io::Error),
-    #[error("Failed to recieve ICMP Message: {0}")]
-    FailedToRecieve(std::io::Error),
-    #[error("Destination Unreachable: {0}")]
-    DestinationUnreachable(Ipv4Addr),
-}
 
 impl Pinger {
     pub fn new() -> Result<Self, PermissionsError> {
@@ -48,7 +40,7 @@ impl Pinger {
         Ok(Self { sender, receiver })
     }
 
-    pub fn ping(&mut self, address: Ipv4Addr) -> Result<Duration, Error> {
+    pub fn ping(&mut self, address: Ipv4Addr) -> Result<Duration, PingError> {
         let sequence_number = rand::random();
         let identifier = rand::random();
         let mut buffer = [0_u8; 16];
@@ -64,18 +56,28 @@ impl Pinger {
 
         self.sender
             .send_to(echo_packet, address.into())
-            .map_err(|err| Error::FailedToSend(address, err))?;
+            .map_err(|io_err| {
+                let err = PingError::FailedToSendICMP;
+                log::error!("{} to {}: {}", err, address, io_err);
+                err
+            })?;
 
         let send_time = Instant::now();
 
         loop {
-            let (packet, remote_address) = packet_iter.next().map_err(Error::FailedToRecieve)?;
+            let (packet, remote_address) = packet_iter.next().map_err(|io_err| {
+                let err = PingError::FailedToRecieveICMP;
+                log::error!("{}: {}", err, io_err);
+                err
+            })?;
             let ping_time = Instant::now().saturating_duration_since(send_time);
 
             match packet.get_icmp_type() {
                 IcmpTypes::EchoReply => (),
                 IcmpTypes::DestinationUnreachable => {
-                    return Err(Error::DestinationUnreachable(address))
+                    let err = PingError::DestinationUnreachable;
+                    log::error!("{}: {}", err, address);
+                    return Err(err);
                 }
                 icmp_type => println!("Ignoring {:?}", icmp_type),
             }

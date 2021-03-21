@@ -66,7 +66,7 @@ pub struct PlayerState {
     pub buffering: u8,
     pub track_duration: Option<Duration>,
     pub track_position: Option<Duration>,
-    pub ping_times: PingTimes<AtomicString>,
+    pub ping_times: PingTimes,
 }
 
 struct Controller {
@@ -394,7 +394,7 @@ impl Controller {
     }
 
     #[cfg(feature = "ping")]
-    fn handle_ping_times(&mut self, ping_times: rradio_messages::PingTimes<AtomicString>) {
+    fn handle_ping_times(&mut self, ping_times: rradio_messages::PingTimes) {
         self.published_state.ping_times = ping_times;
         self.broadcast_state_change();
     }
@@ -404,7 +404,7 @@ enum Message {
     Command(Command),
     FromGStreamer(gstreamer::Message),
     #[cfg(feature = "ping")]
-    PingTimes(PingTimes<AtomicString>),
+    PingTimes(PingTimes),
 }
 
 /// Initialise the gstreamer pipeline, and process incoming commands
