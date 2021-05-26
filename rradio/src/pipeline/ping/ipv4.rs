@@ -1,5 +1,5 @@
 use std::{
-    net::Ipv4Addr,
+    net::{IpAddr, Ipv4Addr},
     time::{Duration, Instant},
 };
 
@@ -7,7 +7,7 @@ use pnet::{
     packet::{
         icmp::{
             echo_reply::{EchoReplyPacket, IcmpCodes},
-            echo_request, IcmpTypes,
+            echo_request, IcmpPacket, IcmpTypes,
         },
         ip::IpNextHeaderProtocols,
         Packet,
@@ -29,6 +29,57 @@ pub struct Pinger {
 #[error("Permission Error. Try running as root.")]
 pub struct PermissionsError(#[from] std::io::Error);
 
+struct IcmpTransportChannelIterator<'a>(pnet::transport::IcmpTransportChannelIterator<'a>);
+
+#[cfg(unix)]
+impl<'a> IcmpTransportChannelIterator<'a> {
+    fn clear(&mut self) -> Result<(), PingError> {
+        while self
+            .try_next(std::time::Duration::from_micros(1))?
+            .is_some()
+        {}
+
+        Ok(())
+    }
+
+    fn next(
+        &mut self,
+        timeout: std::time::Duration,
+    ) -> Result<(IcmpPacket<'_>, IpAddr), PingError> {
+        self.try_next(timeout)?.ok_or(PingError::Timeout)
+    }
+
+    fn try_next(
+        &mut self,
+        timeout: std::time::Duration,
+    ) -> Result<Option<(IcmpPacket<'_>, IpAddr)>, PingError> {
+        self.0.next_with_timeout(timeout).map_err(|io_err| {
+            let err = PingError::FailedToRecieveICMP;
+            log::error!("{}: {}", err, io_err);
+            err
+        })
+    }
+}
+
+#[cfg(not(unix))]
+impl<'a> IcmpTransportChannelIterator<'a> {
+    #[allow(clippy::unnecessary_wraps)]
+    fn clear(&mut self) -> Result<(), PingError> {
+        Ok(())
+    }
+
+    fn next(
+        &mut self,
+        _timeout: std::time::Duration,
+    ) -> Result<(IcmpPacket<'_>, IpAddr), PingError> {
+        self.0.next().map_err(|io_err| {
+            let err = PingError::FailedToRecieveICMP;
+            log::error!("{}: {}", err, io_err);
+            err
+        })
+    }
+}
+
 impl Pinger {
     pub fn new() -> Result<Self, PermissionsError> {
         const BUFFER_SIZE: usize = 64;
@@ -41,19 +92,9 @@ impl Pinger {
     }
 
     pub fn ping(&mut self, address: Ipv4Addr) -> Result<Duration, PingError> {
-        let mut packet_iter = icmp_packet_iter(&mut self.receiver);
+        let mut packet_iter = IcmpTransportChannelIterator(icmp_packet_iter(&mut self.receiver));
 
-        while packet_iter
-            .next_with_timeout(std::time::Duration::from_micros(1))
-            .map_err(|io_err| {
-                let err = PingError::FailedToRecieveICMP;
-                log::error!("{}: {}", err, io_err);
-                err
-            })?
-            .is_some()
-        {
-            // purge buffer of previous packets
-        }
+        packet_iter.clear()?;
 
         let sequence_number = rand::random();
         let identifier = rand::random();
@@ -77,14 +118,7 @@ impl Pinger {
         let send_time = Instant::now();
 
         loop {
-            let (packet, remote_address) = packet_iter
-                .next_with_timeout(std::time::Duration::from_secs(4))
-                .map_err(|io_err| {
-                    let err = PingError::FailedToRecieveICMP;
-                    log::error!("{}: {}", err, io_err);
-                    err
-                })?
-                .ok_or(PingError::Timeout)?;
+            let (packet, remote_address) = packet_iter.next(std::time::Duration::from_secs(4))?;
             let ping_time = Instant::now().saturating_duration_since(send_time);
 
             match packet.get_icmp_type() {
