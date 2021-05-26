@@ -186,6 +186,8 @@ pub enum PingError {
     FailedToSendICMP,
     #[error("Failed to recieve ICMP Message")]
     FailedToRecieveICMP,
+    #[error("Timeout on ICMP Message")]
+    Timeout,
     #[error("Destination Unreachable")]
     DestinationUnreachable,
 }

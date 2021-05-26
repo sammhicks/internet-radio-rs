@@ -41,6 +41,20 @@ impl Pinger {
     }
 
     pub fn ping(&mut self, address: Ipv4Addr) -> Result<Duration, PingError> {
+        let mut packet_iter = icmp_packet_iter(&mut self.receiver);
+
+        while packet_iter
+            .next_with_timeout(std::time::Duration::from_micros(1))
+            .map_err(|io_err| {
+                let err = PingError::FailedToRecieveICMP;
+                log::error!("{}: {}", err, io_err);
+                err
+            })?
+            .is_some()
+        {
+            // purge buffer of previous packets
+        }
+
         let sequence_number = rand::random();
         let identifier = rand::random();
         let mut buffer = [0_u8; 16];
@@ -51,8 +65,6 @@ impl Pinger {
         echo_packet.set_identifier(identifier);
         echo_packet.set_icmp_type(IcmpTypes::EchoRequest);
         echo_packet.set_checksum(pnet::util::checksum(echo_packet.packet(), 1));
-
-        let mut packet_iter = icmp_packet_iter(&mut self.receiver);
 
         self.sender
             .send_to(echo_packet, address.into())
@@ -65,11 +77,14 @@ impl Pinger {
         let send_time = Instant::now();
 
         loop {
-            let (packet, remote_address) = packet_iter.next().map_err(|io_err| {
-                let err = PingError::FailedToRecieveICMP;
-                log::error!("{}: {}", err, io_err);
-                err
-            })?;
+            let (packet, remote_address) = packet_iter
+                .next_with_timeout(std::time::Duration::from_secs(4))
+                .map_err(|io_err| {
+                    let err = PingError::FailedToRecieveICMP;
+                    log::error!("{}: {}", err, io_err);
+                    err
+                })?
+                .ok_or(PingError::Timeout)?;
             let ping_time = Instant::now().saturating_duration_since(send_time);
 
             match packet.get_icmp_type() {
@@ -79,7 +94,10 @@ impl Pinger {
                     log::error!("{}: {}", err, address);
                     return Err(err);
                 }
-                icmp_type => println!("Ignoring {:?}", icmp_type),
+                icmp_type => {
+                    println!("Ignoring {:?}", icmp_type);
+                    continue;
+                }
             }
 
             if packet.get_icmp_code() != IcmpCodes::NoCode {
