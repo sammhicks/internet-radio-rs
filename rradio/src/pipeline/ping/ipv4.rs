@@ -95,18 +95,21 @@ impl Pinger {
                     return Err(err);
                 }
                 icmp_type => {
-                    println!("Ignoring {:?}", icmp_type);
+                    log::debug!("Ignoring {:?}", icmp_type);
                     continue;
                 }
             }
 
             if packet.get_icmp_code() != IcmpCodes::NoCode {
-                println!("Invalid ICMP Packet");
+                log::debug!("Ignoring Invalid ICMP Packet");
                 continue;
             }
 
             if remote_address != address {
-                println!("Unexpected ping response from {:<16}:", remote_address);
+                log::debug!(
+                    "Ignoring Unexpected ping response from {:<16}:",
+                    remote_address
+                );
                 continue;
             }
 
@@ -114,18 +117,20 @@ impl Pinger {
 
             let echo_sequence_number = echo_packet.get_sequence_number();
             if sequence_number != echo_sequence_number {
-                println!(
+                log::debug!(
                     "IPV4 packet with invalid sequence number: Request: {}; Response: {}",
-                    sequence_number, echo_sequence_number
+                    sequence_number,
+                    echo_sequence_number
                 );
                 continue; // Ignore unexpected packet
             }
 
             let echo_identifier = echo_packet.get_identifier();
             if identifier != echo_identifier {
-                println!(
+                log::debug!(
                     "IPV4 packet with invalid identifier: Request: {}; Response: {}",
-                    identifier, echo_identifier
+                    identifier,
+                    echo_identifier
                 );
                 continue; // Ignore unexpected packet
             }
