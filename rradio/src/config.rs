@@ -1,5 +1,7 @@
 //! A description of the rradio configuration file
 
+use std::net::Ipv4Addr;
+
 use log::LevelFilter;
 use tokio::time::Duration;
 
@@ -47,7 +49,7 @@ pub struct Config {
     pub ping_count: usize,
 
     #[cfg(feature = "ping")]
-    pub gateway_address: std::net::Ipv4Addr,
+    pub gateway_address: Ipv4Addr,
 }
 
 impl Config {
@@ -73,6 +75,36 @@ impl Config {
     }
 }
 
+#[cfg(all(feature = "ping", unix))]
+fn default_gateway() -> Ipv4Addr {
+    let path = "/proc/net/route";
+    std::fs::read_to_string(path)
+        .map_err(|err| log::error!("Failed to read {:?}: {}", path, err))
+        .ok()
+        .and_then(|route| {
+            route.lines().find_map(|line| {
+                let mut sections = line.split('\t').skip(1);
+
+                let destination = sections.next()?;
+                if destination != "00000000" {
+                    return None;
+                }
+
+                let gateway = sections.next()?;
+
+                Some(Ipv4Addr::from(
+                    u32::from_str_radix(gateway, 16).ok()?.to_le_bytes(),
+                ))
+            })
+        })
+        .unwrap_or(Ipv4Addr::new(192, 168, 0, 1))
+}
+
+#[cfg(all(feature = "ping", not(unix)))]
+fn default_gateway() -> Ipv4Addr {
+    Ipv4Addr::LOCALHOST
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -87,7 +119,7 @@ impl Default for Config {
             #[cfg(feature = "ping")]
             ping_count: 30,
             #[cfg(feature = "ping")]
-            gateway_address: std::net::Ipv4Addr::LOCALHOST,
+            gateway_address: default_gateway(),
         }
     }
 }

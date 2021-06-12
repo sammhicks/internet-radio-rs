@@ -256,6 +256,8 @@ pub fn run(
 
     let (ping_time_tx, ping_time_rx) = mpsc::unbounded_channel();
 
+    log::info!("Gateway address: {:?}", config.gateway_address);
+
     let task = Pinger {
         gateway_address: config.gateway_address,
         ping_count: config.ping_count,
