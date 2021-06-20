@@ -1,5 +1,6 @@
 //! A description of the rradio configuration file
 
+#[cfg(feature = "ping")]
 use std::net::Ipv4Addr;
 
 use log::LevelFilter;

@@ -5,7 +5,7 @@ use std::{
 
 use tokio::sync::mpsc;
 
-use rradio_messages::{PingError, PingTimes};
+use rradio_messages::{PingError, PingTarget, PingTimes};
 
 mod ipv4;
 
@@ -113,6 +113,7 @@ impl Pinger {
                         .send(rradio_messages::PingTimes::GatewayAndRemote {
                             gateway_ping,
                             remote_ping: Err(PingError::Dns),
+                            latest: PingTarget::Remote,
                         })?;
                 }
             }
@@ -156,6 +157,7 @@ impl Pinger {
                     (Ok(gateway_ping), Some(remote_ping)) => PingTimes::GatewayAndRemote {
                         gateway_ping,
                         remote_ping,
+                        latest: PingTarget::Gateway,
                     },
                     (Ok(gateway_ping), None) => PingTimes::Gateway(Ok(gateway_ping)),
                 })
@@ -174,6 +176,7 @@ impl Pinger {
                     .ping_remote(remote_address, |remote_ping| PingTimes::GatewayAndRemote {
                         gateway_ping,
                         remote_ping,
+                        latest: PingTarget::Remote,
                     })
                     .await?;
 
@@ -190,6 +193,7 @@ impl Pinger {
                         Ok(gateway_ping) => PingTimes::GatewayAndRemote {
                             gateway_ping,
                             remote_ping: Ok(remote_ping),
+                            latest: PingTarget::Gateway,
                         },
                         Err(err) => PingTimes::Gateway(Err(err)),
                     })

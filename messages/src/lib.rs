@@ -193,6 +193,12 @@ pub enum PingError {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+pub enum PingTarget {
+    Gateway,
+    Remote,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub enum PingTimes {
     None,
     BadUrl,
@@ -200,6 +206,7 @@ pub enum PingTimes {
     GatewayAndRemote {
         gateway_ping: Duration,
         remote_ping: Result<Duration, PingError>,
+        latest: PingTarget,
     },
     FinishedPingingRemote {
         gateway_ping: Duration,
