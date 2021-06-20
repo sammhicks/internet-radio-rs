@@ -2,10 +2,10 @@ use anyhow::{Context, Result};
 
 use rradio_messages::Command;
 
-fn encode_event_length(len: usize) -> Result<[u8; 2]> {
+fn encode_event_length(len: usize) -> Result<[u8; 4]> {
     use std::convert::TryFrom;
 
-    Ok(u16::try_from(len)
+    Ok(u32::try_from(len)
         .with_context(|| format!("Failed to encode event length of {}", len))?
         .to_be_bytes())
 }
@@ -40,7 +40,7 @@ async fn read_command<Stream: tokio::io::AsyncRead + Unpin>(
     use tokio::io::AsyncReadExt;
 
     let byte_count = stream
-        .read_u16()
+        .read_u32()
         .await
         .context("Failed to read command message size")?;
 
