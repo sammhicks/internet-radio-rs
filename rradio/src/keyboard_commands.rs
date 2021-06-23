@@ -1,8 +1,6 @@
 //! A task that reads commands from stdin (i.e the keyboard) and sends them through a given channel.
 //! Radio station numbers are selected by the rapid entry of two digit codes.
 
-use std::iter::FromIterator;
-
 use anyhow::Result;
 use crossterm::event::{Event, EventStream, KeyCode, KeyEvent};
 use futures::StreamExt;
@@ -108,7 +106,7 @@ pub async fn run(commands: mpsc::UnboundedSender<Command>, config: crate::config
                 KeyCode::Char(c) if c.is_ascii_digit() => {
                     log::debug!("ASCII entry: {}", c);
                     if let Some(previous_digit) = previous_digit {
-                        Command::SetChannel(String::from_iter([previous_digit, c].iter()))
+                        Command::SetChannel([previous_digit, c].iter().collect())
                     } else {
                         current_number_entry = Some(c);
                         continue;

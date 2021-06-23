@@ -7,14 +7,13 @@ pub mod web;
 
 use std::sync::Arc;
 
-use rradio_messages::{PlayerStateDiff, Track};
+use rradio_messages::{LogMessage, PlayerStateDiff};
 
-use crate::{atomic_string::AtomicString, pipeline::PlayerState, task::ShutdownSignal};
+use crate::{pipeline::PlayerState, task::ShutdownSignal};
 
-type TrackList = Arc<[Track]>;
-pub type BroadcastEvent = rradio_messages::Event<&'static str, AtomicString, TrackList>;
+pub type BroadcastEvent = rradio_messages::Event;
 
-fn player_state_to_diff(state: &PlayerState) -> PlayerStateDiff<AtomicString, TrackList> {
+fn player_state_to_diff(state: &PlayerState) -> PlayerStateDiff {
     PlayerStateDiff {
         pipeline_state: Some(state.pipeline_state),
         current_station: state.current_station.as_ref().clone().into(),
@@ -29,10 +28,7 @@ fn player_state_to_diff(state: &PlayerState) -> PlayerStateDiff<AtomicString, Tr
     }
 }
 
-fn diff_player_state(
-    a: &PlayerState,
-    b: &PlayerState,
-) -> Option<PlayerStateDiff<AtomicString, TrackList>> {
+fn diff_player_state(a: &PlayerState, b: &PlayerState) -> Option<PlayerStateDiff> {
     let mut any_some = false;
     let diff = PlayerStateDiff {
         pipeline_state: diff_value(&a.pipeline_state, &b.pipeline_state, &mut any_some),
@@ -87,13 +83,13 @@ fn diff_arc_with_clone<T: Clone>(a: &Arc<T>, b: &Arc<T>, any_some: &mut bool) ->
 }
 
 enum Event {
-    StateUpdate(PlayerStateDiff<AtomicString, TrackList>),
-    LogMessage(rradio_messages::LogMessage<AtomicString>),
+    StateUpdate(PlayerStateDiff),
+    LogMessage(LogMessage),
 }
 
 fn event_stream(
     state: tokio::sync::watch::Receiver<PlayerState>,
-    log_messages: tokio::sync::broadcast::Receiver<rradio_messages::LogMessage<AtomicString>>,
+    log_messages: tokio::sync::broadcast::Receiver<LogMessage>,
 ) -> impl futures::Stream<Item = Event> {
     use futures::StreamExt;
 

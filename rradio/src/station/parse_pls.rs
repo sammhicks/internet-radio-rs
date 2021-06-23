@@ -10,10 +10,10 @@ pub fn parse(path: impl AsRef<std::path::Path>, index: String) -> Result<Station
             entries
                 .into_iter()
                 .map(|entry| Track {
-                    title: entry.title,
+                    title: entry.title.map(Into::into),
                     album: None,
                     artist: None,
-                    url: entry.path,
+                    url: entry.path.into(),
                     is_notification: false,
                 })
                 .collect()

@@ -3,9 +3,7 @@
 
 use anyhow::{Context, Result};
 
-mod atomic_string;
 mod config;
-mod errors;
 mod keyboard_commands;
 mod pipeline;
 mod ports;

@@ -1,4 +1,6 @@
-use std::{fmt::Debug, time::Duration};
+use std::{fmt::Debug, sync::Arc, time::Duration};
+
+use serde::{Deserialize, Serialize};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -6,8 +8,10 @@ pub const VOLUME_ZERO_DB: i32 = 100;
 pub const VOLUME_MIN: i32 = 0;
 pub const VOLUME_MAX: i32 = 120;
 
+pub type AtomicString = Arc<str>;
+
 /// Commands from the user
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub enum Command {
     SetChannel(String),
     PlayPause,
@@ -22,7 +26,7 @@ pub enum Command {
     DebugPipeline,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
 pub enum PipelineState {
     VoidPending,
     Null,
@@ -49,17 +53,17 @@ impl std::fmt::Display for PipelineState {
     }
 }
 
-#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
 pub struct Track {
-    pub title: Option<String>,
-    pub album: Option<String>,
-    pub artist: Option<String>,
-    pub url: String,
+    pub title: Option<AtomicString>,
+    pub album: Option<AtomicString>,
+    pub artist: Option<AtomicString>,
+    pub url: AtomicString,
     pub is_notification: bool,
 }
 
 impl Track {
-    pub fn url(url: String) -> Self {
+    pub fn url(url: AtomicString) -> Self {
         Self {
             title: None,
             album: None,
@@ -69,7 +73,7 @@ impl Track {
         }
     }
 
-    pub fn notification(url: String) -> Self {
+    pub fn notification(url: AtomicString) -> Self {
         Self {
             title: None,
             album: None,
@@ -80,12 +84,12 @@ impl Track {
     }
 }
 
-#[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 pub enum StationType {
     UrlList,
     Samba,
     CD,
-    USB,
+    Usb,
 }
 
 impl std::fmt::Display for StationType {
@@ -94,49 +98,31 @@ impl std::fmt::Display for StationType {
             Self::UrlList => "URL List",
             Self::Samba => "Samba Server",
             Self::CD => "CD",
-            Self::USB => "USB",
+            Self::Usb => "USB",
         })
     }
 }
 
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-pub struct Station<S, TrackList>
-where
-    S: AsRef<str>,
-    TrackList: AsRef<[Track]>,
-{
-    pub index: Option<S>,
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Station {
+    pub index: Option<AtomicString>,
     pub source_type: StationType,
-    pub title: Option<S>,
-    pub tracks: TrackList,
+    pub title: Option<AtomicString>,
+    pub tracks: Arc<[Track]>,
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
-pub struct TrackTags<S: AsRef<str>> {
-    pub title: Option<S>,
-    pub organisation: Option<S>,
-    pub artist: Option<S>,
-    pub album: Option<S>,
-    pub genre: Option<S>,
-    pub image: Option<S>,
-    pub comment: Option<S>,
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+pub struct TrackTags {
+    pub title: Option<AtomicString>,
+    pub organisation: Option<AtomicString>,
+    pub artist: Option<AtomicString>,
+    pub album: Option<AtomicString>,
+    pub genre: Option<AtomicString>,
+    pub image: Option<AtomicString>,
+    pub comment: Option<AtomicString>,
 }
 
-impl<S: AsRef<str>> std::default::Default for TrackTags<S> {
-    fn default() -> Self {
-        Self {
-            title: None,
-            organisation: None,
-            artist: None,
-            album: None,
-            genre: None,
-            image: None,
-            comment: None,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 pub enum OptionDiff<T> {
     NoChange,
     ChangedToNone,
@@ -176,9 +162,7 @@ impl<T> std::convert::From<Option<Option<T>>> for OptionDiff<T> {
     }
 }
 
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, thiserror::Error, serde::Deserialize, serde::Serialize,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error, Deserialize, Serialize)]
 pub enum PingError {
     #[error("DNS Failure")]
     Dns,
@@ -192,13 +176,13 @@ pub enum PingError {
     DestinationUnreachable,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub enum PingTarget {
     Gateway,
     Remote,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub enum PingTimes {
     None,
     BadUrl,
@@ -213,13 +197,13 @@ pub enum PingTimes {
     },
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
-pub struct PlayerStateDiff<S: AsRef<str>, TrackList: AsRef<[Track]>> {
+#[derive(Debug, Deserialize, Serialize)]
+pub struct PlayerStateDiff {
     pub pipeline_state: Option<PipelineState>,
-    pub current_station: OptionDiff<Station<S, TrackList>>,
+    pub current_station: OptionDiff<Station>,
     pub pause_before_playing: OptionDiff<Duration>,
     pub current_track_index: Option<usize>,
-    pub current_track_tags: OptionDiff<TrackTags<S>>,
+    pub current_track_tags: OptionDiff<TrackTags>,
     pub volume: Option<i32>,
     pub buffering: Option<u8>,
     pub track_duration: OptionDiff<Duration>,
@@ -227,18 +211,18 @@ pub struct PlayerStateDiff<S: AsRef<str>, TrackList: AsRef<[Track]>> {
     pub ping_times: Option<PingTimes>,
 }
 
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, thiserror::Error)]
-#[error("Pipeline Error: {}", .0.as_ref())]
-pub struct PipelineError<S: AsRef<str> + Debug>(pub S);
+#[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
+#[error("Pipeline Error: {0}")]
+pub struct PipelineError(pub AtomicString);
 
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, thiserror::Error)]
-pub enum CdError<S: AsRef<str> + Debug> {
+#[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
+pub enum CdError {
     #[error("CD support is not enabled")]
     CdNotEnabled,
-    #[error("Failed to open CD device: {}", .0.as_ref())]
-    FailedToOpenDevice(S),
-    #[error("ioctl Error: {}", .0.as_ref())]
-    IoCtlError(S),
+    #[error("Failed to open CD device: {0}")]
+    FailedToOpenDevice(AtomicString),
+    #[error("ioctl Error: {0}")]
+    IoCtlError(AtomicString),
     #[error("No CD info")]
     NoCdInfo,
     #[error("No CD")]
@@ -261,91 +245,96 @@ pub enum CdError<S: AsRef<str> + Debug> {
     UnknownDiscStatus(isize),
 }
 
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, thiserror::Error)]
-pub enum MountError<S: AsRef<str> + Debug> {
+#[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
+pub enum MountError {
     #[error("USB support is not enabled")]
     UsbNotEnabled,
     #[error("Samba support is not enabled")]
     SambaNotEnabled,
     #[error("Not found")]
     NotFound,
-    #[error("Failed to create temporary directory: {}", .0.as_ref())]
-    CouldNotCreateTemporaryDirectory(S),
+    #[error("Failed to create temporary directory: {0}")]
+    CouldNotCreateTemporaryDirectory(AtomicString),
     #[error("Failed to mount {}: {}", .device.as_ref(), .err.as_ref())]
-    CouldNotMountDevice { device: S, err: S },
-    #[error("Error finding tracks: {}", .0.as_ref())]
-    ErrorFindingTracks(S),
+    CouldNotMountDevice {
+        device: AtomicString,
+        err: AtomicString,
+    },
+    #[error("Error finding tracks: {0}")]
+    ErrorFindingTracks(AtomicString),
     #[error("Tracks not found")]
     TracksNotFound,
 }
 
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, thiserror::Error)]
-pub enum StationError<S: AsRef<str> + Debug + 'static> {
+#[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
+pub enum StationError {
     #[error("CD Error: {0}")]
-    CdError(#[from] CdError<S>),
+    CdError(#[from] CdError),
     #[error("Mount Error: {0}")]
-    MountError(#[from] MountError<S>),
+    MountError(#[from] MountError),
     #[error("Failed to read from stations directory {:?}: {}", directory.as_ref(), err.as_ref())]
-    StationsDirectoryIoError { directory: S, err: S },
+    StationsDirectoryIoError {
+        directory: AtomicString,
+        err: AtomicString,
+    },
     #[error("Station {} not found in {}", index.as_ref(), directory.as_ref())]
-    StationNotFound { index: S, directory: S },
-    #[error("Bad Station File: {}", .0.as_ref())]
-    BadStationFile(S),
+    StationNotFound {
+        index: AtomicString,
+        directory: AtomicString,
+    },
+    #[error("Bad Station File: {0}")]
+    BadStationFile(AtomicString),
 }
 
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, thiserror::Error)]
-#[error("Tag Error: {}", .0.as_ref())]
-pub struct TagError<S: AsRef<str> + Debug>(pub S);
+#[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
+#[error("Tag Error: {0}")]
+pub struct TagError(pub AtomicString);
 
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, thiserror::Error)]
-pub enum Error<S: AsRef<str> + Debug + 'static> {
+#[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
+pub enum Error {
     #[error("No Playlist")]
     NoPlaylist,
     #[error("Invalid track index: {0}")]
     InvalidTrackIndex(usize),
     #[error(transparent)]
-    PipelineError(#[from] PipelineError<S>),
+    PipelineError(#[from] PipelineError),
     #[error("Station Error: {0}")]
-    StationError(#[from] StationError<S>),
+    StationError(#[from] StationError),
     #[error(transparent)]
-    TagError(#[from] TagError<S>),
+    TagError(#[from] TagError),
 }
 
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-pub enum LogMessage<S: AsRef<str> + Debug + 'static> {
-    Error(Error<S>),
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum LogMessage {
+    Error(Error),
 }
 
-impl<S: AsRef<str> + Debug> std::convert::From<Error<S>> for LogMessage<S> {
-    fn from(error: Error<S>) -> Self {
+impl std::convert::From<Error> for LogMessage {
+    fn from(error: Error) -> Self {
         Self::Error(error)
     }
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
-pub enum Event<Version: AsRef<str>, S: AsRef<str> + Debug + 'static, Tracklist: AsRef<[Track]>> {
-    ProtocolVersion(Version),
-    PlayerStateChanged(PlayerStateDiff<S, Tracklist>),
-    LogMessage(LogMessage<S>),
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug, Deserialize, Serialize)]
+pub enum Event {
+    ProtocolVersion(AtomicString),
+    PlayerStateChanged(PlayerStateDiff),
+    LogMessage(LogMessage),
 }
 
-impl<Version: AsRef<str>, S: AsRef<str> + Debug, Tracklist: AsRef<[Track]>>
-    std::convert::From<PlayerStateDiff<S, Tracklist>> for Event<Version, S, Tracklist>
-{
-    fn from(diff: PlayerStateDiff<S, Tracklist>) -> Self {
+impl std::convert::From<PlayerStateDiff> for Event {
+    fn from(diff: PlayerStateDiff) -> Self {
         Self::PlayerStateChanged(diff)
     }
 }
 
-impl<Version: AsRef<str>, S: AsRef<str> + Debug, Tracklist: AsRef<[Track]>>
-    std::convert::From<LogMessage<S>> for Event<Version, S, Tracklist>
-{
-    fn from(message: LogMessage<S>) -> Self {
+impl std::convert::From<LogMessage> for Event {
+    fn from(message: LogMessage) -> Self {
         Self::LogMessage(message)
     }
 }
 
-pub fn protocol_version_message<S: AsRef<str> + Debug, TrackList: AsRef<[Track]>>(
-) -> Event<&'static str, S, TrackList> {
-    Event::ProtocolVersion(VERSION)
+pub fn protocol_version_message() -> Event {
+    Event::ProtocolVersion(VERSION.into())
 }

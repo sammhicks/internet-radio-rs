@@ -6,14 +6,16 @@ use std::net::Ipv4Addr;
 use log::LevelFilter;
 use tokio::time::Duration;
 
+use rradio_messages::AtomicString;
+
 /// Notifications allow rradio to play sounds to notify the user of events
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 #[serde(default)]
 pub struct Notifications {
-    pub ready: Option<String>,
-    pub playlist_prefix: Option<String>,
-    pub playlist_suffix: Option<String>,
-    pub error: Option<String>,
+    pub ready: Option<AtomicString>,
+    pub playlist_prefix: Option<AtomicString>,
+    pub playlist_suffix: Option<AtomicString>,
+    pub error: Option<AtomicString>,
 }
 
 /// A description of the rradio configuration file
@@ -21,7 +23,7 @@ pub struct Notifications {
 #[serde(default)]
 pub struct Config {
     /// Where to find stations
-    pub stations_directory: String,
+    pub stations_directory: AtomicString,
 
     /// The timeout when entering two digit station indices
     #[serde(with = "humantime_serde")]
@@ -40,7 +42,7 @@ pub struct Config {
     pub max_pause_before_playing: Duration,
 
     /// Controls the logging level. See the [Log Specification](https://docs.rs/flexi_logger/latest/flexi_logger/struct.LogSpecification.html)
-    pub log_level: String,
+    pub log_level: AtomicString,
 
     /// Notification sounds
     #[serde(rename = "Notifications")]
@@ -109,13 +111,13 @@ fn default_gateway() -> Ipv4Addr {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            stations_directory: String::from("stations"),
+            stations_directory: AtomicString::from("stations"),
             input_timeout: Duration::from_millis(2000),
             volume_offset: 5,
             buffering_duration: None,
             pause_before_playing_increment: Duration::from_secs(1),
             max_pause_before_playing: Duration::from_secs(5),
-            log_level: String::from("Info"),
+            log_level: AtomicString::from("Info"),
             notifications: Notifications::default(),
             #[cfg(feature = "ping")]
             ping_count: 30,

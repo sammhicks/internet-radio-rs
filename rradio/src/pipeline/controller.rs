@@ -2,23 +2,23 @@ use std::sync::Arc;
 use std::{convert::TryInto, time::Duration};
 use tokio::sync::{broadcast, mpsc, watch};
 
-use rradio_messages::{Command, LogMessage, PingTimes, PipelineError, TrackTags};
+use rradio_messages::{
+    AtomicString, Command, Error, LogMessage, PingTimes, PipelineError, TrackTags,
+};
 
 use super::playbin::{PipelineState, Playbin};
 use crate::{
-    atomic_string::AtomicString,
     config::Config,
-    errors::{Error, Result},
     ports::PartialPortChannels,
     station::{Station, Track},
     tag::Tag,
 };
 
 #[derive(Clone, Debug)]
-pub struct LogMessageSource(broadcast::Sender<LogMessage<AtomicString>>);
+pub struct LogMessageSource(broadcast::Sender<LogMessage>);
 
 impl LogMessageSource {
-    pub fn subscribe(&self) -> broadcast::Receiver<LogMessage<AtomicString>> {
+    pub fn subscribe(&self) -> broadcast::Receiver<LogMessage> {
         self.0.subscribe()
     }
 }
@@ -31,12 +31,10 @@ struct PlaylistState {
 }
 
 impl PlaylistState {
-    fn current_track(&self) -> Result<&Track> {
+    fn current_track(&self) -> Result<&Track, Error> {
         self.tracks
             .get(self.current_track_index)
-            .ok_or(rradio_messages::Error::InvalidTrackIndex(
-                self.current_track_index,
-            ))
+            .ok_or(Error::InvalidTrackIndex(self.current_track_index))
     }
 
     fn goto_previous_track(&mut self) {
@@ -58,10 +56,10 @@ impl PlaylistState {
 #[derive(Clone, Debug)]
 pub struct PlayerState {
     pub pipeline_state: PipelineState,
-    pub current_station: Arc<Option<rradio_messages::Station<AtomicString, Arc<[Track]>>>>,
+    pub current_station: Arc<Option<rradio_messages::Station>>,
     pub pause_before_playing: Option<Duration>,
     pub current_track_index: usize,
-    pub current_track_tags: Arc<Option<TrackTags<AtomicString>>>,
+    pub current_track_tags: Arc<Option<TrackTags>>,
     pub volume: i32,
     pub buffering: u8,
     pub track_duration: Option<Duration>,
@@ -75,9 +73,9 @@ struct Controller {
     current_playlist: Option<PlaylistState>,
     published_state: PlayerState,
     new_state_tx: watch::Sender<PlayerState>,
-    log_message_tx: broadcast::Sender<LogMessage<AtomicString>>,
+    log_message_tx: broadcast::Sender<LogMessage>,
     #[cfg(feature = "ping")]
-    ping_requests_tx: tokio::sync::mpsc::UnboundedSender<Option<String>>,
+    ping_requests_tx: tokio::sync::mpsc::UnboundedSender<Option<AtomicString>>,
 }
 
 impl Controller {
@@ -91,13 +89,13 @@ impl Controller {
     }
 
     #[cfg(feature = "ping")]
-    fn request_ping(&mut self, url: String) {
+    fn request_ping(&mut self, url: AtomicString) {
         if self.ping_requests_tx.send(Some(url)).is_err() {
             log::error!("Failed to set ping request");
         }
     }
 
-    fn play_pause(&mut self) -> Result<()> {
+    fn play_pause(&mut self) -> Result<(), Error> {
         if self.current_playlist.is_some() {
             self.playbin.play_pause().map_err(Error::from)
         } else {
@@ -105,14 +103,11 @@ impl Controller {
         }
     }
 
-    async fn play_current_track(&mut self) -> Result<()> {
+    async fn play_current_track(&mut self) -> Result<(), Error> {
         #[cfg(feature = "ping")]
         self.clear_ping();
 
-        let current_playlist = self
-            .current_playlist
-            .as_ref()
-            .ok_or(rradio_messages::Error::NoPlaylist)?;
+        let current_playlist = self.current_playlist.as_ref().ok_or(Error::NoPlaylist)?;
 
         let track = current_playlist.current_track()?;
         let pause_before_playing = current_playlist.pause_before_playing;
@@ -138,18 +133,18 @@ impl Controller {
         Ok(())
     }
 
-    async fn goto_previous_track(&mut self) -> Result<()> {
+    async fn goto_previous_track(&mut self) -> Result<(), Error> {
         self.current_playlist
             .as_mut()
-            .ok_or(rradio_messages::Error::NoPlaylist)?
+            .ok_or(Error::NoPlaylist)?
             .goto_previous_track();
         self.play_current_track().await
     }
 
-    async fn goto_next_track(&mut self) -> Result<()> {
+    async fn goto_next_track(&mut self) -> Result<(), Error> {
         self.current_playlist
             .as_mut()
-            .ok_or(rradio_messages::Error::NoPlaylist)?
+            .ok_or(Error::NoPlaylist)?
             .goto_next_track();
         self.play_current_track().await
     }
@@ -175,12 +170,12 @@ impl Controller {
         self.new_state_tx.send(self.published_state.clone()).ok();
     }
 
-    fn broadcast_error_message(&mut self, error: crate::errors::Error) {
+    fn broadcast_error_message(&mut self, error: Error) {
         log::error!("{}", error);
         self.log_message_tx.send(error.into()).ok();
     }
 
-    async fn play_station(&mut self, new_station: Station) -> Result<()> {
+    async fn play_station(&mut self, new_station: Station) -> Result<(), Error> {
         #[cfg(feature = "ping")]
         self.clear_ping();
 
@@ -230,13 +225,13 @@ impl Controller {
         self.play_current_track().await
     }
 
-    fn set_volume(&mut self, volume: i32) -> Result<()> {
+    fn set_volume(&mut self, volume: i32) -> Result<(), Error> {
         self.published_state.volume = self.playbin.set_volume(volume)?;
         self.broadcast_state_change();
         Ok(())
     }
 
-    fn change_volume(&mut self, direction: i32) -> Result<()> {
+    fn change_volume(&mut self, direction: i32) -> Result<(), Error> {
         let current_volume = self.playbin.volume()?;
 
         #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
@@ -246,10 +241,10 @@ impl Controller {
         self.set_volume(rounded_volume + direction * self.config.volume_offset)
     }
 
-    async fn handle_command(&mut self, command: Command) -> Result<()> {
+    async fn handle_command(&mut self, command: Command) -> Result<(), Error> {
         match command {
             Command::SetChannel(index) => {
-                let new_station = Station::load(&self.config.stations_directory, index)?;
+                let new_station = Station::load(self.config.stations_directory.as_ref(), index)?;
                 self.play_station(new_station).await
             }
             Command::PlayPause => self.play_pause(),
@@ -262,7 +257,7 @@ impl Controller {
             Command::VolumeUp => self.change_volume(1),
             Command::VolumeDown => self.change_volume(-1),
             Command::SetVolume(volume) => self.set_volume(volume),
-            Command::PlayUrl(url) => self.play_station(Station::singleton(url)).await,
+            Command::PlayUrl(url) => self.play_station(Station::singleton(url.into())).await,
             Command::Eject => {
                 log::info!("Ignoring Eject");
                 Ok(())
@@ -275,7 +270,10 @@ impl Controller {
     }
 
     #[allow(clippy::too_many_lines)]
-    async fn handle_gstreamer_message(&mut self, message: &gstreamer::Message) -> Result<()> {
+    async fn handle_gstreamer_message(
+        &mut self,
+        message: &gstreamer::Message,
+    ) -> Result<(), Error> {
         use gstreamer::MessageView;
         match message.view() {
             MessageView::Buffering(b) => {
@@ -291,7 +289,7 @@ impl Controller {
                 Ok(())
             }
             MessageView::Tag(tag) => {
-                let mut new_tags = TrackTags::<AtomicString>::default();
+                let mut new_tags = TrackTags::default();
 
                 for (i, (name, value)) in tag.get_tags().as_ref().iter().enumerate() {
                     let tag = Tag::from_value(name, &value);
@@ -300,15 +298,15 @@ impl Controller {
                     log::debug!(target: tag_target, "{} - {:?}", i, tag);
 
                     match tag {
-                        Ok(Tag::Title(title)) => new_tags.title = Some(title.into()),
+                        Ok(Tag::Title(title)) => new_tags.title = Some(title),
                         Ok(Tag::Organisation(organisation)) => {
-                            new_tags.organisation = Some(organisation.into())
+                            new_tags.organisation = Some(organisation)
                         }
-                        Ok(Tag::Artist(artist)) => new_tags.artist = Some(artist.into()),
-                        Ok(Tag::Album(album)) => new_tags.album = Some(album.into()),
-                        Ok(Tag::Genre(genre)) => new_tags.genre = Some(genre.into()),
-                        Ok(Tag::Image(image)) => new_tags.image = Some(image.into_inner().into()),
-                        Ok(Tag::Comment(comment)) => new_tags.comment = Some(comment.into()),
+                        Ok(Tag::Artist(artist)) => new_tags.artist = Some(artist),
+                        Ok(Tag::Album(album)) => new_tags.album = Some(album),
+                        Ok(Tag::Genre(genre)) => new_tags.genre = Some(genre),
+                        Ok(Tag::Image(image)) => new_tags.image = Some(image.into_inner()),
+                        Ok(Tag::Comment(comment)) => new_tags.comment = Some(comment),
                         Ok(Tag::Unknown { .. }) => {}
                         Err(err) => {
                             self.broadcast_error_message(
@@ -352,10 +350,8 @@ impl Controller {
                     if self.published_state.track_duration.is_some() {
                         self.goto_next_track().await
                     } else {
-                        let current_playlist = self
-                            .current_playlist
-                            .as_mut()
-                            .ok_or(rradio_messages::Error::NoPlaylist)?;
+                        let current_playlist =
+                            self.current_playlist.as_mut().ok_or(Error::NoPlaylist)?;
 
                         let pause_before_playing =
                             current_playlist.pause_before_playing.unwrap_or_default()
@@ -376,7 +372,7 @@ impl Controller {
                 } else {
                     self.playbin
                         .set_pipeline_state(PipelineState::Null)
-                        .map_err(rradio_messages::Error::from)
+                        .map_err(Error::from)
                 }
             }
             MessageView::Error(err) => {

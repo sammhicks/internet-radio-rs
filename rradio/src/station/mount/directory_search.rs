@@ -83,14 +83,11 @@ fn album_directory(directory_path: &Path, artist: &str, album: &str) -> Result<O
                     let title = name.to_string_lossy().into_owned();
                     log::debug!("Track: {}", title);
 
-                    let mut url = String::from("file://");
-                    url.push_str(file_path.to_string_lossy().as_ref());
-
                     tracks.push(Track {
                         title: Some(title),
                         album: Some(album.to_owned()),
                         artist: Some(artist.to_owned()),
-                        url,
+                        url: format!("file://{}", file_path.to_string_lossy()),
                         is_notification: false,
                     });
                 }

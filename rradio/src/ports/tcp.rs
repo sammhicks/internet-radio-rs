@@ -23,7 +23,10 @@ where
 {
     stream_tx
         .write_all(
-            encode_event(&BroadcastEvent::ProtocolVersion(rradio_messages::VERSION))?.as_ref(),
+            encode_event(&BroadcastEvent::ProtocolVersion(
+                rradio_messages::VERSION.into(),
+            ))?
+            .as_ref(),
         )
         .await?;
 

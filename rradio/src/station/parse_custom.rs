@@ -160,7 +160,7 @@ fn parse_data(
             Ok(Station::CD { index, device })
         }
         (None, None, None, None, Some(device), None, false, false, []) => {
-            Ok(Station::USB { index, device })
+            Ok(Station::Usb { index, device })
         }
         (title, Some(credentials), None, None, None, show_buffer, false, true, [_]) => {
             Ok(Station::SambaServer {
@@ -177,7 +177,10 @@ fn parse_data(
                 title,
                 pause_before_playing,
                 show_buffer,
-                tracks: url_list.into_iter().map(Track::url).collect(),
+                tracks: url_list
+                    .into_iter()
+                    .map(|url| Track::url(url.into()))
+                    .collect(),
             })
         }
         _ => Err(ParsePlaylistError::BadPlaylist),

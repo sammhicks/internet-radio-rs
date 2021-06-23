@@ -26,7 +26,7 @@ impl Default for LbaMsf {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 struct cdrom_msf0 {
     minute: u8,
     second: u8,

@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use rradio_messages::StationType;
+use rradio_messages::{AtomicString, StationType};
 pub use rradio_messages::{StationError, Track};
 
 mod parse_custom;
@@ -11,10 +11,7 @@ mod parse_pls;
 
 #[cfg(not(feature = "cd"))]
 mod cd {
-    pub fn tracks(
-        _device: &str,
-    ) -> Result<Vec<super::Track>, rradio_messages::CdError<crate::atomic_string::AtomicString>>
-    {
+    pub fn tracks(_device: &str) -> Result<Vec<super::Track>, rradio_messages::CdError> {
         Err(rradio_messages::CdError::CdNotEnabled)
     }
 }
@@ -33,10 +30,7 @@ compile_error!("Mounting only supported on unix");
 #[cfg(all(feature = "mount", unix))]
 mod mount;
 
-type Result<T> =
-    std::result::Result<T, rradio_messages::StationError<crate::atomic_string::AtomicString>>;
-
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Credentials {
     username: String,
     password: String,
@@ -88,7 +82,7 @@ pub enum Station {
         index: String,
         device: String,
     },
-    USB {
+    Usb {
         index: String,
         device: String,
     },
@@ -100,22 +94,20 @@ pub enum Station {
 fn stations_directory_io_error<T>(
     directory_name: impl AsRef<Path>,
     result: std::io::Result<T>,
-) -> Result<T> {
-    result.map_err(
-        |err| rradio_messages::StationError::StationsDirectoryIoError {
-            directory: directory_name.as_ref().display().to_string().into(),
-            err: err.to_string().into(),
-        },
-    )
+) -> Result<T, StationError> {
+    result.map_err(|err| StationError::StationsDirectoryIoError {
+        directory: directory_name.as_ref().display().to_string().into(),
+        err: err.to_string().into(),
+    })
 }
 
-fn playlist_error<T>(result: anyhow::Result<T>) -> Result<T> {
+fn playlist_error<T>(result: anyhow::Result<T>) -> Result<T, StationError> {
     result.map_err(|err| rradio_messages::StationError::BadStationFile(format!("{:#}", err).into()))
 }
 
 impl Station {
     /// Load the station with the given index from the given directory, if the index exists
-    pub fn load(directory: impl AsRef<Path> + Copy, index: String) -> Result<Self> {
+    pub fn load(directory: impl AsRef<Path> + Copy, index: String) -> Result<Self, StationError> {
         for entry in stations_directory_io_error(directory, std::fs::read_dir(directory.as_ref()))?
         {
             let entry = stations_directory_io_error(directory, entry)?;
@@ -130,7 +122,7 @@ impl Station {
                     .to_string_lossy()
                     .as_ref()
                 {
-                    "m3u" => playlist_error(parse_m3u::parse(path, index)),
+                    "m3u" => playlist_error(parse_m3u::parse(&path, index)),
                     "pls" => playlist_error(parse_pls::parse(path, index)),
                     "txt" => playlist_error(parse_custom::parse(path, index)),
                     extension => Err(StationError::BadStationFile(
@@ -147,7 +139,7 @@ impl Station {
     }
 
     /// Create a station consisting of a single url.
-    pub fn singleton(url: String) -> Self {
+    pub fn singleton(url: AtomicString) -> Self {
         Self::Singleton {
             track: Track {
                 title: None,
@@ -159,7 +151,7 @@ impl Station {
         }
     }
 
-    pub fn into_playlist(self) -> Result<Playlist> {
+    pub fn into_playlist(self) -> Result<Playlist, StationError> {
         match self {
             Station::UrlList {
                 index,
@@ -207,14 +199,14 @@ impl Station {
                 handle: Handle::default(),
             }),
             #[cfg(not(all(feature = "usb", unix)))]
-            Station::USB { .. } => Err(rradio_messages::MountError::UsbNotEnabled.into()),
+            Station::Usb { .. } => Err(rradio_messages::MountError::UsbNotEnabled.into()),
             #[cfg(all(feature = "usb", unix))]
-            Station::USB { index, device } => {
+            Station::Usb { index, device } => {
                 let (handle, tracks) = mount::usb(&device)?;
                 Ok(Playlist {
                     station_index: Some(index),
                     station_title: None,
-                    station_type: StationType::USB,
+                    station_type: StationType::Usb,
                     pause_before_playing: None,
                     show_buffer: None,
                     tracks,

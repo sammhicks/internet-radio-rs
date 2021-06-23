@@ -30,9 +30,7 @@ fn display_entry(f: &mut Formatter, label: &str, entry: impl Debug) -> std::fmt:
 
 struct DisplayDiff<T>(T);
 
-impl<'a, S: AsRef<str> + Debug, TrackList: AsRef<[rradio_messages::Track]>> Display
-    for DisplayDiff<&'a rradio_messages::PlayerStateDiff<S, TrackList>>
-{
+impl<'a> Display for DisplayDiff<&'a rradio_messages::PlayerStateDiff> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use crossterm::cursor::MoveTo;
 
@@ -126,6 +124,7 @@ impl<'a, S: AsRef<str> + Debug, TrackList: AsRef<[rradio_messages::Track]>> Disp
     }
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn encode_message(message: &BroadcastEvent) -> Result<Vec<u8>> {
     Ok(match message {
         BroadcastEvent::ProtocolVersion(_) => format!(

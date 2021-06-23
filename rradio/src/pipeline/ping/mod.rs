@@ -5,20 +5,19 @@ use std::{
 
 use tokio::sync::mpsc;
 
-use rradio_messages::{PingError, PingTarget, PingTimes};
+use rradio_messages::{AtomicString, PingError, PingTarget, PingTimes};
 
 mod ipv4;
 
 const PING_INTERVAL: Duration = Duration::from_secs(1);
 
-#[allow(clippy::clippy::empty_enum)]
 #[derive(Debug)]
 enum Never {}
 
 enum PingInterruption {
     Finished,
     SuspendUntilNewTrack,
-    NewTrack(String),
+    NewTrack(AtomicString),
 }
 
 impl From<mpsc::error::SendError<PingTimes>> for PingInterruption {
@@ -28,19 +27,22 @@ impl From<mpsc::error::SendError<PingTimes>> for PingInterruption {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 struct FailedToPing(PingError);
 
 struct Pinger {
     gateway_address: Ipv4Addr,
     ping_count: usize,
     ipv4_pinger: ipv4::Pinger,
-    track_urls: mpsc::UnboundedReceiver<Option<String>>,
+    track_urls: mpsc::UnboundedReceiver<Option<AtomicString>>,
     ping_times: mpsc::UnboundedSender<PingTimes>,
 }
 
 impl Pinger {
-    fn parse_url(&mut self, url_str: String) -> Result<(String, url::Url), PingInterruption> {
+    fn parse_url(
+        &mut self,
+        url_str: AtomicString,
+    ) -> Result<(AtomicString, url::Url), PingInterruption> {
         match url::Url::parse(&url_str) {
             Ok(parsed_url) => Ok((url_str, parsed_url)),
             Err(err) => {
@@ -129,10 +131,13 @@ impl Pinger {
         }
 
         log::error!("No addresses ({:?})", host);
-        return Err(PingInterruption::SuspendUntilNewTrack);
+        Err(PingInterruption::SuspendUntilNewTrack)
     }
 
-    async fn run_sequence(&mut self, track_url_str: String) -> Result<Never, PingInterruption> {
+    async fn run_sequence(
+        &mut self,
+        track_url_str: AtomicString,
+    ) -> Result<Never, PingInterruption> {
         let (track_url_str, track_url) = self.parse_url(track_url_str)?;
 
         let scheme = track_url.scheme();
@@ -180,8 +185,7 @@ impl Pinger {
                     })
                     .await?;
 
-                maybe_remote_ping =
-                    Some(remote_ping_result.clone().map_err(|FailedToPing(err)| err));
+                maybe_remote_ping = Some(remote_ping_result.map_err(|FailedToPing(err)| err));
 
                 let remote_ping = match remote_ping_result {
                     Ok(ping) => ping,
@@ -249,14 +253,14 @@ pub fn run(
 ) -> Result<
     (
         impl std::future::Future<Output = ()>,
-        mpsc::UnboundedSender<Option<String>>,
+        mpsc::UnboundedSender<Option<AtomicString>>,
         mpsc::UnboundedReceiver<PingTimes>,
     ),
     ipv4::PermissionsError,
 > {
     let ipv4_pinger = ipv4::Pinger::new()?;
 
-    let (track_url_tx, track_url_rx) = mpsc::unbounded_channel::<Option<String>>();
+    let (track_url_tx, track_url_rx) = mpsc::unbounded_channel::<Option<AtomicString>>();
 
     let (ping_time_tx, ping_time_rx) = mpsc::unbounded_channel();
 

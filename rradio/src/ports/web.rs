@@ -6,16 +6,6 @@ use super::Event;
 
 use crate::task::FailableFuture;
 
-trait ToDebugString {
-    fn to_debug_string(&self) -> String;
-}
-
-impl<T: std::fmt::Debug> ToDebugString for T {
-    fn to_debug_string(&self) -> String {
-        format!("{:?}", self)
-    }
-}
-
 pub async fn run(port_channels: super::PortChannels) {
     let wait_group = crate::task::WaitGroup::new();
     let wait_handle = wait_group.clone_handle();

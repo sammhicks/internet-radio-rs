@@ -3,20 +3,18 @@
 use anyhow::{Context, Result};
 use glib::{value::SendValue, StaticType, Type, Value};
 
+use rradio_messages::AtomicString;
+
 /// The image tag of a track.
 /// This wrapper is to avoid dumping to contents of an image to the terminal when debug printing a track tag.
-pub struct Image(String);
+pub struct Image(AtomicString);
 
 impl Image {
     fn new(mime_type: &str, image_data: &[u8]) -> Self {
-        Self(format!(
-            "data:{};base64,{}",
-            mime_type,
-            base64::encode(image_data)
-        ))
+        Self(format!("data:{};base64,{}", mime_type, base64::encode(image_data)).into())
     }
 
-    pub fn into_inner(self) -> String {
+    pub fn into_inner(self) -> AtomicString {
         self.0
     }
 }
@@ -30,24 +28,27 @@ impl std::fmt::Debug for Image {
 /// A tag attached to a track
 #[derive(Debug)]
 pub enum Tag {
-    Title(String),
-    Organisation(String),
-    Artist(String),
-    Album(String),
-    Genre(String),
+    Title(AtomicString),
+    Organisation(AtomicString),
+    Artist(AtomicString),
+    Album(AtomicString),
+    Genre(AtomicString),
     Image(Image),
-    Comment(String),
-    Unknown { name: String, value: String },
+    Comment(AtomicString),
+    Unknown {
+        name: AtomicString,
+        value: AtomicString,
+    },
 }
 
 impl Tag {
     pub fn from_value(name: &str, value: &SendValue) -> Result<Self> {
         match name {
-            "title" => get_value(value, Self::Title),
-            "organisation" | "organization" => get_value(value, Self::Organisation),
-            "artist" => get_value(value, Self::Artist),
-            "album" => get_value(value, Self::Album),
-            "genre" => get_value(value, Self::Genre),
+            "title" => get_atomic_string(value, Self::Title),
+            "organisation" | "organization" => get_atomic_string(value, Self::Organisation),
+            "artist" => get_atomic_string(value, Self::Artist),
+            "album" => get_atomic_string(value, Self::Album),
+            "genre" => get_atomic_string(value, Self::Genre),
             "image" => {
                 let image = value.get::<gstreamer::Sample>()?.context("No Value")?;
 
@@ -63,10 +64,10 @@ impl Tag {
 
                 Ok(Self::Image(Image::new(mime_type, readable_mem.as_slice())))
             }
-            "comment" => get_value(value, Self::Comment),
+            "comment" => get_atomic_string(value, Self::Comment),
             _ => Ok(Self::Unknown {
                 name: name.into(),
-                value: value_to_string(value)?,
+                value: value_to_string(value)?.into(),
             }),
         }
     }
@@ -78,6 +79,10 @@ where
     F: FnOnce(T) -> Tag,
 {
     value.get()?.context("No Value").map(builder)
+}
+
+fn get_atomic_string<F: FnOnce(AtomicString) -> Tag>(value: &SendValue, builder: F) -> Result<Tag> {
+    get_value(value, |str: &str| builder(AtomicString::from(str)))
 }
 
 pub fn value_to_string(value: &Value) -> Result<String> {

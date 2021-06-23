@@ -7,9 +7,7 @@ use glib::{object::ObjectExt, Cast};
 use gstreamer::{ElementExt, ElementExtManual};
 use gstreamer_audio::StreamVolumeExt;
 
-pub use rradio_messages::PipelineState;
-
-type PipelineError = rradio_messages::PipelineError<crate::atomic_string::AtomicString>;
+pub use rradio_messages::{PipelineError, PipelineState};
 
 pub fn gstreamer_state_to_pipeline_state(
     state: gstreamer::State,
@@ -26,7 +24,6 @@ pub fn gstreamer_state_to_pipeline_state(
     }
 }
 
-#[derive(Clone)]
 pub struct Playbin(gstreamer::Element);
 
 impl Playbin {

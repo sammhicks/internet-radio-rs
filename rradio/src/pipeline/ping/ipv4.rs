@@ -63,8 +63,8 @@ impl<'a> IcmpTransportChannelIterator<'a> {
 
 #[cfg(not(unix))]
 impl<'a> IcmpTransportChannelIterator<'a> {
-    #[allow(clippy::unnecessary_wraps)]
-    fn clear(&mut self) -> Result<(), PingError> {
+    #[allow(clippy::unnecessary_wraps, clippy::unused_self)]
+    fn clear(&self) -> Result<(), PingError> {
         Ok(())
     }
 
