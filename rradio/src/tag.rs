@@ -3,18 +3,18 @@
 use anyhow::{Context, Result};
 use glib::{value::SendValue, StaticType, Type, Value};
 
-use rradio_messages::AtomicString;
+use rradio_messages::ArcStr;
 
 /// The image tag of a track.
 /// This wrapper is to avoid dumping to contents of an image to the terminal when debug printing a track tag.
-pub struct Image(AtomicString);
+pub struct Image(ArcStr);
 
 impl Image {
     fn new(mime_type: &str, image_data: &[u8]) -> Self {
         Self(format!("data:{};base64,{}", mime_type, base64::encode(image_data)).into())
     }
 
-    pub fn into_inner(self) -> AtomicString {
+    pub fn into_inner(self) -> ArcStr {
         self.0
     }
 }
@@ -28,17 +28,14 @@ impl std::fmt::Debug for Image {
 /// A tag attached to a track
 #[derive(Debug)]
 pub enum Tag {
-    Title(AtomicString),
-    Organisation(AtomicString),
-    Artist(AtomicString),
-    Album(AtomicString),
-    Genre(AtomicString),
+    Title(ArcStr),
+    Organisation(ArcStr),
+    Artist(ArcStr),
+    Album(ArcStr),
+    Genre(ArcStr),
     Image(Image),
-    Comment(AtomicString),
-    Unknown {
-        name: AtomicString,
-        value: AtomicString,
-    },
+    Comment(ArcStr),
+    Unknown { name: ArcStr, value: ArcStr },
 }
 
 impl Tag {
@@ -81,8 +78,8 @@ where
     value.get()?.context("No Value").map(builder)
 }
 
-fn get_atomic_string<F: FnOnce(AtomicString) -> Tag>(value: &SendValue, builder: F) -> Result<Tag> {
-    get_value(value, |str: &str| builder(AtomicString::from(str)))
+fn get_atomic_string<F: FnOnce(ArcStr) -> Tag>(value: &SendValue, builder: F) -> Result<Tag> {
+    get_value(value, |str: &str| builder(ArcStr::from(str)))
 }
 
 pub fn value_to_string(value: &Value) -> Result<String> {

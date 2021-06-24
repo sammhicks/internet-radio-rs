@@ -5,7 +5,7 @@ use std::{
 
 use tokio::sync::mpsc;
 
-use rradio_messages::{AtomicString, PingError, PingTarget, PingTimes};
+use rradio_messages::{ArcStr, PingError, PingTarget, PingTimes};
 
 mod ipv4;
 
@@ -17,7 +17,7 @@ enum Never {}
 enum PingInterruption {
     Finished,
     SuspendUntilNewTrack,
-    NewTrack(AtomicString),
+    NewTrack(ArcStr),
 }
 
 impl From<mpsc::error::SendError<PingTimes>> for PingInterruption {
@@ -34,15 +34,12 @@ struct Pinger {
     gateway_address: Ipv4Addr,
     ping_count: usize,
     ipv4_pinger: ipv4::Pinger,
-    track_urls: mpsc::UnboundedReceiver<Option<AtomicString>>,
+    track_urls: mpsc::UnboundedReceiver<Option<ArcStr>>,
     ping_times: mpsc::UnboundedSender<PingTimes>,
 }
 
 impl Pinger {
-    fn parse_url(
-        &mut self,
-        url_str: AtomicString,
-    ) -> Result<(AtomicString, url::Url), PingInterruption> {
+    fn parse_url(&mut self, url_str: ArcStr) -> Result<(ArcStr, url::Url), PingInterruption> {
         match url::Url::parse(&url_str) {
             Ok(parsed_url) => Ok((url_str, parsed_url)),
             Err(err) => {
@@ -134,10 +131,7 @@ impl Pinger {
         Err(PingInterruption::SuspendUntilNewTrack)
     }
 
-    async fn run_sequence(
-        &mut self,
-        track_url_str: AtomicString,
-    ) -> Result<Never, PingInterruption> {
+    async fn run_sequence(&mut self, track_url_str: ArcStr) -> Result<Never, PingInterruption> {
         let (track_url_str, track_url) = self.parse_url(track_url_str)?;
 
         let scheme = track_url.scheme();
@@ -253,14 +247,14 @@ pub fn run(
 ) -> Result<
     (
         impl std::future::Future<Output = ()>,
-        mpsc::UnboundedSender<Option<AtomicString>>,
+        mpsc::UnboundedSender<Option<ArcStr>>,
         mpsc::UnboundedReceiver<PingTimes>,
     ),
     ipv4::PermissionsError,
 > {
     let ipv4_pinger = ipv4::Pinger::new()?;
 
-    let (track_url_tx, track_url_rx) = mpsc::unbounded_channel::<Option<AtomicString>>();
+    let (track_url_tx, track_url_rx) = mpsc::unbounded_channel::<Option<ArcStr>>();
 
     let (ping_time_tx, ping_time_rx) = mpsc::unbounded_channel();
 

@@ -5,8 +5,7 @@ use super::Handle;
 
 use rradio_messages::MountError;
 
-type Result<T> =
-    std::result::Result<T, rradio_messages::MountError<crate::atomic_string::AtomicString>>;
+type Result<T> = std::result::Result<T, rradio_messages::MountError>;
 
 pub fn mount(
     device: &str,

@@ -80,14 +80,17 @@ fn album_directory(directory_path: &Path, artist: &str, album: &str) -> Result<O
                     .iter()
                     .any(|handled_extension| handled_extension == &extension)
                 {
-                    let title = name.to_string_lossy().into_owned();
+                    let title = name.to_string_lossy();
                     log::debug!("Track: {}", title);
 
                     tracks.push(Track {
-                        title: Some(title),
-                        album: Some(album.to_owned()),
-                        artist: Some(artist.to_owned()),
-                        url: format!("file://{}", file_path.to_string_lossy()),
+                        title: Some(title.into()),
+                        album: Some(album.into()),
+                        artist: Some(artist.into()),
+                        url: rradio_messages::arcstr::format!(
+                            "file://{}",
+                            file_path.to_string_lossy()
+                        ),
                         is_notification: false,
                     });
                 }

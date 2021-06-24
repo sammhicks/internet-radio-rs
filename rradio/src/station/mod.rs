@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use rradio_messages::{AtomicString, StationType};
+use rradio_messages::{ArcStr, StationType};
 pub use rradio_messages::{StationError, Track};
 
 mod parse_custom;
@@ -139,7 +139,7 @@ impl Station {
     }
 
     /// Create a station consisting of a single url.
-    pub fn singleton(url: AtomicString) -> Self {
+    pub fn singleton(url: ArcStr) -> Self {
         Self::Singleton {
             track: Track {
                 title: None,

@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 
-use rradio_messages::AtomicString;
+use rradio_messages::ArcStr;
 
 use super::{Station, Track};
 
@@ -53,12 +53,12 @@ pub fn parse(path: impl AsRef<std::path::Path> + Copy, index: String) -> Result<
     })
 }
 
-fn m3u_entry_url(entry: m3u::Entry) -> Result<AtomicString> {
+fn m3u_entry_url(entry: m3u::Entry) -> Result<ArcStr> {
     Ok(match entry {
-        m3u::Entry::Path(path) => AtomicString::from(
+        m3u::Entry::Path(path) => ArcStr::from(
             path.to_str()
                 .with_context(|| format!("Bad Path: {:?}", path))?,
         ),
-        m3u::Entry::Url(url) => AtomicString::from(url.into_string()),
+        m3u::Entry::Url(url) => ArcStr::from(url.into_string()),
     })
 }

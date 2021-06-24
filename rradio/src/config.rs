@@ -6,16 +6,16 @@ use std::net::Ipv4Addr;
 use log::LevelFilter;
 use tokio::time::Duration;
 
-use rradio_messages::AtomicString;
+use rradio_messages::{arcstr, ArcStr};
 
 /// Notifications allow rradio to play sounds to notify the user of events
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 #[serde(default)]
 pub struct Notifications {
-    pub ready: Option<AtomicString>,
-    pub playlist_prefix: Option<AtomicString>,
-    pub playlist_suffix: Option<AtomicString>,
-    pub error: Option<AtomicString>,
+    pub ready: Option<ArcStr>,
+    pub playlist_prefix: Option<ArcStr>,
+    pub playlist_suffix: Option<ArcStr>,
+    pub error: Option<ArcStr>,
 }
 
 /// A description of the rradio configuration file
@@ -23,7 +23,7 @@ pub struct Notifications {
 #[serde(default)]
 pub struct Config {
     /// Where to find stations
-    pub stations_directory: AtomicString,
+    pub stations_directory: ArcStr,
 
     /// The timeout when entering two digit station indices
     #[serde(with = "humantime_serde")]
@@ -42,7 +42,7 @@ pub struct Config {
     pub max_pause_before_playing: Duration,
 
     /// Controls the logging level. See the [Log Specification](https://docs.rs/flexi_logger/latest/flexi_logger/struct.LogSpecification.html)
-    pub log_level: AtomicString,
+    pub log_level: ArcStr,
 
     /// Notification sounds
     #[serde(rename = "Notifications")]
@@ -111,13 +111,13 @@ fn default_gateway() -> Ipv4Addr {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            stations_directory: AtomicString::from("stations"),
+            stations_directory: arcstr::literal!("stations"),
             input_timeout: Duration::from_millis(2000),
             volume_offset: 5,
             buffering_duration: None,
             pause_before_playing_increment: Duration::from_secs(1),
             max_pause_before_playing: Duration::from_secs(5),
-            log_level: AtomicString::from("Info"),
+            log_level: arcstr::literal!("Info"),
             notifications: Notifications::default(),
             #[cfg(feature = "ping")]
             ping_count: 30,

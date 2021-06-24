@@ -2,9 +2,7 @@ use std::sync::Arc;
 use std::{convert::TryInto, time::Duration};
 use tokio::sync::{broadcast, mpsc, watch};
 
-use rradio_messages::{
-    AtomicString, Command, Error, LogMessage, PingTimes, PipelineError, TrackTags,
-};
+use rradio_messages::{ArcStr, Command, Error, LogMessage, PingTimes, PipelineError, TrackTags};
 
 use super::playbin::{PipelineState, Playbin};
 use crate::{
@@ -75,7 +73,7 @@ struct Controller {
     new_state_tx: watch::Sender<PlayerState>,
     log_message_tx: broadcast::Sender<LogMessage>,
     #[cfg(feature = "ping")]
-    ping_requests_tx: tokio::sync::mpsc::UnboundedSender<Option<AtomicString>>,
+    ping_requests_tx: tokio::sync::mpsc::UnboundedSender<Option<ArcStr>>,
 }
 
 impl Controller {
@@ -89,7 +87,7 @@ impl Controller {
     }
 
     #[cfg(feature = "ping")]
-    fn request_ping(&mut self, url: AtomicString) {
+    fn request_ping(&mut self, url: ArcStr) {
         if self.ping_requests_tx.send(Some(url)).is_err() {
             log::error!("Failed to set ping request");
         }
@@ -244,7 +242,7 @@ impl Controller {
     async fn handle_command(&mut self, command: Command) -> Result<(), Error> {
         match command {
             Command::SetChannel(index) => {
-                let new_station = Station::load(self.config.stations_directory.as_ref(), index)?;
+                let new_station = Station::load(self.config.stations_directory.as_str(), index)?;
                 self.play_station(new_station).await
             }
             Command::PlayPause => self.play_pause(),

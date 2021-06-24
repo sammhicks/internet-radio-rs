@@ -4,14 +4,13 @@ use rradio_messages::Track;
 
 mod directory_search;
 
-#[cfg(unix)]
+#[cfg(all(unix, any(feature = "usb", feature = "samba")))]
 mod unix;
 
-#[cfg(unix)]
+#[cfg(all(unix, any(feature = "usb", feature = "samba")))]
 use unix::mount;
 
-type Result<T> =
-    std::result::Result<T, rradio_messages::MountError<crate::atomic_string::AtomicString>>;
+type Result<T> = std::result::Result<T, rradio_messages::MountError>;
 
 pub struct Handle {
     _mount: sys_mount::UnmountDrop<sys_mount::Mount>,

@@ -2,13 +2,14 @@ use std::{fmt::Debug, sync::Arc, time::Duration};
 
 use serde::{Deserialize, Serialize};
 
+pub use arcstr;
+pub use arcstr::ArcStr;
+
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub const VOLUME_ZERO_DB: i32 = 100;
 pub const VOLUME_MIN: i32 = 0;
 pub const VOLUME_MAX: i32 = 120;
-
-pub type AtomicString = Arc<str>;
 
 /// Commands from the user
 #[derive(Debug, Deserialize, Serialize)]
@@ -55,15 +56,15 @@ impl std::fmt::Display for PipelineState {
 
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
 pub struct Track {
-    pub title: Option<AtomicString>,
-    pub album: Option<AtomicString>,
-    pub artist: Option<AtomicString>,
-    pub url: AtomicString,
+    pub title: Option<ArcStr>,
+    pub album: Option<ArcStr>,
+    pub artist: Option<ArcStr>,
+    pub url: ArcStr,
     pub is_notification: bool,
 }
 
 impl Track {
-    pub fn url(url: AtomicString) -> Self {
+    pub fn url(url: ArcStr) -> Self {
         Self {
             title: None,
             album: None,
@@ -73,7 +74,7 @@ impl Track {
         }
     }
 
-    pub fn notification(url: AtomicString) -> Self {
+    pub fn notification(url: ArcStr) -> Self {
         Self {
             title: None,
             album: None,
@@ -105,21 +106,21 @@ impl std::fmt::Display for StationType {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Station {
-    pub index: Option<AtomicString>,
+    pub index: Option<ArcStr>,
     pub source_type: StationType,
-    pub title: Option<AtomicString>,
+    pub title: Option<ArcStr>,
     pub tracks: Arc<[Track]>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 pub struct TrackTags {
-    pub title: Option<AtomicString>,
-    pub organisation: Option<AtomicString>,
-    pub artist: Option<AtomicString>,
-    pub album: Option<AtomicString>,
-    pub genre: Option<AtomicString>,
-    pub image: Option<AtomicString>,
-    pub comment: Option<AtomicString>,
+    pub title: Option<ArcStr>,
+    pub organisation: Option<ArcStr>,
+    pub artist: Option<ArcStr>,
+    pub album: Option<ArcStr>,
+    pub genre: Option<ArcStr>,
+    pub image: Option<ArcStr>,
+    pub comment: Option<ArcStr>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -213,16 +214,16 @@ pub struct PlayerStateDiff {
 
 #[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
 #[error("Pipeline Error: {0}")]
-pub struct PipelineError(pub AtomicString);
+pub struct PipelineError(pub ArcStr);
 
 #[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
 pub enum CdError {
     #[error("CD support is not enabled")]
     CdNotEnabled,
     #[error("Failed to open CD device: {0}")]
-    FailedToOpenDevice(AtomicString),
+    FailedToOpenDevice(ArcStr),
     #[error("ioctl Error: {0}")]
-    IoCtlError(AtomicString),
+    IoCtlError(ArcStr),
     #[error("No CD info")]
     NoCdInfo,
     #[error("No CD")]
@@ -254,14 +255,11 @@ pub enum MountError {
     #[error("Not found")]
     NotFound,
     #[error("Failed to create temporary directory: {0}")]
-    CouldNotCreateTemporaryDirectory(AtomicString),
-    #[error("Failed to mount {}: {}", .device.as_ref(), .err.as_ref())]
-    CouldNotMountDevice {
-        device: AtomicString,
-        err: AtomicString,
-    },
+    CouldNotCreateTemporaryDirectory(ArcStr),
+    #[error("Failed to mount {device}: {err}")]
+    CouldNotMountDevice { device: ArcStr, err: ArcStr },
     #[error("Error finding tracks: {0}")]
-    ErrorFindingTracks(AtomicString),
+    ErrorFindingTracks(ArcStr),
     #[error("Tracks not found")]
     TracksNotFound,
 }
@@ -272,23 +270,17 @@ pub enum StationError {
     CdError(#[from] CdError),
     #[error("Mount Error: {0}")]
     MountError(#[from] MountError),
-    #[error("Failed to read from stations directory {:?}: {}", directory.as_ref(), err.as_ref())]
-    StationsDirectoryIoError {
-        directory: AtomicString,
-        err: AtomicString,
-    },
-    #[error("Station {} not found in {}", index.as_ref(), directory.as_ref())]
-    StationNotFound {
-        index: AtomicString,
-        directory: AtomicString,
-    },
+    #[error("Failed to read from stations directory {directory:?}: {err}")]
+    StationsDirectoryIoError { directory: ArcStr, err: ArcStr },
+    #[error("Station {index} not found in {directory}")]
+    StationNotFound { index: ArcStr, directory: ArcStr },
     #[error("Bad Station File: {0}")]
-    BadStationFile(AtomicString),
+    BadStationFile(ArcStr),
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
 #[error("Tag Error: {0}")]
-pub struct TagError(pub AtomicString);
+pub struct TagError(pub ArcStr);
 
 #[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
 pub enum Error {
@@ -318,7 +310,7 @@ impl std::convert::From<Error> for LogMessage {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Deserialize, Serialize)]
 pub enum Event {
-    ProtocolVersion(AtomicString),
+    ProtocolVersion(ArcStr),
     PlayerStateChanged(PlayerStateDiff),
     LogMessage(LogMessage),
 }

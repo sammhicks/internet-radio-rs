@@ -2,8 +2,7 @@ use super::Track;
 
 use rradio_messages::CdError;
 
-type Result<T> =
-    std::result::Result<T, rradio_messages::CdError<crate::atomic_string::AtomicString>>;
+type Result<T> = std::result::Result<T, rradio_messages::CdError>;
 
 #[repr(C)]
 #[derive(Debug, Default)]
@@ -201,10 +200,10 @@ fn cd_track(fd: libc::c_int, track_index: u8) -> Result<Option<Track>> {
         Ok(None)
     } else {
         Ok(Some(Track {
-            title: Some(format!("Track {}", track_index)),
+            title: Some(rradio_messages::arcstr::format!("Track {}", track_index)),
             album: None,
             artist: None,
-            url: format!("cdda://{}", track_index),
+            url: rradio_messages::arcstr::format!("cdda://{}", track_index),
             is_notification: false,
         }))
     }
