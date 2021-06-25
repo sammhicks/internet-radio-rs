@@ -35,6 +35,9 @@ Options:
 + pause_before_playing_increment
   + Default: `"1s"`
   + The additional amount to wait if an infinite stream terminates unexpectedly before attempting to reconnect
++ smart_goto_previous_track_duration
+  + Default: `"2s"`
+  + The amount of time at the start of a track where winding back will take you to the previous track, rather than seeking to the start of the current track
 + max_pause_before_playing
   + Default: `"5s"`
   + The maximum amount to wait if an infinite stream terminates unexpectedly before giving up

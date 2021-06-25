@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::{convert::TryInto, time::Duration};
 use tokio::sync::{broadcast, mpsc, watch};
 
-use rradio_messages::{ArcStr, Command, Error, LogMessage, PingTimes, PipelineError, TrackTags};
+use rradio_messages::{Command, Error, LogMessage, PingTimes, PipelineError, TrackTags};
 
 use super::playbin::{PipelineState, Playbin};
 use crate::{
@@ -73,7 +73,7 @@ struct Controller {
     new_state_tx: watch::Sender<PlayerState>,
     log_message_tx: broadcast::Sender<LogMessage>,
     #[cfg(feature = "ping")]
-    ping_requests_tx: tokio::sync::mpsc::UnboundedSender<Option<ArcStr>>,
+    ping_requests_tx: tokio::sync::mpsc::UnboundedSender<Option<rradio_messages::ArcStr>>,
 }
 
 impl Controller {
@@ -87,7 +87,7 @@ impl Controller {
     }
 
     #[cfg(feature = "ping")]
-    fn request_ping(&mut self, url: ArcStr) {
+    fn request_ping(&mut self, url: rradio_messages::ArcStr) {
         if self.ping_requests_tx.send(Some(url)).is_err() {
             log::error!("Failed to set ping request");
         }
@@ -131,6 +131,18 @@ impl Controller {
         Ok(())
     }
 
+    async fn smart_goto_previous_track(&mut self) -> Result<(), Error> {
+        if let Some(track_position) = self.published_state.track_position {
+            if track_position < self.config.smart_goto_previous_track_duration {
+                self.goto_previous_track().await
+            } else {
+                self.seek_to(Duration::ZERO)
+            }
+        } else {
+            Ok(())
+        }
+    }
+
     async fn goto_previous_track(&mut self) -> Result<(), Error> {
         self.current_playlist
             .as_mut()
@@ -145,6 +157,10 @@ impl Controller {
             .ok_or(Error::NoPlaylist)?
             .goto_next_track();
         self.play_current_track().await
+    }
+
+    fn seek_to(&mut self, position: Duration) -> Result<(), Error> {
+        Ok(self.playbin.seek_to(position)?)
     }
 
     fn play_error(&mut self) {
@@ -246,12 +262,10 @@ impl Controller {
                 self.play_station(new_station).await
             }
             Command::PlayPause => self.play_pause(),
+            Command::SmartPreviousItem => self.smart_goto_previous_track().await,
             Command::PreviousItem => self.goto_previous_track().await,
             Command::NextItem => self.goto_next_track().await,
-            Command::SeekTo(_position) => {
-                log::info!("Ignoring Seek");
-                Ok(())
-            }
+            Command::SeekTo(position) => self.seek_to(position),
             Command::VolumeUp => self.change_volume(1),
             Command::VolumeDown => self.change_volume(-1),
             Command::SetVolume(volume) => self.set_volume(volume),

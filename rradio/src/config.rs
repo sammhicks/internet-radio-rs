@@ -41,6 +41,9 @@ pub struct Config {
     #[serde(with = "humantime_serde")]
     pub max_pause_before_playing: Duration,
 
+    #[serde(with = "humantime_serde")]
+    pub smart_goto_previous_track_duration: Duration,
+
     /// Controls the logging level. See the [Log Specification](https://docs.rs/flexi_logger/latest/flexi_logger/struct.LogSpecification.html)
     pub log_level: ArcStr,
 
@@ -117,6 +120,7 @@ impl Default for Config {
             buffering_duration: None,
             pause_before_playing_increment: Duration::from_secs(1),
             max_pause_before_playing: Duration::from_secs(5),
+            smart_goto_previous_track_duration: Duration::from_secs(2),
             log_level: arcstr::literal!("Info"),
             notifications: Notifications::default(),
             #[cfg(feature = "ping")]

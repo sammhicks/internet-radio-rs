@@ -162,6 +162,25 @@ impl Playbin {
             .map(Duration::from_nanos)
     }
 
+    pub fn seek_to(&self, position: Duration) -> Result<(), PipelineError> {
+        use gstreamer::SeekFlags;
+        self.0
+            .seek_simple(
+                SeekFlags::FLUSH | SeekFlags::KEY_UNIT | SeekFlags::SNAP_NEAREST,
+                gstreamer::ClockTime::from(position),
+            )
+            .map_err(|err| {
+                PipelineError(
+                    format!(
+                        "Failed to seek to {:.2}: {}",
+                        position.as_secs_f32(),
+                        err.message
+                    )
+                    .into(),
+                )
+            })
+    }
+
     pub fn duration(&self) -> Option<Duration> {
         self.0
             .query_duration::<gstreamer::ClockTime>()

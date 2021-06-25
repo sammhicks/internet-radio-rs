@@ -16,6 +16,7 @@ pub const VOLUME_MAX: i32 = 120;
 pub enum Command {
     SetChannel(String),
     PlayPause,
+    SmartPreviousItem,
     PreviousItem,
     NextItem,
     SeekTo(Duration),
