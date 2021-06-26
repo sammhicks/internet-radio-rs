@@ -2,10 +2,12 @@ use anyhow::{Context, Result};
 
 use rradio_messages::Command;
 
-fn encode_event_length(len: usize) -> Result<[u8; 4]> {
+fn encode_event_length(
+    len: usize,
+) -> Result<[u8; std::mem::size_of::<rradio_messages::MsgPackBufferLength>()]> {
     use std::convert::TryFrom;
 
-    Ok(u32::try_from(len)
+    Ok(rradio_messages::MsgPackBufferLength::try_from(len)
         .with_context(|| format!("Failed to encode event length of {}", len))?
         .to_be_bytes())
 }
@@ -39,10 +41,14 @@ async fn read_command<Stream: tokio::io::AsyncRead + Unpin>(
 ) -> Result<Command> {
     use tokio::io::AsyncReadExt;
 
-    let byte_count = stream
-        .read_u32()
+    let mut byte_count_buffer = [0; std::mem::size_of::<rradio_messages::MsgPackBufferLength>()];
+
+    stream
+        .read_exact(&mut byte_count_buffer)
         .await
         .context("Failed to read command message size")?;
+
+    let byte_count = rradio_messages::MsgPackBufferLength::from_be_bytes(byte_count_buffer);
 
     let mut buffer = vec![0; byte_count as usize];
 

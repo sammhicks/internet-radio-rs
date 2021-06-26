@@ -7,6 +7,8 @@ pub use arcstr::ArcStr;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+pub type MsgPackBufferLength = u32;
+
 pub const VOLUME_ZERO_DB: i32 = 100;
 pub const VOLUME_MIN: i32 = 0;
 pub const VOLUME_MAX: i32 = 120;
