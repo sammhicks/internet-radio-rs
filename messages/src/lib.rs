@@ -168,14 +168,19 @@ impl<T> std::convert::From<Option<Option<T>>> for OptionDiff<T> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error, Deserialize, Serialize)]
 pub enum PingError {
+    /// Failed to resolve hostname into IP address
     #[error("DNS Failure")]
     Dns,
-    #[error("Failed to send Echo Request")]
+    /// OS raised error when sending ICMP message
+    #[error("Failed to send ICMP Message")]
     FailedToSendICMP,
+    /// OS raised error when receiving ICMP message
     #[error("Failed to recieve ICMP Message")]
     FailedToRecieveICMP,
+    /// Timeout before receiving ICMP message
     #[error("Timeout on ICMP Message")]
     Timeout,
+    /// Ping response reported as "Destination Unreachable"
     #[error("Destination Unreachable")]
     DestinationUnreachable,
 }
