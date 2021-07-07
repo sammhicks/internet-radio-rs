@@ -395,7 +395,13 @@ impl Controller {
                     ""
                 };
                 let message = format!("{}{} ({:?})", prefix, err.get_error(), err.get_debug());
-                Err(PipelineError(message.into()).into())
+                let error = Error::PipelineError(PipelineError(message.into()));
+                if self.config.play_error_sound_on_gstreamer_error {
+                    self.broadcast_error_message(error);
+                    Ok(())
+                } else {
+                    Err(error)
+                }
             }
             _ => Ok(()),
         }

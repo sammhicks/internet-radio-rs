@@ -51,6 +51,9 @@ pub struct Config {
     #[serde(rename = "Notifications")]
     pub notifications: Notifications,
 
+    /// Play the error sound if gstreamer reports an error
+    pub play_error_sound_on_gstreamer_error: bool,
+
     #[cfg(feature = "ping")]
     pub ping_count: usize,
 
@@ -126,6 +129,7 @@ impl Default for Config {
             smart_goto_previous_track_duration: Duration::from_secs(2),
             log_level: arcstr::literal!("Info"),
             notifications: Notifications::default(),
+            play_error_sound_on_gstreamer_error: true,
             #[cfg(feature = "ping")]
             ping_count: 30,
             #[cfg(feature = "ping")]
