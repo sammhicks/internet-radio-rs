@@ -169,7 +169,11 @@ impl Pinger {
                 continue; // Ignore unexpected packet
             }
 
-            log::info!("Ping time: {}ms", ping_time.as_secs_f32() * 1000.0);
+            log::info!(
+                "Ping time to {:>16}: {:.3}ms",
+                address,
+                ping_time.as_secs_f32() * 1000.0
+            );
 
             return Ok(ping_time);
         }

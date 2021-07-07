@@ -1,6 +1,6 @@
 [package]
 name = "rradio"
-version = "0.33.2"
+version = "0.34.0"
 authors = ["Samuel Hicks <SamMHicks@hotmail.co.uk>"]
 edition = "2018"
 description = "An internet radio with configurable two digit entry of stations"
@@ -21,7 +21,7 @@ production-server = []
 samba = [ "mount" ]
 usb = [ "mount" ]
 web = [ "warp" ]
-default = [ "ping", "web" ]
+default = [ "web" ]
 
 [dependencies]
 anyhow = "1.0"
