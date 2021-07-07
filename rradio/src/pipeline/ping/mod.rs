@@ -131,7 +131,11 @@ impl Pinger {
         Err(PingInterruption::SuspendUntilNewTrack)
     }
 
-    async fn run_sequence(&mut self, track_url_str: ArcStr) -> Result<Never, PingInterruption> {
+    async fn run_sequence(
+        &mut self,
+        track_url_str: ArcStr,
+        ping_remote_forever: bool,
+    ) -> Result<Never, PingInterruption> {
         let (track_url_str, track_url) = self.parse_url(track_url_str)?;
 
         let scheme = track_url.scheme();
@@ -169,7 +173,9 @@ impl Pinger {
             let mut remote_pings_remaining = self.ping_count;
 
             while remote_pings_remaining > 0 {
-                remote_pings_remaining -= 1;
+                if !ping_remote_forever {
+                    remote_pings_remaining -= 1;
+                }
 
                 let remote_ping_result = self
                     .ping_remote(remote_address, |remote_ping| PingTimes::GatewayAndRemote {
@@ -219,25 +225,34 @@ impl Pinger {
         }
     }
 
-    async fn run(mut self) {
+    async fn run(mut self, initial_ping_address: ArcStr) {
+        let initial_url_str = rradio_messages::arcstr::format!("http://{}", initial_ping_address);
+        let mut track_url_str = {
+            match self.run_sequence(initial_url_str, true).await.unwrap_err() {
+                PingInterruption::Finished => return,
+                PingInterruption::SuspendUntilNewTrack => loop {
+                    match self.track_urls.recv().await {
+                        Some(Some(track_url)) => break track_url,
+                        Some(None) => continue,
+                        None => return,
+                    }
+                },
+                PingInterruption::NewTrack(new_track_url_str) => new_track_url_str,
+            }
+        };
+
         loop {
-            if self.ping_times.send(PingTimes::None).is_err() {
-                return;
-            }
-
-            let mut track_url_str = match self.track_urls.recv().await {
-                Some(Some(track_url)) => track_url,
-                Some(None) => continue,
-                None => return,
+            track_url_str = match self.run_sequence(track_url_str, false).await.unwrap_err() {
+                PingInterruption::Finished => return,
+                PingInterruption::SuspendUntilNewTrack => loop {
+                    match self.track_urls.recv().await {
+                        Some(Some(track_url)) => break track_url,
+                        Some(None) => continue,
+                        None => return,
+                    }
+                },
+                PingInterruption::NewTrack(new_track_url_str) => new_track_url_str,
             };
-
-            loop {
-                track_url_str = match self.run_sequence(track_url_str).await.unwrap_err() {
-                    PingInterruption::Finished => return,
-                    PingInterruption::SuspendUntilNewTrack => break,
-                    PingInterruption::NewTrack(new_track_url_str) => new_track_url_str,
-                };
-            }
         }
     }
 }
@@ -267,7 +282,7 @@ pub fn run(
         track_urls: track_url_rx,
         ping_times: ping_time_tx,
     }
-    .run();
+    .run(config.initial_ping_address.clone());
 
     Ok((task, track_url_tx, ping_time_rx))
 }

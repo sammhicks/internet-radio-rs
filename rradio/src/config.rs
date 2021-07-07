@@ -56,6 +56,9 @@ pub struct Config {
 
     #[cfg(feature = "ping")]
     pub gateway_address: Ipv4Addr,
+
+    #[cfg(feature = "ping")]
+    pub initial_ping_address: ArcStr,
 }
 
 impl Config {
@@ -127,6 +130,8 @@ impl Default for Config {
             ping_count: 30,
             #[cfg(feature = "ping")]
             gateway_address: default_gateway(),
+            #[cfg(feature = "ping")]
+            initial_ping_address: arcstr::literal!("8.8.8.8"),
         }
     }
 }
