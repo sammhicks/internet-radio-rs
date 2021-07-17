@@ -24,6 +24,9 @@ mod cd_unix;
 #[cfg(all(feature = "cd", unix))]
 use cd_unix as cd;
 
+#[cfg(all(feature = "cd", unix))]
+pub use cd::eject as eject_cd;
+
 #[cfg(all(feature = "mount", not(unix)))]
 compile_error!("Mounting only supported on unix");
 

@@ -103,6 +103,7 @@ pub async fn run(commands: mpsc::UnboundedSender<Command>, config: crate::config
                 KeyCode::Char('+') => Command::NextItem,
                 KeyCode::Char('*') => Command::VolumeUp,
                 KeyCode::Char('/') => Command::VolumeDown,
+                KeyCode::Char('.') => Command::Eject,
                 KeyCode::Char(c) if c.is_ascii_digit() => {
                     log::debug!("ASCII entry: {}", c);
                     if let Some(previous_digit) = previous_digit {

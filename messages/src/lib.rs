@@ -255,6 +255,14 @@ pub enum CdError {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
+pub enum EjectError {
+    #[error("Failed to open CD device")]
+    FailedToOpenDevice,
+    #[error("Failed to eject CD")]
+    FailedToEjectDevice,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
 pub enum MountError {
     #[error("USB support is not enabled")]
     UsbNotEnabled,
@@ -300,6 +308,8 @@ pub enum Error {
     PipelineError(#[from] PipelineError),
     #[error("Station Error: {0}")]
     StationError(#[from] StationError),
+    #[error(transparent)]
+    EjectError(#[from] EjectError),
     #[error(transparent)]
     TagError(#[from] TagError),
 }

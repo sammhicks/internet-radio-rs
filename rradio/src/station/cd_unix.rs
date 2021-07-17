@@ -1,14 +1,35 @@
+use std::fmt::Debug;
+
 use super::Track;
 
-use rradio_messages::CdError;
+use rradio_messages::{CdError, EjectError};
 
 type Result<T> = std::result::Result<T, rradio_messages::CdError>;
+
+trait Parameter {
+    fn into_raw(self) -> libc::c_uint;
+}
+
+#[derive(Copy, Clone, Debug)]
+struct NoParameter;
+
+impl Parameter for NoParameter {
+    fn into_raw(self) -> libc::c_uint {
+        0
+    }
+}
 
 #[repr(C)]
 #[derive(Debug, Default)]
 struct CdToc {
     cdth_trk0: u8, /* start track */
     cdth_trk1: u8, /* end track */
+}
+
+impl Parameter for *mut CdToc {
+    fn into_raw(self) -> libc::c_uint {
+        self as libc::c_uint
+    }
 }
 
 #[repr(u8)]
@@ -77,7 +98,7 @@ impl AdrCtrl {
     }
 }
 
-impl std::fmt::Debug for AdrCtrl {
+impl Debug for AdrCtrl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut debug_struct = f.debug_struct("AdrCtrl");
         self.debug_fields(&mut debug_struct);
@@ -95,7 +116,7 @@ struct CdTocEntry {
     cdte_datamode: u8,
 }
 
-impl std::fmt::Debug for CdTocEntry {
+impl Debug for CdTocEntry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut debug_struct = f.debug_struct("CdTocEntry");
         debug_struct.field("cdte_track", &self.cdte_track);
@@ -110,35 +131,159 @@ impl std::fmt::Debug for CdTocEntry {
     }
 }
 
-#[allow(non_camel_case_types)]
-#[repr(u32)]
-enum IoCtlRequest {
-    CDROMREADTOCHDR = 0x5305,
-    CDROMREADTOCENTRY = 0x5306,
-    CDROM_DRIVE_STATUS = 0x5326,
-    CDROM_DISC_STATUS = 0x5327,
-}
-
-unsafe fn check_errno(result: libc::c_int) -> Result<()> {
-    if result < 0 {
-        let message_cstr = std::ffi::CStr::from_ptr(libc::strerror(*libc::__errno_location()));
-        let message = message_cstr.to_string_lossy().into_owned();
-        Err(CdError::IoCtlError(message.into()))
-    } else {
-        Ok(())
+impl Parameter for *mut CdTocEntry {
+    fn into_raw(self) -> libc::c_uint {
+        self as libc::c_uint
     }
 }
 
-pub fn tracks(device: &str) -> Result<Vec<Track>> {
-    use libc::c_uint;
-    use std::os::unix::io::AsRawFd;
+#[repr(u8)]
+#[allow(dead_code)]
+#[derive(Copy, Clone, Debug)]
+enum LockDoor {
+    Unlock = 0,
+    Lock = 1,
+}
 
-    let device = std::fs::File::open(device)
+impl Parameter for LockDoor {
+    fn into_raw(self) -> libc::c_uint {
+        self as libc::c_uint
+    }
+}
+
+trait Request {
+    type Parameter: Parameter;
+    fn into_raw(self) -> libc::c_uint;
+}
+
+macro_rules! generate_requests {
+    ($(#define $name:ident $code:literal)*) => {
+        $(
+            #[allow(non_camel_case_types, dead_code)]
+            #[derive(Clone, Copy, Debug)]
+            struct $name;
+
+            impl $name {
+                #[allow(dead_code)]
+                const CODE: libc::c_uint = $code;
+            }
+        )*
+    };
+}
+
+generate_requests!(
+#define CDROMREADTOCHDR         0x5305 /* Read TOC header
+                                           (struct cdrom_tochdr) */
+#define CDROMREADTOCENTRY       0x5306 /* Read TOC entry
+                                           (struct cdrom_tocentry) */
+#define CDROMSTOP               0x5307 /* Stop the cdrom drive */
+#define CDROMEJECT              0x5309 /* Ejects the cdrom media */
+
+#define CDROM_DRIVE_STATUS      0x5326  /* Get tray position, etc. */
+#define CDROM_DISC_STATUS       0x5327  /* Get disc type, etc. */
+#define CDROM_LOCKDOOR          0x5329  /* lock or unlock door */
+);
+
+macro_rules! requests_with_no_parameter {
+    ($($name:ident),*) => {
+        $(
+            impl Request for $name {
+                type Parameter = NoParameter;
+                fn into_raw(self) -> libc::c_uint {
+                    Self::CODE
+                }
+            }
+        )*
+    };
+}
+
+requests_with_no_parameter!(CDROMSTOP, CDROMEJECT, CDROM_DRIVE_STATUS, CDROM_DISC_STATUS);
+
+macro_rules! request_parameter {
+    ($name:ident, $parameter:ty) => {
+        impl Request for $name {
+            type Parameter = $parameter;
+            fn into_raw(self) -> libc::c_uint {
+                Self::CODE
+            }
+        }
+    };
+}
+
+request_parameter!(CDROMREADTOCHDR, *mut CdToc);
+request_parameter!(CDROMREADTOCENTRY, *mut CdTocEntry);
+request_parameter!(CDROM_LOCKDOOR, LockDoor);
+
+trait FileExt: std::os::unix::io::AsRawFd {
+    fn ioctl<R: Request<Parameter = NoParameter>>(
+        &mut self,
+        request: R,
+    ) -> std::io::Result<libc::c_int> {
+        self.ioctl_with_parameter(request, NoParameter)
+    }
+
+    fn ioctl_with_parameter<R: Request>(
+        &mut self,
+        request: R,
+        parameter: R::Parameter,
+    ) -> std::io::Result<libc::c_int> {
+        let result =
+            unsafe { libc::ioctl(self.as_raw_fd(), request.into_raw(), parameter.into_raw()) };
+        if result < 0 {
+            Err(std::io::Error::last_os_error())
+        } else {
+            Ok(result)
+        }
+    }
+
+    fn poll_ioctl<R: Request<Parameter = NoParameter> + Copy + Debug>(
+        &mut self,
+        request: R,
+    ) -> std::io::Result<libc::c_int> {
+        self.poll_ioctl_with_parameter(request, NoParameter)
+    }
+
+    fn poll_ioctl_with_parameter<R>(
+        &mut self,
+        request: R,
+        parameter: R::Parameter,
+    ) -> std::io::Result<libc::c_int>
+    where
+        R: Request + Copy + Debug,
+        R::Parameter: Copy + Debug,
+    {
+        use std::time::{Duration, Instant};
+        let start_time = Instant::now();
+        loop {
+            let error = match self.ioctl_with_parameter(request, parameter) {
+                Ok(code) => break Ok(code),
+                Err(err) => err,
+            };
+
+            if start_time.elapsed() > Duration::from_secs(3) {
+                log::error!("{:?} ({:?}): {}", request, parameter, error);
+                return Err(error);
+            }
+
+            log::warn!("{:?} ({:?}): {}", request, parameter, error);
+
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    }
+}
+
+impl FileExt for std::fs::File {}
+
+#[allow(clippy::needless_pass_by_value)]
+fn ioctl_error(err: std::io::Error) -> CdError {
+    CdError::IoCtlError(err.to_string().into())
+}
+
+pub fn tracks(device: &str) -> Result<Vec<Track>> {
+    let mut device = std::fs::File::open(device)
         .map_err(|err| CdError::FailedToOpenDevice(err.to_string().into()))?;
 
-    let fd = device.as_raw_fd();
-
-    match unsafe { libc::ioctl(fd, IoCtlRequest::CDROM_DRIVE_STATUS as c_uint, 0) } {
+    match device.ioctl(CDROM_DRIVE_STATUS).map_err(ioctl_error)? {
         0 => return Err(CdError::NoCdInfo),         // CDS_NO_INFO
         1 => return Err(CdError::NoCd),             // CDS_NO_DISC
         2 => return Err(CdError::CdTrayIsOpen),     // CDS_TRAY_OPEN
@@ -147,7 +292,7 @@ pub fn tracks(device: &str) -> Result<Vec<Track>> {
         n => return Err(CdError::UnknownDriveStatus(n as isize)),
     }
 
-    match unsafe { libc::ioctl(fd, IoCtlRequest::CDROM_DISC_STATUS as c_uint, 0) } {
+    match device.ioctl(CDROM_DISC_STATUS).map_err(ioctl_error)? {
         0 => return Err(CdError::NoCdInfo),         // CDS_NO_INFO
         1 => return Err(CdError::NoCd),             // CDS_NO_DISC
         2 => return Err(CdError::CdTrayIsOpen),     // CDS_TRAY_OPEN
@@ -163,35 +308,27 @@ pub fn tracks(device: &str) -> Result<Vec<Track>> {
 
     let mut toc = CdToc::default();
 
-    unsafe {
-        check_errno(libc::ioctl(
-            fd,
-            IoCtlRequest::CDROMREADTOCHDR as c_uint,
-            (&mut toc) as *mut CdToc,
-        ))?;
-    }
+    device
+        .ioctl_with_parameter(CDROMREADTOCHDR, &mut toc)
+        .map_err(ioctl_error)?;
 
     log::debug!("CD toc: {:?}", toc);
 
     (toc.cdth_trk0..=toc.cdth_trk1)
-        .filter_map(|track_index| cd_track(fd, track_index).transpose())
+        .filter_map(|track_index| cd_track(&mut device, track_index).transpose())
         .collect()
 }
 
-fn cd_track(fd: libc::c_int, track_index: u8) -> Result<Option<Track>> {
+fn cd_track(device: &mut std::fs::File, track_index: u8) -> Result<Option<Track>> {
     let mut toc_entry = CdTocEntry {
         cdte_track: track_index,
         cdte_format: LbaMsf::Msf,
         ..CdTocEntry::default()
     };
 
-    unsafe {
-        check_errno(libc::ioctl(
-            fd,
-            IoCtlRequest::CDROMREADTOCENTRY as libc::c_uint,
-            (&mut toc_entry) as *mut CdTocEntry,
-        ))?
-    };
+    device
+        .ioctl_with_parameter(CDROMREADTOCENTRY, &mut toc_entry)
+        .map_err(ioctl_error)?;
 
     log::debug!("{:?}", toc_entry);
 
@@ -207,4 +344,24 @@ fn cd_track(fd: libc::c_int, track_index: u8) -> Result<Option<Track>> {
             is_notification: false,
         }))
     }
+}
+
+pub fn eject<P: AsRef<std::path::Path> + Copy>(path: P) -> std::result::Result<(), EjectError> {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let mut device = std::fs::OpenOptions::new()
+        .custom_flags(libc::O_NONBLOCK)
+        .read(true)
+        .open(path)
+        .map_err(|_| EjectError::FailedToOpenDevice)?;
+
+    device
+        .poll_ioctl_with_parameter(CDROM_LOCKDOOR, LockDoor::Unlock)
+        .ok();
+
+    device
+        .poll_ioctl(CDROMEJECT)
+        .map_err(|_| EjectError::FailedToEjectDevice)?;
+
+    Ok(())
 }

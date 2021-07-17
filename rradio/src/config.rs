@@ -18,6 +18,22 @@ pub struct Notifications {
     pub error: Option<ArcStr>,
 }
 
+#[cfg(feature = "cd")]
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(default)]
+pub struct Cd {
+    pub device: ArcStr,
+}
+
+#[cfg(feature = "cd")]
+impl Default for Cd {
+    fn default() -> Self {
+        Self {
+            device: arcstr::literal!("/dev/cdrom"),
+        }
+    }
+}
+
 /// A description of the rradio configuration file
 #[derive(Clone, Debug, serde::Deserialize)]
 #[serde(default)]
@@ -53,6 +69,10 @@ pub struct Config {
 
     /// Play the error sound if gstreamer reports an error
     pub play_error_sound_on_gstreamer_error: bool,
+
+    #[cfg(feature = "cd")]
+    #[serde(rename = "CD")]
+    pub cd_config: Cd,
 
     #[cfg(feature = "ping")]
     pub ping_count: usize,
@@ -130,6 +150,8 @@ impl Default for Config {
             log_level: arcstr::literal!("Info"),
             notifications: Notifications::default(),
             play_error_sound_on_gstreamer_error: true,
+            #[cfg(feature = "cd")]
+            cd_config: Cd::default(),
             #[cfg(feature = "ping")]
             ping_count: 30,
             #[cfg(feature = "ping")]

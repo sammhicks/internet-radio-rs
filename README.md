@@ -62,8 +62,20 @@ Options:
 ## Optional Features
 
 + `cd` - Support playing CDs
+  + Additional config:
+    ```
+    [CD]
+    device = "/dev/cdrom"
+    ```
 + `production-server` - Bind to `0.0.0.0` over TCP
 + `samba` - Support playing music from remote samba servers
 + `usb` - Support playing music from usb devices
 + `web` (Enabled by default) - Support for a web interface
   + `production-server` - Bind to port `80`
++ `ping` - Ping the gateway and remote servers to diagnose connection problems
+  + Additional config:
+    ```
+    ping_count = 30
+    gateway_address = "192.168.0.1"
+    initial_ping_address = "8.8.8.8"
+    ```

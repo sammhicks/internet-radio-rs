@@ -163,17 +163,22 @@ impl Controller {
         Ok(self.playbin.seek_to(position)?)
     }
 
-    fn play_error(&mut self) {
+    fn clear_playlist(&mut self) {
         #[cfg(feature = "ping")]
         self.clear_ping();
 
         self.current_playlist = None;
+
+        self.playbin.set_pipeline_state(PipelineState::Null).ok();
+    }
+
+    fn play_error(&mut self) {
+        self.clear_playlist();
+
         if let Some(url) = &self.config.notifications.error {
             if let Err(err) = self.playbin.play_url(&url) {
                 log::error!("{:#}", err);
             }
-        } else {
-            self.playbin.set_pipeline_state(PipelineState::Null).ok();
         }
     }
 
@@ -190,10 +195,7 @@ impl Controller {
     }
 
     async fn play_station(&mut self, new_station: Station) -> Result<(), Error> {
-        #[cfg(feature = "ping")]
-        self.clear_ping();
-
-        self.current_playlist.take();
+        self.clear_playlist();
 
         let playlist = new_station.into_playlist()?;
 
@@ -256,6 +258,7 @@ impl Controller {
     }
 
     async fn handle_command(&mut self, command: Command) -> Result<(), Error> {
+        log::debug!("Command: {:?}", command);
         match command {
             Command::SetChannel(index) => {
                 let new_station = Station::load(self.config.stations_directory.as_str(), index)?;
@@ -271,7 +274,24 @@ impl Controller {
             Command::SetVolume(volume) => self.set_volume(volume),
             Command::PlayUrl(url) => self.play_station(Station::singleton(url.into())).await,
             Command::Eject => {
+                if let Some(rradio_messages::StationType::CD) = self
+                    .published_state
+                    .current_station
+                    .as_ref()
+                    .as_ref()
+                    .map(|station| station.source_type)
+                {
+                    self.clear_playlist();
+                }
+
+                #[cfg(feature = "cd")]
+                if let Err(err) = crate::station::eject_cd(self.config.cd_config.device.as_str()) {
+                    self.broadcast_error_message(err.into());
+                }
+
+                #[cfg(not(feature = "cd"))]
                 log::info!("Ignoring Eject");
+
                 Ok(())
             }
             Command::DebugPipeline => {
