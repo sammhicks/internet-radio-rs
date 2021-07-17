@@ -58,6 +58,9 @@ Options:
     + `playlist_prefix` - Played before the station tracks
     + `playlist_suffix` - Played after the station tracks
     + `error` - Played when an error occurs
++ play_error_sound_on_gstreamer_error
+  + Default: true
+  + If gstreamer raises an error, play the "Error" sound and then reset the playlist and stop playing
 
 ## Optional Features
 
