@@ -269,6 +269,12 @@ impl Controller {
             Command::PreviousItem => self.goto_previous_track().await,
             Command::NextItem => self.goto_next_track().await,
             Command::SeekTo(position) => self.seek_to(position),
+            Command::SeekBackwards(offset) => self.playbin.position().map_or(Ok(()), |position| {
+                self.seek_to(position.saturating_sub(offset))
+            }),
+            Command::SeekForwards(offset) => self.playbin.position().map_or(Ok(()), |position| {
+                self.seek_to(position.saturating_add(offset))
+            }),
             Command::VolumeUp => self.change_volume(1),
             Command::VolumeDown => self.change_volume(-1),
             Command::SetVolume(volume) => self.set_volume(volume),

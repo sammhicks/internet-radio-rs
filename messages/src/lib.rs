@@ -22,6 +22,8 @@ pub enum Command {
     PreviousItem,
     NextItem,
     SeekTo(Duration),
+    SeekBackwards(Duration),
+    SeekForwards(Duration),
     VolumeUp,
     VolumeDown,
     SetVolume(i32),
