@@ -1,7 +1,7 @@
 //! Tracks have tags attached to them.
 
 use anyhow::{Context, Result};
-use glib::{value::SendValue, StaticType, Type, Value};
+use glib::value::SendValue;
 
 use rradio_messages::ArcStr;
 
@@ -47,17 +47,17 @@ impl Tag {
             "album" => get_atomic_string(value, Self::Album),
             "genre" => get_atomic_string(value, Self::Genre),
             "image" => {
-                let image = value.get::<gstreamer::Sample>()?.context("No Value")?;
+                let image = value.get::<gstreamer::Sample>().context("No Value")?;
 
-                let image_buffer = image.get_buffer().context("No Buffer")?;
+                let image_buffer = image.buffer().context("No Buffer")?;
                 let all_mem = image_buffer
-                    .get_all_memory()
+                    .all_memory()
                     .context("Failed to get all memory")?;
                 let readable_mem = all_mem.map_readable().context("Failed to read buffer")?;
 
-                let caps = image.get_caps().context("No Caps")?;
+                let caps = image.caps().context("No Caps")?;
 
-                let mime_type = caps.get_structure(0).context("No Cap 0")?.get_name();
+                let mime_type = caps.structure(0).context("No Cap 0")?.name();
 
                 Ok(Self::Image(Image::new(mime_type, readable_mem.as_slice())))
             }
@@ -72,37 +72,47 @@ impl Tag {
 
 fn get_value<'v, T, F>(value: &'v SendValue, builder: F) -> Result<Tag>
 where
-    T: glib::value::FromValueOptional<'v>,
+    T: glib::value::FromValue<'v>,
+    <T::Checker as glib::value::ValueTypeChecker>::Error: Sync,
     F: FnOnce(T) -> Tag,
 {
-    value.get()?.context("No Value").map(builder)
+    value.get().context("No Value").map(builder)
 }
 
 fn get_atomic_string<F: FnOnce(ArcStr) -> Tag>(value: &SendValue, builder: F) -> Result<Tag> {
     get_value(value, |str: &str| builder(ArcStr::from(str)))
 }
 
-pub fn value_to_string(value: &Value) -> Result<String> {
-    match value.type_() {
-        Type::Bool => value
-            .get::<bool>()?
-            .context("No Bool")
-            .map(|b| format!("Bool: {}", b)),
-        Type::String => value
-            .get::<String>()?
-            .context("No String")
-            .map(|s| format!("String: {}", s)),
-        Type::U32 => Ok(format!("U32: {}", value.get_some::<u32>()?)),
-        Type::U64 => Ok(format!("U64: {}", value.get_some::<u64>()?)),
-        Type::F64 => Ok(format!("F64: {}", value.get_some::<f64>()?)),
-        t if t == gstreamer::DateTime::static_type() => value
-            .get::<gstreamer::DateTime>()?
-            .context("No DateTime")
-            .map(|dt| format!("DateTime: {}", dt)),
-        t if t == gstreamer::sample::Sample::static_type() => Ok(format!(
-            "Sample: {:?}",
-            value.get::<gstreamer::Sample>()?.context("No Sample")?
-        )),
-        t => Ok(format!("Value of unhandled type {}: {:?}", t, value)),
-    }
+pub fn value_to_string(value: &glib::value::Value) -> Result<String> {
+    use glib::types::Type;
+    let value_type = value.type_();
+
+    Ok(if value_type.is_a(Type::BOOL) {
+        format!("Bool: {}", value.get::<bool>()?)
+    } else {
+        format!("Value of unhandled type {}: {:?}", value_type, value)
+    })
+
+    // match value.type_() {
+    //     Type::Bool => value
+    //         .get::<bool>()?
+    //         .context("No Bool")
+    //         .map(|b| format!("Bool: {}", b)),
+    //     Type::String => value
+    //         .get::<String>()?
+    //         .context("No String")
+    //         .map(|s| format!("String: {}", s)),
+    //     Type::U32 => Ok(format!("U32: {}", value.get_some::<u32>()?)),
+    //     Type::U64 => Ok(format!("U64: {}", value.get_some::<u64>()?)),
+    //     Type::F64 => Ok(format!("F64: {}", value.get_some::<f64>()?)),
+    //     t if t == gstreamer::DateTime::static_type() => value
+    //         .get::<gstreamer::DateTime>()?
+    //         .context("No DateTime")
+    //         .map(|dt| format!("DateTime: {}", dt)),
+    //     t if t == gstreamer::sample::Sample::static_type() => Ok(format!(
+    //         "Sample: {:?}",
+    //         value.get::<gstreamer::Sample>()?.context("No Sample")?
+    //     )),
+    //     t => Ok(format!("Value of unhandled type {}: {:?}", t, value)),
+    // }
 }

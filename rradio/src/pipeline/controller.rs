@@ -318,10 +318,10 @@ impl Controller {
         match message.view() {
             MessageView::Buffering(b) => {
                 let buffering_target = concat!(module_path!(), "::buffering");
-                log::debug!(target: buffering_target, "{}", b.get_percent());
+                log::debug!(target: buffering_target, "{}", b.percent());
 
-                self.published_state.buffering = b.get_percent().try_into().map_err(|_err| {
-                    PipelineError(format!("Bad buffering value: {}", b.get_percent()).into())
+                self.published_state.buffering = b.percent().try_into().map_err(|_err| {
+                    PipelineError(format!("Bad buffering value: {}", b.percent()).into())
                 })?;
 
                 self.broadcast_state_change();
@@ -331,7 +331,7 @@ impl Controller {
             MessageView::Tag(tag) => {
                 let mut new_tags = TrackTags::default();
 
-                for (i, (name, value)) in tag.get_tags().as_ref().iter().enumerate() {
+                for (i, (name, value)) in tag.tags().as_ref().iter().enumerate() {
                     let tag = Tag::from_value(name, &value);
                     let tag_target = concat!(module_path!(), "::tag");
 
@@ -369,7 +369,7 @@ impl Controller {
             }
             MessageView::StateChanged(state_change) => {
                 if self.playbin.is_src_of(unsafe { *state_change.as_ptr() }) {
-                    let new_state = state_change.get_current();
+                    let new_state = state_change.current();
 
                     self.published_state.pipeline_state =
                         super::playbin::gstreamer_state_to_pipeline_state(new_state)?;
@@ -416,13 +416,13 @@ impl Controller {
                 }
             }
             MessageView::Error(err) => {
-                let glib_err = err.get_error();
+                let glib_err = err.error();
                 let prefix = if glib_err.is::<gstreamer::ResourceError>() {
                     "Resource not found: "
                 } else {
                     ""
                 };
-                let message = format!("{}{} ({:?})", prefix, err.get_error(), err.get_debug());
+                let message = format!("{}{} ({:?})", prefix, err.error(), err.debug());
                 let error = Error::PipelineError(PipelineError(message.into()));
                 if self.config.play_error_sound_on_gstreamer_error {
                     self.broadcast_error_message(error);

@@ -4,8 +4,8 @@ use std::convert::TryInto;
 use std::time::Duration;
 
 use glib::{object::ObjectExt, Cast};
-use gstreamer::{ElementExt, ElementExtManual};
-use gstreamer_audio::StreamVolumeExt;
+use gstreamer::prelude::{ElementExt, ElementExtManual};
+use gstreamer_audio::prelude::StreamVolumeExt;
 
 pub use rradio_messages::{PipelineError, PipelineState};
 
@@ -34,7 +34,7 @@ impl Playbin {
             .context("Failed to create a playbin")?;
 
         let flags = playbin_element
-            .get_property("flags")
+            .property("flags")
             .context("Failed to get the playbin flags")?;
         let flags_class =
             glib::FlagsClass::new(flags.type_()).context("Failed to create a flags class")?;
@@ -65,11 +65,11 @@ impl Playbin {
 
     pub fn bus(&self) -> Result<gstreamer::Bus, anyhow::Error> {
         use anyhow::Context;
-        self.0.get_bus().context("Playbin has no bus")
+        self.0.bus().context("Playbin has no bus")
     }
 
     pub fn pipeline_state(&self) -> Result<PipelineState, PipelineError> {
-        let (success, state, _) = self.0.get_state(gstreamer::ClockTime::none());
+        let (success, state, _) = self.0.state(gstreamer::ClockTime::default());
         if success.is_ok() {
             gstreamer_state_to_pipeline_state(state)
         } else {
@@ -125,11 +125,11 @@ impl Playbin {
 
     pub fn volume(&self) -> Result<i32, PipelineError> {
         #[allow(clippy::cast_possible_truncation)]
-        let current_volume =
-            self.0
-                .dynamic_cast_ref::<gstreamer_audio::StreamVolume>()
-                .ok_or_else(|| rradio_messages::PipelineError("Playbin has no volume".into()))?
-                .get_volume(gstreamer_audio::StreamVolumeFormat::Db) as i32;
+        let current_volume = self
+            .0
+            .dynamic_cast_ref::<gstreamer_audio::StreamVolume>()
+            .ok_or_else(|| rradio_messages::PipelineError("Playbin has no volume".into()))?
+            .volume(gstreamer_audio::StreamVolumeFormat::Db) as i32;
 
         let scaled_volume = current_volume + rradio_messages::VOLUME_ZERO_DB;
 
@@ -158,16 +158,23 @@ impl Playbin {
     pub fn position(&self) -> Option<Duration> {
         self.0
             .query_position::<gstreamer::ClockTime>()
-            .and_then(|time| time.nanoseconds())
+            .map(gstreamer::ClockTime::nseconds)
             .map(Duration::from_nanos)
     }
 
     pub fn seek_to(&self, position: Duration) -> Result<(), PipelineError> {
         use gstreamer::SeekFlags;
+
         self.0
             .seek_simple(
                 SeekFlags::FLUSH | SeekFlags::KEY_UNIT | SeekFlags::SNAP_NEAREST,
-                gstreamer::ClockTime::from(position),
+                gstreamer::ClockTime::from_nseconds(
+                    position
+                        .as_nanos()
+                        .try_into()
+                        .map_err(|err| log::error!("Cannot cast time: {}", err))
+                        .unwrap_or_default(),
+                ),
             )
             .map_err(|err| {
                 PipelineError(
@@ -184,7 +191,7 @@ impl Playbin {
     pub fn duration(&self) -> Option<Duration> {
         self.0
             .query_duration::<gstreamer::ClockTime>()
-            .and_then(|time| time.nanoseconds())
+            .map(gstreamer::ClockTime::nseconds)
             .map(Duration::from_nanos)
     }
 
@@ -199,7 +206,7 @@ impl Playbin {
             .downcast_ref::<gstreamer::Bin>()
             .context("Playbin is not a bin")?;
 
-        gstreamer::GstBinExtManual::debug_to_dot_file_with_ts(
+        gstreamer::prelude::GstBinExtManual::debug_to_dot_file_with_ts(
             bin,
             gstreamer::DebugGraphDetails::all(),
             env!("CARGO_PKG_NAME"),

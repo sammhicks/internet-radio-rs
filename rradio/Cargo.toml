@@ -1,6 +1,6 @@
 [package]
 name = "rradio"
-version = "0.36.2"
+version = "0.37.0"
 authors = ["Samuel Hicks <SamMHicks@hotmail.co.uk>"]
 edition = "2018"
 description = "An internet radio with configurable two digit entry of stations"
@@ -26,18 +26,18 @@ default = [ "web" ]
 [dependencies]
 anyhow = "1.0"
 base64 = "0.13"
-crossterm =  { version = "0.19", features = ["event-stream"] }
-flexi_logger = { version = "0.17", default_features = false, features = ["textfilter"] }
+crossterm =  { version = "0.20", features = ["event-stream"] }
+flexi_logger = { version = "0.18", default_features = false, features = ["textfilter"] }
 futures = "0.3"
-glib = "0.10"
-gstreamer = "0.16"
-gstreamer-audio = "0.16"
-gstreamer-sys = "0.9"
+glib = "0.14"
+gstreamer = "0.17"
+gstreamer-audio = "0.17"
+gstreamer-sys = "0.17"
 humantime-serde = "1.0"
 log = { version = "0.4", features = ["std"] }
 m3u = "1.0"
-pnet = { version = "0.27", optional = true }
-pnet_macros_support = { version = "0.27", optional = true }
+pnet = { version = "0.28", optional = true }
+pnet_macros_support = { version = "0.28", optional = true }
 pls = "0.2"
 rand = { version = "0.8", optional = true }
 rmp-serde = "0.15"

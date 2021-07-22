@@ -12,7 +12,7 @@ mod tag;
 mod task;
 
 fn main() -> Result<()> {
-    let mut logger = flexi_logger::Logger::with_str("error")
+    let mut logger = flexi_logger::Logger::try_with_str("error")?
         .format(log_format)
         .start()?;
 
@@ -35,7 +35,7 @@ fn main() -> Result<()> {
 
     let config = config::Config::load(&config_path);
 
-    logger.parse_new_spec(&config.log_level);
+    logger.parse_new_spec(&config.log_level)?;
 
     let (shutdown_handle, shutdown_signal) = task::ShutdownSignal::new();
 
@@ -92,7 +92,7 @@ fn log_format(
     _now: &mut flexi_logger::DeferredNow,
     record: &log::Record,
 ) -> Result<(), std::io::Error> {
-    use crossterm::style::{style, Attribute, Color};
+    use crossterm::style::{style, Attribute, Color, Stylize};
     use log::Level;
 
     let color = match record.level() {
