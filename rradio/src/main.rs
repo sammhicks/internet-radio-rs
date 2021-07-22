@@ -43,10 +43,13 @@ fn main() -> Result<()> {
 
     let port_channels = port_channels.with_shutdown_signal(shutdown_signal);
 
-    let keyboard_commands_task = keyboard_commands::run(port_channels.commands.clone(), config);
-
     #[cfg(feature = "web")]
-    let web_task = ports::web::run(port_channels.clone());
+    let web_task = ports::web::run(
+        port_channels.clone(),
+        config.web_app_path.as_str().to_owned(),
+    );
+
+    let keyboard_commands_task = keyboard_commands::run(port_channels.commands.clone(), config);
 
     let tcp_msgpack_task = ports::tcp_msgpack::run(port_channels.clone());
     let tcp_text_task = ports::tcp_text::run(port_channels);

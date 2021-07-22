@@ -82,6 +82,9 @@ pub struct Config {
 
     #[cfg(feature = "ping")]
     pub initial_ping_address: ArcStr,
+
+    #[cfg(feature = "web")]
+    pub web_app_path: ArcStr,
 }
 
 impl Config {
@@ -158,6 +161,8 @@ impl Default for Config {
             gateway_address: default_gateway(),
             #[cfg(feature = "ping")]
             initial_ping_address: arcstr::literal!("8.8.8.8"),
+            #[cfg(feature = "web")]
+            web_app_path: arcstr::literal!("web_app"),
         }
     }
 }

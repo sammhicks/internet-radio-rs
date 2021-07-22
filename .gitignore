@@ -14,5 +14,8 @@
 # Directory of Notification Sounds
 /sounds
 
+# Web App static content
+/web_app
+
 # Pipeline Debug Dotfiles
 /*.dot
