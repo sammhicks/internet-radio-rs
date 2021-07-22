@@ -291,7 +291,9 @@ impl Controller {
                 }
 
                 #[cfg(feature = "cd")]
-                if let Err(err) = crate::station::eject_cd(self.config.cd_config.device.as_str()) {
+                if let Err(err) =
+                    crate::station::eject_cd(self.config.cd_config.device.as_str()).await
+                {
                     self.broadcast_error_message(err.into());
                 }
 

@@ -235,44 +235,46 @@ trait FileExt: std::os::unix::io::AsRawFd {
             Ok(result)
         }
     }
-
-    fn poll_ioctl<R: Request<Parameter = NoParameter> + Copy + Debug>(
-        &mut self,
-        request: R,
-    ) -> std::io::Result<libc::c_int> {
-        self.poll_ioctl_with_parameter(request, NoParameter)
-    }
-
-    fn poll_ioctl_with_parameter<R>(
-        &mut self,
-        request: R,
-        parameter: R::Parameter,
-    ) -> std::io::Result<libc::c_int>
-    where
-        R: Request + Copy + Debug,
-        R::Parameter: Copy + Debug,
-    {
-        use std::time::{Duration, Instant};
-        let start_time = Instant::now();
-        loop {
-            let error = match self.ioctl_with_parameter(request, parameter) {
-                Ok(code) => break Ok(code),
-                Err(err) => err,
-            };
-
-            if start_time.elapsed() > Duration::from_secs(3) {
-                log::error!("{:?} ({:?}): {}", request, parameter, error);
-                return Err(error);
-            }
-
-            log::warn!("{:?} ({:?}): {}", request, parameter, error);
-
-            std::thread::sleep(Duration::from_millis(100));
-        }
-    }
 }
 
 impl FileExt for std::fs::File {}
+
+async fn poll_ioctl<F, R>(f: &mut F, request: R) -> std::io::Result<libc::c_int>
+where
+    F: FileExt,
+    R: Request<Parameter = NoParameter> + Copy + Debug,
+{
+    poll_ioctl_with_parameter(f, request, NoParameter).await
+}
+
+async fn poll_ioctl_with_parameter<F, R>(
+    f: &mut F,
+    request: R,
+    parameter: R::Parameter,
+) -> std::io::Result<libc::c_int>
+where
+    F: FileExt,
+    R: Request + Copy + Debug,
+    R::Parameter: Copy + Debug,
+{
+    use std::time::{Duration, Instant};
+    let start_time = Instant::now();
+    loop {
+        let error = match f.ioctl_with_parameter(request, parameter) {
+            Ok(code) => break Ok(code),
+            Err(err) => err,
+        };
+
+        if start_time.elapsed() > Duration::from_secs(3) {
+            log::error!("{:?} ({:?}): {}", request, parameter, error);
+            return Err(error);
+        }
+
+        log::warn!("{:?} ({:?}): {}", request, parameter, error);
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
 
 #[allow(clippy::needless_pass_by_value)]
 fn ioctl_error(err: std::io::Error) -> CdError {
@@ -346,7 +348,9 @@ fn cd_track(device: &mut std::fs::File, track_index: u8) -> Result<Option<Track>
     }
 }
 
-pub fn eject<P: AsRef<std::path::Path> + Copy>(path: P) -> std::result::Result<(), EjectError> {
+pub async fn eject<P: AsRef<std::path::Path> + Copy>(
+    path: P,
+) -> std::result::Result<(), EjectError> {
     use std::os::unix::fs::OpenOptionsExt;
 
     let mut device = std::fs::OpenOptions::new()
@@ -355,12 +359,12 @@ pub fn eject<P: AsRef<std::path::Path> + Copy>(path: P) -> std::result::Result<(
         .open(path)
         .map_err(|_| EjectError::FailedToOpenDevice)?;
 
-    device
-        .poll_ioctl_with_parameter(CDROM_LOCKDOOR, LockDoor::Unlock)
+    poll_ioctl_with_parameter(&mut device, CDROM_LOCKDOOR, LockDoor::Unlock)
+        .await
         .ok();
 
-    device
-        .poll_ioctl(CDROMEJECT)
+    poll_ioctl(&mut device, CDROMEJECT)
+        .await
         .map_err(|_| EjectError::FailedToEjectDevice)?;
 
     Ok(())
