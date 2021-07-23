@@ -258,7 +258,7 @@ impl Pinger {
 }
 
 pub fn run(
-    config: &crate::config::Config,
+    config: crate::config::ping::Config,
 ) -> Result<
     (
         impl std::future::Future<Output = ()>,
@@ -277,12 +277,12 @@ pub fn run(
 
     let task = Pinger {
         gateway_address: config.gateway_address,
-        ping_count: config.ping_count,
+        ping_count: config.remote_ping_count,
         ipv4_pinger,
         track_urls: track_url_rx,
         ping_times: ping_time_tx,
     }
-    .run(config.initial_ping_address.clone());
+    .run(config.initial_ping_address);
 
     Ok((task, track_url_tx, ping_time_rx))
 }

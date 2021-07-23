@@ -1,12 +1,102 @@
 //! A description of the rradio configuration file
 
-#[cfg(feature = "ping")]
-use std::net::Ipv4Addr;
-
 use log::LevelFilter;
 use tokio::time::Duration;
 
 use rradio_messages::{arcstr, ArcStr};
+
+#[cfg(feature = "cd")]
+pub mod cd {
+    use rradio_messages::{arcstr, ArcStr};
+
+    #[derive(Clone, Debug, serde::Deserialize)]
+    #[serde(default)]
+    pub struct Config {
+        pub device: ArcStr,
+    }
+
+    impl Default for Config {
+        fn default() -> Self {
+            Self {
+                device: arcstr::literal!("/dev/cdrom"),
+            }
+        }
+    }
+}
+
+#[cfg(feature = "ping")]
+pub mod ping {
+    use std::net::Ipv4Addr;
+
+    use rradio_messages::{arcstr, ArcStr};
+
+    #[derive(Clone, Debug, serde::Deserialize)]
+    #[serde(default)]
+    pub struct Config {
+        pub remote_ping_count: usize,
+        pub gateway_address: Ipv4Addr,
+        pub initial_ping_address: ArcStr,
+    }
+
+    impl Default for Config {
+        fn default() -> Self {
+            Self {
+                remote_ping_count: 30,
+                gateway_address: default_gateway(),
+                initial_ping_address: arcstr::literal!("8.8.8.8"),
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    fn default_gateway() -> Ipv4Addr {
+        let path = "/proc/net/route";
+        std::fs::read_to_string(path)
+            .map_err(|err| log::error!("Failed to read {:?}: {}", path, err))
+            .ok()
+            .and_then(|route| {
+                route.lines().find_map(|line| {
+                    let mut sections = line.split('\t').skip(1);
+
+                    let destination = sections.next()?;
+                    if destination != "00000000" {
+                        return None;
+                    }
+
+                    let gateway = sections.next()?;
+
+                    Some(Ipv4Addr::from(
+                        u32::from_str_radix(gateway, 16).ok()?.to_le_bytes(),
+                    ))
+                })
+            })
+            .unwrap_or(Ipv4Addr::new(192, 168, 0, 1))
+    }
+
+    #[cfg(not(unix))]
+    fn default_gateway() -> Ipv4Addr {
+        Ipv4Addr::LOCALHOST
+    }
+}
+
+#[cfg(feature = "web")]
+pub mod web {
+    use rradio_messages::{arcstr, ArcStr};
+
+    #[derive(Clone, Debug, serde::Deserialize)]
+    #[serde(default)]
+    pub struct Config {
+        pub web_app_path: ArcStr,
+    }
+
+    impl Default for Config {
+        fn default() -> Self {
+            Self {
+                web_app_path: arcstr::literal!("web_app"),
+            }
+        }
+    }
+}
 
 /// Notifications allow rradio to play sounds to notify the user of events
 #[derive(Clone, Debug, Default, serde::Deserialize)]
@@ -16,22 +106,6 @@ pub struct Notifications {
     pub playlist_prefix: Option<ArcStr>,
     pub playlist_suffix: Option<ArcStr>,
     pub error: Option<ArcStr>,
-}
-
-#[cfg(feature = "cd")]
-#[derive(Clone, Debug, serde::Deserialize)]
-#[serde(default)]
-pub struct Cd {
-    pub device: ArcStr,
-}
-
-#[cfg(feature = "cd")]
-impl Default for Cd {
-    fn default() -> Self {
-        Self {
-            device: arcstr::literal!("/dev/cdrom"),
-        }
-    }
 }
 
 /// A description of the rradio configuration file
@@ -72,19 +146,15 @@ pub struct Config {
 
     #[cfg(feature = "cd")]
     #[serde(rename = "CD")]
-    pub cd_config: Cd,
+    pub cd_config: cd::Config,
 
     #[cfg(feature = "ping")]
-    pub ping_count: usize,
-
-    #[cfg(feature = "ping")]
-    pub gateway_address: Ipv4Addr,
-
-    #[cfg(feature = "ping")]
-    pub initial_ping_address: ArcStr,
+    #[serde(rename = "ping")]
+    pub ping_config: ping::Config,
 
     #[cfg(feature = "web")]
-    pub web_app_path: ArcStr,
+    #[serde(rename = "web")]
+    pub web_config: web::Config,
 }
 
 impl Config {
@@ -110,36 +180,6 @@ impl Config {
     }
 }
 
-#[cfg(all(feature = "ping", unix))]
-fn default_gateway() -> Ipv4Addr {
-    let path = "/proc/net/route";
-    std::fs::read_to_string(path)
-        .map_err(|err| log::error!("Failed to read {:?}: {}", path, err))
-        .ok()
-        .and_then(|route| {
-            route.lines().find_map(|line| {
-                let mut sections = line.split('\t').skip(1);
-
-                let destination = sections.next()?;
-                if destination != "00000000" {
-                    return None;
-                }
-
-                let gateway = sections.next()?;
-
-                Some(Ipv4Addr::from(
-                    u32::from_str_radix(gateway, 16).ok()?.to_le_bytes(),
-                ))
-            })
-        })
-        .unwrap_or(Ipv4Addr::new(192, 168, 0, 1))
-}
-
-#[cfg(all(feature = "ping", not(unix)))]
-fn default_gateway() -> Ipv4Addr {
-    Ipv4Addr::LOCALHOST
-}
-
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -154,15 +194,11 @@ impl Default for Config {
             notifications: Notifications::default(),
             play_error_sound_on_gstreamer_error: true,
             #[cfg(feature = "cd")]
-            cd_config: Cd::default(),
+            cd_config: cd::Config::default(),
             #[cfg(feature = "ping")]
-            ping_count: 30,
-            #[cfg(feature = "ping")]
-            gateway_address: default_gateway(),
-            #[cfg(feature = "ping")]
-            initial_ping_address: arcstr::literal!("8.8.8.8"),
+            ping_config: ping::Config::default(),
             #[cfg(feature = "web")]
-            web_app_path: arcstr::literal!("web_app"),
+            web_config: web::Config::default(),
         }
     }
 }

@@ -450,6 +450,7 @@ enum Message {
 }
 
 /// Initialise the gstreamer pipeline, and process incoming commands
+#[allow(clippy::too_many_lines)]
 pub fn run(
     config: Config,
 ) -> anyhow::Result<(
@@ -488,7 +489,8 @@ pub fn run(
     let log_message_source = LogMessageSource(log_message_tx.clone());
 
     #[cfg(feature = "ping")]
-    let (ping_task, ping_requests_tx, ping_times_rx) = super::ping::run(&config)?;
+    let (ping_task, ping_requests_tx, ping_times_rx) =
+        super::ping::run(config.ping_config.clone())?;
 
     let mut controller = Controller {
         config,

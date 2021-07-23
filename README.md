@@ -15,6 +15,17 @@
     ready = "file:///usr/share/sounds/success.mp3"
     error = "file:///usr/share/sounds/error.mp3"
 
+    [CD]
+    device = "/dev/cdrom"
+
+    [ping]
+    remote_ping_count = 10
+    gateway_address = "192.168.0.1"
+    initial_ping_address = "8.8.8.8"
+
+    [web]
+    web_app_path = "/var/www"
+
 
 Options:
 + stations_directory
@@ -61,24 +72,35 @@ Options:
 + play_error_sound_on_gstreamer_error
   + Default: true
   + If gstreamer raises an error, play the "Error" sound and then reset the playlist and stop playing
++ CD
+  + Only if `cd` feature is enabled
+  + Values:
+    + device - The cd drive to eject when the eject button is pressed
+  + Defaults:
+    + device: `"/dev/cdrom"`
++ ping
+  + Only if `ping` feature is enabled
+  + Values:
+    + remote_ping_count - How many times to ping the remote server
+    + gateway_address - The gateway address to ping
+    + initial_ping_address - The device to ping on startup
+  + Defaults:
+    + remote_ping_count:
+    + gateway_address: On unix, this is calculated from `/proc/net/route`. On windows: 127.0.0.1
+    + initial_ping_address: `8.8.8.8`
++ web
+  + Only if `web` feature is enabled
+  + Values:
+    + web_app_path - The path to find the static web app files
+  + Defaults:
+    + web_app_path: `web_app`
 
 ## Optional Features
 
 + `cd` - Support playing CDs
-  + Additional config:
-    ```
-    [CD]
-    device = "/dev/cdrom"
-    ```
 + `production-server` - Bind to `0.0.0.0` over TCP
 + `samba` - Support playing music from remote samba servers
 + `usb` - Support playing music from usb devices
 + `web` (Enabled by default) - Support for a web interface
   + `production-server` - Bind to port `80`
 + `ping` - Ping the gateway and remote servers to diagnose connection problems
-  + Additional config:
-    ```
-    ping_count = 30
-    gateway_address = "192.168.0.1"
-    initial_ping_address = "8.8.8.8"
-    ```

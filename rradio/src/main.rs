@@ -46,7 +46,7 @@ fn main() -> Result<()> {
     #[cfg(feature = "web")]
     let web_task = ports::web::run(
         port_channels.clone(),
-        config.web_app_path.as_str().to_owned(),
+        config.web_config.web_app_path.as_str().to_owned(),
     );
 
     let keyboard_commands_task = keyboard_commands::run(port_channels.commands.clone(), config);
