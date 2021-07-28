@@ -14,6 +14,7 @@ const PING_INTERVAL: Duration = Duration::from_secs(1);
 #[derive(Debug)]
 enum Never {}
 
+#[derive(Debug)]
 enum PingInterruption {
     Finished,
     SuspendUntilNewTrack,
@@ -136,6 +137,12 @@ impl Pinger {
         track_url_str: ArcStr,
         ping_remote_forever: bool,
     ) -> Result<Never, PingInterruption> {
+        log::debug!(
+            "Running sequence: track_url_str - {:?}, ping_remote_forever - {}",
+            track_url_str,
+            ping_remote_forever
+        );
+
         let (track_url_str, track_url) = self.parse_url(track_url_str)?;
 
         let scheme = track_url.scheme();
@@ -151,9 +158,12 @@ impl Pinger {
 
         let remote_address = self.get_remote_address(host).await?;
 
+        log::trace!("Remote address: {}", remote_address);
+
         let mut maybe_remote_ping = None;
 
         'retry: loop {
+            log::trace!("Checking gateway ping");
             let mut gateway_ping = match self
                 .ping_gateway(|gateway_ping| match (gateway_ping, maybe_remote_ping) {
                     (Err(err), _) => PingTimes::Gateway(Err(err)),
@@ -169,6 +179,8 @@ impl Pinger {
                 Ok(ping) => ping,
                 Err(FailedToPing(_err)) => continue 'retry,
             };
+
+            log::trace!("Pinging gateway and remote");
 
             let mut remote_pings_remaining = self.ping_count;
 
@@ -210,6 +222,8 @@ impl Pinger {
 
             maybe_remote_ping.take();
 
+            log::trace!("Finished pinging remote.");
+
             loop {
                 if self
                     .ping_gateway(|result| match result {
@@ -228,7 +242,9 @@ impl Pinger {
     async fn run(mut self, initial_ping_address: ArcStr) {
         let initial_url_str = rradio_messages::arcstr::format!("http://{}", initial_ping_address);
         let mut track_url_str = {
-            match self.run_sequence(initial_url_str, true).await.unwrap_err() {
+            let interruption = self.run_sequence(initial_url_str, true).await.unwrap_err();
+            log::trace!("Ping Interruption: {:?}", interruption);
+            match interruption {
                 PingInterruption::Finished => return,
                 PingInterruption::SuspendUntilNewTrack => loop {
                     match self.track_urls.recv().await {
@@ -242,7 +258,9 @@ impl Pinger {
         };
 
         loop {
-            track_url_str = match self.run_sequence(track_url_str, false).await.unwrap_err() {
+            let interruption = self.run_sequence(track_url_str, false).await.unwrap_err();
+            log::trace!("Ping Interruption: {:?}", interruption);
+            track_url_str = match interruption {
                 PingInterruption::Finished => return,
                 PingInterruption::SuspendUntilNewTrack => loop {
                     match self.track_urls.recv().await {

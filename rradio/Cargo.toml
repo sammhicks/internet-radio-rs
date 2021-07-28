@@ -21,7 +21,7 @@ production-server = []
 samba = [ "mount" ]
 usb = [ "mount" ]
 web = [ "warp" ]
-default = [ "web" ]
+default = [ "ping", "web" ]
 
 [dependencies]
 anyhow = "1.0"

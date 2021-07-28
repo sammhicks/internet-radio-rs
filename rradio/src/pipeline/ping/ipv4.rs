@@ -92,6 +92,8 @@ impl Pinger {
     }
 
     pub fn ping(&mut self, address: Ipv4Addr) -> Result<Duration, PingError> {
+        log::debug!("Pinging {}", address);
+
         let mut packet_iter = IcmpTransportChannelIterator(icmp_packet_iter(&mut self.receiver));
 
         packet_iter.clear()?;
@@ -118,11 +120,13 @@ impl Pinger {
         let send_time = Instant::now();
 
         loop {
+            log::trace!("Waiting for next icmp message");
+
             let (packet, remote_address) = packet_iter.next(std::time::Duration::from_secs(4))?;
             let ping_time = Instant::now().saturating_duration_since(send_time);
 
             match packet.get_icmp_type() {
-                IcmpTypes::EchoReply => (),
+                IcmpTypes::EchoReply => log::trace!("Got ping reply"),
                 IcmpTypes::DestinationUnreachable => {
                     let err = PingError::DestinationUnreachable;
                     log::error!("{}: {}", err, address);
