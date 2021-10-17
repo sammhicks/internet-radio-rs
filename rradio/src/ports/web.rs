@@ -50,7 +50,7 @@ pub async fn run(port_channels: super::PortChannels, web_app_path: String) {
                                     break;
                                 }
 
-                                commands.send(rmp_serde::from_slice(message.as_bytes())?)?
+                                commands.send(rmp_serde::from_slice(message.as_bytes())?)?;
                             }
 
                             drop(shutdown_tx);

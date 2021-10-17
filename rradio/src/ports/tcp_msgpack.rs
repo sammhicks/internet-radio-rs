@@ -76,5 +76,5 @@ pub async fn run(port_channels: super::PortChannels) {
         encode_event,
         decode_command,
     )
-    .await
+    .await;
 }

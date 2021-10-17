@@ -32,7 +32,7 @@ pub enum Command {
     DebugPipeline,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub enum PipelineState {
     VoidPending,
     Null,
@@ -59,7 +59,7 @@ impl std::fmt::Display for PipelineState {
     }
 }
 
-#[derive(Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Track {
     pub title: Option<ArcStr>,
     pub album: Option<ArcStr>,
@@ -90,7 +90,7 @@ impl Track {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub enum StationType {
     UrlList,
     Samba,
@@ -117,7 +117,7 @@ pub struct Station {
     pub tracks: Arc<[Track]>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct TrackTags {
     pub title: Option<ArcStr>,
     pub organisation: Option<ArcStr>,
@@ -136,7 +136,11 @@ pub enum OptionDiff<T> {
 }
 
 impl<T> OptionDiff<T> {
-    pub fn is_none(&self) -> bool {
+    pub fn has_changed(&self) -> bool {
+        !self.has_not_changed()
+    }
+
+    pub fn has_not_changed(&self) -> bool {
         matches!(self, Self::NoChange)
     }
 

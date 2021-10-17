@@ -165,7 +165,7 @@ impl Config {
                     "Failed to read config file {:?}: {}",
                     path.as_ref().display(),
                     err
-                )
+                );
             })
             .and_then(|config| {
                 toml::from_str(&config).map_err(|err| {
@@ -173,7 +173,7 @@ impl Config {
                         "Failed to parse config file {:?}: {}",
                         path.as_ref().display(),
                         err
-                    )
+                    );
                 })
             })
             .unwrap_or_default()

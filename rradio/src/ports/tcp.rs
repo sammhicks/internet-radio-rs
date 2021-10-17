@@ -163,5 +163,5 @@ pub async fn run<Encode, Decode, DecodeStream>(
         Ok(())
     }
     .log_error(current_module)
-    .await
+    .await;
 }

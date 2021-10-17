@@ -132,5 +132,5 @@ pub async fn run(commands: mpsc::UnboundedSender<Command>, config: crate::config
         Ok(())
     }
     .log_error(std::module_path!())
-    .await
+    .await;
 }

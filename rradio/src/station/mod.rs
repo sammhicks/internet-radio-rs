@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use rradio_messages::{ArcStr, StationType};
-pub use rradio_messages::{StationError, Track};
+pub use rradio_messages::{StationError as Error, Track};
 
 mod parse_custom;
 mod parse_m3u;
@@ -97,20 +97,20 @@ pub enum Station {
 fn stations_directory_io_error<T>(
     directory_name: impl AsRef<Path>,
     result: std::io::Result<T>,
-) -> Result<T, StationError> {
-    result.map_err(|err| StationError::StationsDirectoryIoError {
+) -> Result<T, Error> {
+    result.map_err(|err| Error::StationsDirectoryIoError {
         directory: directory_name.as_ref().display().to_string().into(),
         err: err.to_string().into(),
     })
 }
 
-fn playlist_error<T>(result: anyhow::Result<T>) -> Result<T, StationError> {
+fn playlist_error<T>(result: anyhow::Result<T>) -> Result<T, Error> {
     result.map_err(|err| rradio_messages::StationError::BadStationFile(format!("{:#}", err).into()))
 }
 
 impl Station {
     /// Load the station with the given index from the given directory, if the index exists
-    pub fn load(directory: impl AsRef<Path> + Copy, index: String) -> Result<Self, StationError> {
+    pub fn load(directory: impl AsRef<Path> + Copy, index: String) -> Result<Self, Error> {
         for entry in stations_directory_io_error(directory, std::fs::read_dir(directory.as_ref()))?
         {
             let entry = stations_directory_io_error(directory, entry)?;
@@ -121,14 +121,14 @@ impl Station {
                 return match entry
                     .path()
                     .extension()
-                    .ok_or_else(|| StationError::BadStationFile("File has no extension".into()))?
+                    .ok_or_else(|| Error::BadStationFile("File has no extension".into()))?
                     .to_string_lossy()
                     .as_ref()
                 {
                     "m3u" => playlist_error(parse_m3u::parse(&path, index)),
                     "pls" => playlist_error(parse_pls::parse(path, index)),
                     "txt" => playlist_error(parse_custom::parse(path, index)),
-                    extension => Err(StationError::BadStationFile(
+                    extension => Err(Error::BadStationFile(
                         format!("Unsupported format: \"{}\"", extension).into(),
                     )),
                 };
@@ -154,7 +154,7 @@ impl Station {
         }
     }
 
-    pub fn into_playlist(self) -> Result<Playlist, StationError> {
+    pub fn into_playlist(self) -> Result<Playlist, Error> {
         match self {
             Station::UrlList {
                 index,

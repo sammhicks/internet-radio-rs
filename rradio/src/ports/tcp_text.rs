@@ -46,7 +46,7 @@ impl<'a> Display for DisplayDiff<&'a rradio_messages::PlayerStateDiff> {
         match &self.0.current_station {
             rradio_messages::OptionDiff::NoChange => (),
             rradio_messages::OptionDiff::ChangedToNone => {
-                clear_lines(f, station_row, station_row_count)?
+                clear_lines(f, station_row, station_row_count)?;
             }
             rradio_messages::OptionDiff::ChangedToSome(station) => {
                 Display::fmt(&MoveTo(0, station_row), f)?;
@@ -168,5 +168,5 @@ pub async fn run(port_channels: super::PortChannels) {
         encode_message,
         decode_command,
     )
-    .await
+    .await;
 }

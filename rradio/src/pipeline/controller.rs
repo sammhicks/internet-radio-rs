@@ -168,6 +168,12 @@ impl Controller {
         self.clear_ping();
 
         self.current_playlist = None;
+        self.published_state.current_station = Arc::new(None);
+        self.published_state.pause_before_playing = None;
+        self.published_state.current_track_index = 0;
+        self.published_state.current_track_tags = Arc::new(None);
+
+        self.broadcast_state_change();
 
         self.playbin.set_pipeline_state(PipelineState::Null).ok();
     }
@@ -176,7 +182,7 @@ impl Controller {
         self.clear_playlist();
 
         if let Some(url) = &self.config.notifications.error {
-            if let Err(err) = self.playbin.play_url(&url) {
+            if let Err(err) = self.playbin.play_url(url.as_str()) {
                 log::error!("{:#}", err);
             }
         }
@@ -340,7 +346,7 @@ impl Controller {
                     match tag {
                         Ok(Tag::Title(title)) => new_tags.title = Some(title),
                         Ok(Tag::Organisation(organisation)) => {
-                            new_tags.organisation = Some(organisation)
+                            new_tags.organisation = Some(organisation);
                         }
                         Ok(Tag::Artist(artist)) => new_tags.artist = Some(artist),
                         Ok(Tag::Album(album)) => new_tags.album = Some(album),
