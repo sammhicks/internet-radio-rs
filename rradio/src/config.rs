@@ -119,6 +119,9 @@ pub struct Config {
     #[serde(with = "humantime_serde")]
     pub input_timeout: Duration,
 
+    /// The volume on startup
+    pub initial_volume: i32,
+
     /// The change in volume when the user increments or decrements the volume
     pub volume_offset: i32,
 
@@ -185,6 +188,7 @@ impl Default for Config {
         Self {
             stations_directory: arcstr::literal!("stations"),
             input_timeout: Duration::from_millis(2000),
+            initial_volume: 70,
             volume_offset: 5,
             buffering_duration: None,
             pause_before_playing_increment: Duration::from_secs(1),

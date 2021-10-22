@@ -37,6 +37,9 @@ Options:
 + input_timeout
   + Default: `"2s"`
   + Station indexes are two digits. This is the timeout between the first digit and the second. Uses [`humantime`](https://docs.rs/humantime/2.0.1/humantime/)
++ initial_volume
+  + Default: `70`
+  + The volume when rradio starts up
 + volume_offset
   + Default: `5`
   + The default volume change when incrementing and decrementing the volume

@@ -60,7 +60,11 @@ impl Playbin {
                 .context("Failed to set buffer duration")?;
         }
 
-        Ok(Self(playbin_element))
+        let playbin = Self(playbin_element);
+
+        playbin.set_volume(config.initial_volume)?;
+
+        Ok(playbin)
     }
 
     pub fn bus(&self) -> Result<gstreamer::Bus, anyhow::Error> {
