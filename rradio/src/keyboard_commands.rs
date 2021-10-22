@@ -97,7 +97,7 @@ pub async fn run(commands: mpsc::UnboundedSender<Command>, config: crate::config
             };
 
             let command = match key_code {
-                KeyCode::Esc => break,
+                KeyCode::Esc | KeyCode::Backspace => break,
                 KeyCode::Enter | KeyCode::Char(' ') => Command::PlayPause,
                 KeyCode::Char('-') => Command::SmartPreviousItem,
                 KeyCode::Char('+') => Command::NextItem,
