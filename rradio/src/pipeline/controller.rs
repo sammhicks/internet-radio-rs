@@ -335,7 +335,12 @@ impl Controller {
                 Ok(())
             }
             MessageView::Tag(tag) => {
-                let mut new_tags = TrackTags::default();
+                let mut new_tags = self
+                    .published_state
+                    .current_track_tags
+                    .as_ref()
+                    .clone()
+                    .unwrap_or_default();
 
                 for (i, (name, value)) in tag.tags().as_ref().iter().enumerate() {
                     let tag = Tag::from_value(name, &value);
