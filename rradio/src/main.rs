@@ -3,6 +3,7 @@
 
 use anyhow::{Context, Result};
 
+mod bool_mutex;
 mod config;
 mod keyboard_commands;
 mod pipeline;
@@ -87,6 +88,8 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+static LOG_MUTEX: bool_mutex::BoolMutex = bool_mutex::BoolMutex::new();
+
 fn log_format(
     w: &mut dyn std::io::Write,
     _now: &mut flexi_logger::DeferredNow,
@@ -94,6 +97,8 @@ fn log_format(
 ) -> Result<(), std::io::Error> {
     use crossterm::style::{style, Attribute, Color, Stylize};
     use log::Level;
+
+    let lock = LOG_MUTEX.lock();
 
     let color = match record.level() {
         Level::Trace => Color::Magenta,
@@ -113,5 +118,9 @@ fn log_format(
         Level::Warn | Level::Error => style(record.args()).with(color).attribute(Attribute::Bold),
     };
 
-    write!(w, "{:<5} [{}] {}\r", level, target, args)
+    write!(w, "{:<5} [{}] {}\r", level, target, args)?;
+
+    drop(lock);
+
+    Ok(())
 }
