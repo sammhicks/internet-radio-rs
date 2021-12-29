@@ -129,6 +129,8 @@ fn parse_data(
                 Ok(value) => show_buffer = Some(value),
                 Err(err) => log::error!("show_buffer not a boolean: {:?}", err),
             };
+        } else if let Some(()) = extract_flag(one_line, "shuffle") {
+            shuffle = true;
         } else if let Some(comment) = one_line.strip_prefix('#') {
             log::error!("Found comment or unrecognised parameter '{:?}'", comment);
         } else if one_line.starts_with("http") {
@@ -142,8 +144,6 @@ fn parse_data(
             cd_device = Some(device.to_string());
         } else if one_line.starts_with("/dev/") {
             usb_device = Some(one_line.to_string());
-        } else if let Some(()) = extract_flag(one_line, "shuffle") {
-            shuffle = true;
         } else {
             return Err(ParsePlaylistError::BadPlaylistLine {
                 line_number: line_index + 1,
@@ -219,7 +219,7 @@ mod tests {
     #[test]
     fn correct_cd_device() {
         let device = String::from("/dev/sda");
-        let source = format!("{}\n", device);
+        let source = format!("cd:{}\n", device);
         let playlist = parse_data(source.as_bytes(), TEST_INDEX.into()).unwrap();
         assert_eq!(
             playlist,
@@ -244,6 +244,24 @@ mod tests {
                 pause_before_playing: None,
                 tracks: vec![Track::url(TEST_URL.into())],
                 shuffle: false,
+            }
+        );
+    }
+
+    #[test]
+    fn shuffle_url_list() {
+        let source = format!("{}\n#shuffle\n", TEST_URL);
+        let playlist = parse_data(source.as_bytes(), TEST_INDEX.into()).unwrap();
+
+        assert_eq!(
+            playlist,
+            Station::UrlList {
+                index: TEST_INDEX.into(),
+                title: None,
+                show_buffer: None,
+                pause_before_playing: None,
+                tracks: vec![Track::url(TEST_URL.into())],
+                shuffle: true,
             }
         );
     }
