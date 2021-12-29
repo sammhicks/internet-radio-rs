@@ -15,8 +15,8 @@ categories = ["audio", "internet"]
 
 [features]
 cd = [ "libc" ]
-mount = [ "rand", "sys-mount", "tempdir" ]
-ping = [ "pnet", "pnet_macros_support", "rand", "url" ]
+mount = [ "sys-mount", "tempdir" ]
+ping = [ "pnet", "pnet_macros_support", "url" ]
 production-server = []
 samba = [ "mount" ]
 usb = [ "mount" ]
@@ -39,7 +39,7 @@ m3u = "1.0"
 pnet = { version = "0.28", optional = true }
 pnet_macros_support = { version = "0.28", optional = true }
 pls = "0.2"
-rand = { version = "0.8", optional = true }
+rand = { version = "0.8" }
 rmp-serde = "0.15"
 serde = { version = "1.0", features = ["derive", "rc"] }
 sys-mount = { version = "1.2", optional = true }

@@ -82,6 +82,7 @@ fn diff_arc_with_clone<T: Clone>(a: &Arc<T>, b: &Arc<T>, any_some: &mut bool) ->
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 enum Event {
     StateUpdate(PlayerStateDiff),
     LogMessage(LogMessage),

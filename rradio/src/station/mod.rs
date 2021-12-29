@@ -73,6 +73,7 @@ pub enum Station {
         pause_before_playing: Option<std::time::Duration>,
         show_buffer: Option<bool>, // Show the user how full the gstreamer buffer is
         tracks: Vec<Track>,
+        shuffle: bool,
     },
     SambaServer {
         index: String,
@@ -80,6 +81,7 @@ pub enum Station {
         credentials: Credentials,
         show_buffer: Option<bool>, // Show the user how full the gstreamer buffer is
         remote_address: String,
+        shuffle: bool,
     },
     CD {
         index: String,
@@ -88,6 +90,7 @@ pub enum Station {
     Usb {
         index: String,
         device: String,
+        shuffle: bool,
     },
     Singleton {
         track: Track,
@@ -106,6 +109,16 @@ fn stations_directory_io_error<T>(
 
 fn playlist_error<T>(result: anyhow::Result<T>) -> Result<T, Error> {
     result.map_err(|err| rradio_messages::StationError::BadStationFile(format!("{:#}", err).into()))
+}
+
+fn shuffle_tracks(mut tracks: Vec<Track>, shuffle: bool) -> Vec<Track> {
+    use rand::seq::SliceRandom;
+
+    if shuffle {
+        tracks.shuffle(&mut rand::thread_rng());
+    }
+
+    tracks
 }
 
 impl Station {
@@ -162,13 +175,14 @@ impl Station {
                 pause_before_playing,
                 show_buffer,
                 tracks,
+                shuffle,
             } => Ok(Playlist {
                 station_index: Some(index),
                 station_title: title,
                 station_type: StationType::UrlList,
                 pause_before_playing,
                 show_buffer,
-                tracks,
+                tracks: shuffle_tracks(tracks, shuffle),
                 handle: Handle::default(),
             }),
             #[cfg(not(all(feature = "samba", unix)))]
@@ -180,6 +194,7 @@ impl Station {
                 credentials,
                 show_buffer,
                 remote_address,
+                shuffle,
             } => {
                 let (handle, tracks) = mount::samba(&remote_address, &credentials)?;
                 Ok(Playlist {
@@ -188,7 +203,7 @@ impl Station {
                     station_type: StationType::Samba,
                     pause_before_playing: None,
                     show_buffer,
-                    tracks,
+                    tracks: shuffle_tracks(tracks, shuffle),
                     handle: Handle(InnerHandle::Mount(handle)),
                 })
             }
@@ -204,7 +219,11 @@ impl Station {
             #[cfg(not(all(feature = "usb", unix)))]
             Station::Usb { .. } => Err(rradio_messages::MountError::UsbNotEnabled.into()),
             #[cfg(all(feature = "usb", unix))]
-            Station::Usb { index, device } => {
+            Station::Usb {
+                index,
+                device,
+                shuffle,
+            } => {
                 let (handle, tracks) = mount::usb(&device)?;
                 Ok(Playlist {
                     station_index: Some(index),
@@ -212,7 +231,7 @@ impl Station {
                     station_type: StationType::Usb,
                     pause_before_playing: None,
                     show_buffer: None,
-                    tracks,
+                    tracks: shuffle_tracks(tracks, shuffle),
                     handle: Handle(InnerHandle::Mount(handle)),
                 })
             }
