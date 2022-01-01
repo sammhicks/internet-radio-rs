@@ -73,7 +73,6 @@ pub enum Station {
         pause_before_playing: Option<std::time::Duration>,
         show_buffer: Option<bool>, // Show the user how full the gstreamer buffer is
         tracks: Vec<Track>,
-        shuffle: bool,
     },
     SambaServer {
         index: String,
@@ -81,7 +80,7 @@ pub enum Station {
         credentials: Credentials,
         show_buffer: Option<bool>, // Show the user how full the gstreamer buffer is
         remote_address: String,
-        shuffle: bool,
+        shuffle: Option<usize>,
     },
     CD {
         index: String,
@@ -90,7 +89,7 @@ pub enum Station {
     Usb {
         index: String,
         device: String,
-        shuffle: bool,
+        shuffle: Option<usize>,
     },
     Singleton {
         track: Track,
@@ -109,16 +108,6 @@ fn stations_directory_io_error<T>(
 
 fn playlist_error<T>(result: anyhow::Result<T>) -> Result<T, Error> {
     result.map_err(|err| rradio_messages::StationError::BadStationFile(format!("{:#}", err).into()))
-}
-
-fn shuffle_tracks(mut tracks: Vec<Track>, shuffle: bool) -> Vec<Track> {
-    use rand::seq::SliceRandom;
-
-    if shuffle {
-        tracks.shuffle(&mut rand::thread_rng());
-    }
-
-    tracks
 }
 
 impl Station {
@@ -175,14 +164,13 @@ impl Station {
                 pause_before_playing,
                 show_buffer,
                 tracks,
-                shuffle,
             } => Ok(Playlist {
                 station_index: Some(index),
                 station_title: title,
                 station_type: StationType::UrlList,
                 pause_before_playing,
                 show_buffer,
-                tracks: shuffle_tracks(tracks, shuffle),
+                tracks,
                 handle: Handle::default(),
             }),
             #[cfg(not(all(feature = "samba", unix)))]
@@ -196,14 +184,14 @@ impl Station {
                 remote_address,
                 shuffle,
             } => {
-                let (handle, tracks) = mount::samba(&remote_address, &credentials)?;
+                let (handle, tracks) = mount::samba(&remote_address, &credentials, shuffle)?;
                 Ok(Playlist {
                     station_index: Some(index),
                     station_title: title,
                     station_type: StationType::Samba,
                     pause_before_playing: None,
                     show_buffer,
-                    tracks: shuffle_tracks(tracks, shuffle),
+                    tracks,
                     handle: Handle(InnerHandle::Mount(handle)),
                 })
             }
@@ -224,14 +212,14 @@ impl Station {
                 device,
                 shuffle,
             } => {
-                let (handle, tracks) = mount::usb(&device)?;
+                let (handle, tracks) = mount::usb(&device, shuffle)?;
                 Ok(Playlist {
                     station_index: Some(index),
                     station_title: None,
                     station_type: StationType::Usb,
                     pause_before_playing: None,
                     show_buffer: None,
-                    tracks: shuffle_tracks(tracks, shuffle),
+                    tracks,
                     handle: Handle(InnerHandle::Mount(handle)),
                 })
             }

@@ -50,7 +50,6 @@ pub fn parse(path: impl AsRef<std::path::Path> + Copy, index: String) -> Result<
         pause_before_playing: None,
         show_buffer: None,
         tracks: maybe_tracks?,
-        shuffle: false,
     })
 }
 

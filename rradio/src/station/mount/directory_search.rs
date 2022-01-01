@@ -1,5 +1,8 @@
-use std::io::Result;
-use std::path::Path;
+use std::{
+    ffi::OsString,
+    io::Result,
+    path::{Path, PathBuf},
+};
 
 use rand::{seq::SliceRandom, Rng};
 
@@ -14,9 +17,9 @@ fn filter_directory(item: Result<std::fs::DirEntry>) -> Result<Option<std::fs::D
     }
 }
 
-fn random_subdirectories<R: Rng>(
+fn random_subdirectories(
     directory_path: &Path,
-    rng: &mut R,
+    rng: &mut impl Rng,
 ) -> Result<Vec<std::fs::DirEntry>> {
     let mut subdirectories = std::fs::read_dir(directory_path)?
         .filter_map(|item| filter_directory(item).transpose())
@@ -32,9 +35,9 @@ pub fn random_music_directory(directory_path: &Path) -> Result<Option<Vec<Track>
     random_artist_directory(directory_path, &mut rng)
 }
 
-fn random_artist_directory<R: Rng>(
+fn random_artist_directory(
     directory_path: &Path,
-    rng: &mut R,
+    rng: &mut impl Rng,
 ) -> Result<Option<Vec<Track>>> {
     log::debug!("Searching {}", directory_path.display());
     for directory in random_subdirectories(directory_path, rng)? {
@@ -48,10 +51,10 @@ fn random_artist_directory<R: Rng>(
     Ok(None)
 }
 
-fn random_album_directory<R: rand::Rng>(
+fn random_album_directory(
     directory_path: &Path,
     artist: &str,
-    rng: &mut R,
+    rng: &mut impl Rng,
 ) -> Result<Option<Vec<Track>>> {
     log::debug!("Searching {}", directory_path.display());
     for directory in random_subdirectories(directory_path, rng)? {
@@ -93,6 +96,76 @@ fn album_directory(directory_path: &Path, artist: &str, album: &str) -> Result<O
                         ),
                         is_notification: false,
                     });
+                }
+            }
+        }
+    }
+
+    Ok(if tracks.is_empty() {
+        None
+    } else {
+        Some(tracks)
+    })
+}
+
+fn random_track(
+    directory_path: &Path,
+    artist: &str,
+    album: &str,
+    rng: &mut impl Rng,
+) -> Result<Option<Track>> {
+    album_directory(directory_path, artist, album).map(|tracks| {
+        tracks.and_then(|mut tracks| {
+            if tracks.is_empty() {
+                None
+            } else {
+                let index = rng.gen_range(0..tracks.len());
+                Some(tracks.remove(index))
+            }
+        })
+    })
+}
+
+fn random_directory(
+    directory_path: &Path,
+    rng: &mut impl Rng,
+) -> Result<Option<(OsString, PathBuf)>> {
+    let mut subdirectories = Vec::new();
+
+    for item in std::fs::read_dir(directory_path)? {
+        let item = item?;
+        if item.file_type()?.is_dir() {
+            subdirectories.push(item);
+        }
+    }
+
+    Ok(if subdirectories.is_empty() {
+        None
+    } else {
+        let index = rng.gen_range(0..subdirectories.len());
+        let item = subdirectories.remove(index);
+        Some((item.file_name(), item.path()))
+    })
+}
+
+pub fn shuffled_mixed_playlist(
+    directory_path: &Path,
+    track_count: usize,
+) -> Result<Option<Vec<Track>>> {
+    let mut rng = rand::thread_rng();
+
+    let mut tracks = Vec::new();
+
+    for _ in 0..track_count {
+        if let Some((artist, artist_directory_path)) = random_directory(directory_path, &mut rng)? {
+            if let Some((album, album_directory_path)) =
+                random_directory(&artist_directory_path, &mut rng)?
+            {
+                let artist = artist.to_string_lossy();
+                let album = album.to_string_lossy();
+                if let Some(track) = random_track(&album_directory_path, &artist, &album, &mut rng)?
+                {
+                    tracks.push(track);
                 }
             }
         }

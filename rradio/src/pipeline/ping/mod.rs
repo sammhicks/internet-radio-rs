@@ -123,7 +123,7 @@ impl Pinger {
             match address {
                 SocketAddr::V4(ipv4_address) => return Ok(*ipv4_address.ip()),
                 SocketAddr::V6(ipv6_address) => {
-                    log::debug!("Ignoring ipv6 address ({:?}): {}", host, ipv6_address)
+                    log::debug!("Ignoring ipv6 address ({:?}): {}", host, ipv6_address);
                 }
             }
         }

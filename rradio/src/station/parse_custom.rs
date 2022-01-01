@@ -34,16 +34,6 @@ fn extract_command<'line>(line: &'line str, command: &str) -> Option<&'line str>
     )
 }
 
-fn extract_flag(line: &str, flag: &str) -> Option<()> {
-    let remainder = line
-        .strip_prefix('#')?
-        .trim_start()
-        .case_insensitive_strip_prefix(flag)?
-        .trim_start();
-
-    remainder.is_empty().then(|| ())
-}
-
 #[derive(Debug, thiserror::Error)]
 enum CredentialsError {
     #[error("No username given")]
@@ -101,7 +91,7 @@ fn parse_data(
     let mut show_buffer = None;
     let mut http_found = false;
     let mut file_path_found = false;
-    let mut shuffle = false;
+    let mut shuffle = None;
 
     for (line_index, one_line) in buffered_file.lines().enumerate() {
         let one_line = one_line.map_err(ParsePlaylistError::IoError)?;
@@ -122,15 +112,18 @@ fn parse_data(
         {
             match pause_before_playing_value.parse() {
                 Ok(value) => pause_before_playing = Some(std::time::Duration::from_secs(value)),
-                Err(err) => log::error!("pause_before_playing not an integer: {:?}", err),
+                Err(err) => log::error!("pause_before_playing not an integer: {}", err),
             };
         } else if let Some(show_buffer_value) = extract_command(one_line, "show_buffer") {
             match bool::from_str(show_buffer_value) {
                 Ok(value) => show_buffer = Some(value),
-                Err(err) => log::error!("show_buffer not a boolean: {:?}", err),
+                Err(err) => log::error!("show_buffer not a boolean: {}", err),
             };
-        } else if let Some(()) = extract_flag(one_line, "shuffle") {
-            shuffle = true;
+        } else if let Some(shuffle_value) = extract_command(one_line, "shuffle") {
+            match shuffle_value.parse::<usize>() {
+                Ok(value) => shuffle = Some(value),
+                Err(err) => log::error!("shuffle is not an integer: {}", err),
+            }
         } else if let Some(comment) = one_line.strip_prefix('#') {
             log::error!("Found comment or unrecognised parameter '{:?}'", comment);
         } else if one_line.starts_with("http") {
@@ -198,7 +191,6 @@ fn parse_data(
                     .into_iter()
                     .map(|url| Track::url(url.into()))
                     .collect(),
-                shuffle,
             })
         }
         _ => Err(ParsePlaylistError::BadPlaylist),
@@ -243,25 +235,6 @@ mod tests {
                 show_buffer: None,
                 pause_before_playing: None,
                 tracks: vec![Track::url(TEST_URL.into())],
-                shuffle: false,
-            }
-        );
-    }
-
-    #[test]
-    fn shuffle_url_list() {
-        let source = format!("{}\n#shuffle\n", TEST_URL);
-        let playlist = parse_data(source.as_bytes(), TEST_INDEX.into()).unwrap();
-
-        assert_eq!(
-            playlist,
-            Station::UrlList {
-                index: TEST_INDEX.into(),
-                title: None,
-                show_buffer: None,
-                pause_before_playing: None,
-                tracks: vec![Track::url(TEST_URL.into())],
-                shuffle: true,
             }
         );
     }
@@ -278,7 +251,6 @@ mod tests {
                 show_buffer: None,
                 pause_before_playing: None,
                 tracks: vec![Track::url(TEST_URL.into())],
-                shuffle: false,
             }
         );
     }
@@ -301,7 +273,32 @@ mod tests {
                 },
                 show_buffer: None,
                 remote_address: TEST_REMOTE_ADDRESS.into(),
-                shuffle: false,
+                shuffle: None,
+            }
+        );
+    }
+
+    #[test]
+    fn file_server_shuffle() {
+        let shuffle_count = 42;
+
+        let source = format!(
+            "#username={}\n#password={}\n#shuffle = {}\n{}\n",
+            TEST_USERNAME, TEST_PASSWORD, shuffle_count, TEST_REMOTE_ADDRESS
+        );
+        let playlist = parse_data(source.as_bytes(), TEST_INDEX.into()).unwrap();
+        assert_eq!(
+            playlist,
+            Station::SambaServer {
+                index: TEST_INDEX.into(),
+                title: None,
+                credentials: Credentials {
+                    username: TEST_USERNAME.into(),
+                    password: TEST_PASSWORD.into()
+                },
+                show_buffer: None,
+                remote_address: TEST_REMOTE_ADDRESS.into(),
+                shuffle: Some(shuffle_count),
             }
         );
     }
@@ -324,7 +321,7 @@ mod tests {
                 },
                 show_buffer: None,
                 remote_address: TEST_REMOTE_ADDRESS.into(),
-                shuffle: false,
+                shuffle: None,
             }
         );
     }
@@ -347,7 +344,7 @@ mod tests {
                 },
                 show_buffer: None,
                 remote_address: TEST_REMOTE_ADDRESS.into(),
-                shuffle: false,
+                shuffle: None,
             }
         );
     }
@@ -367,7 +364,6 @@ mod tests {
                 show_buffer: None,
                 pause_before_playing: None,
                 tracks: vec![Track::url(TEST_URL.into())],
-                shuffle: false,
             }
         );
     }
