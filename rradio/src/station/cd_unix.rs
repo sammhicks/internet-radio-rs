@@ -317,11 +317,11 @@ pub fn tracks(device: &str) -> Result<Vec<Track>> {
     log::debug!("CD toc: {:?}", toc);
 
     (toc.cdth_trk0..=toc.cdth_trk1)
-        .filter_map(|track_index| cd_track(&mut device, track_index).transpose())
+        .filter_map(|track_index| cd_track(&mut device, track_index, toc.cdth_trk1).transpose())
         .collect()
 }
 
-fn cd_track(device: &mut std::fs::File, track_index: u8) -> Result<Option<Track>> {
+fn cd_track(device: &mut std::fs::File, track_index: u8, track_count: u8) -> Result<Option<Track>> {
     let mut toc_entry = CdTocEntry {
         cdte_track: track_index,
         cdte_format: LbaMsf::Msf,
@@ -339,7 +339,11 @@ fn cd_track(device: &mut std::fs::File, track_index: u8) -> Result<Option<Track>
         Ok(None)
     } else {
         Ok(Some(Track {
-            title: Some(rradio_messages::arcstr::format!("Track {}", track_index)),
+            title: Some(rradio_messages::arcstr::format!(
+                "Track {} of {}",
+                track_index,
+                track_count
+            )),
             album: None,
             artist: None,
             url: rradio_messages::arcstr::format!("cdda://{}", track_index),
