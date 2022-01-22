@@ -189,26 +189,26 @@ impl Pinger {
                     remote_pings_remaining -= 1;
                 }
 
-                let remote_ping_result = self
+                let remote_ping = self
                     .ping_remote(remote_address, |remote_ping| PingTimes::GatewayAndRemote {
                         gateway_ping,
                         remote_ping,
                         latest: PingTarget::Remote,
                     })
-                    .await?;
+                    .await?
+                    .map_err(|FailedToPing(err)| err);
 
-                maybe_remote_ping = Some(remote_ping_result.map_err(|FailedToPing(err)| err));
+                maybe_remote_ping = Some(remote_ping);
 
-                let remote_ping = match remote_ping_result {
-                    Ok(ping) => ping,
-                    Err(FailedToPing(_err)) => continue 'retry,
-                };
+                if !matches!(&remote_ping, Ok(_) | Err(PingError::Timeout)) {
+                    continue 'retry;
+                }
 
                 match self
                     .ping_gateway(|result| match result {
                         Ok(gateway_ping) => PingTimes::GatewayAndRemote {
                             gateway_ping,
-                            remote_ping: Ok(remote_ping),
+                            remote_ping,
                             latest: PingTarget::Gateway,
                         },
                         Err(err) => PingTimes::Gateway(Err(err)),
