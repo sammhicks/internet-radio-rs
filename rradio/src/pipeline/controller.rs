@@ -267,7 +267,8 @@ impl Controller {
         log::debug!("Command: {:?}", command);
         match command {
             Command::SetChannel(index) => {
-                let new_station = Station::load(self.config.stations_directory.as_str(), index)?;
+                let new_station =
+                    Station::load(self.config.stations_directory.as_str(), index).await?;
                 self.play_station(new_station).await
             }
             Command::PlayPause => self.play_pause(),

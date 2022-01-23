@@ -8,6 +8,7 @@ pub use rradio_messages::{StationError as Error, Track};
 mod parse_custom;
 mod parse_m3u;
 mod parse_pls;
+mod parse_upnp;
 
 #[cfg(not(feature = "cd"))]
 mod cd {
@@ -112,7 +113,7 @@ fn playlist_error<T>(result: anyhow::Result<T>) -> Result<T, Error> {
 
 impl Station {
     /// Load the station with the given index from the given directory, if the index exists
-    pub fn load(directory: impl AsRef<Path> + Copy, index: String) -> Result<Self, Error> {
+    pub async fn load(directory: impl AsRef<Path> + Copy, index: String) -> Result<Self, Error> {
         for entry in stations_directory_io_error(directory, std::fs::read_dir(directory.as_ref()))?
         {
             let entry = stations_directory_io_error(directory, entry)?;
@@ -130,6 +131,7 @@ impl Station {
                     "m3u" => playlist_error(parse_m3u::parse(&path, index)),
                     "pls" => playlist_error(parse_pls::parse(path, index)),
                     "txt" => playlist_error(parse_custom::parse(path, index)),
+                    "upnp" => playlist_error(parse_upnp::parse(&path, index).await),
                     extension => Err(Error::BadStationFile(
                         format!("Unsupported format: \"{}\"", extension).into(),
                     )),
