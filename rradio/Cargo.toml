@@ -15,8 +15,8 @@ categories = ["audio", "internet"]
 
 [features]
 cd = [ "libc" ]
-mount = [ "sys-mount", "rand", "tempdir" ]
-ping = [ "pnet", "pnet_macros_support", "rand", "url" ]
+mount = [ "sys-mount", "tempdir" ]
+ping = [ "pnet", "pnet_macros_support" ]
 production-server = []
 samba = [ "mount" ]
 usb = [ "mount" ]
@@ -39,7 +39,7 @@ m3u = "1.0"
 pnet = { version = "0.28", optional = true }
 pnet_macros_support = { version = "0.28", optional = true }
 pls = "0.2"
-rand = { version = "0.8", optional = true }
+rand = "0.8"
 rmp-serde = "0.15"
 serde = { version = "1.0", features = ["derive", "rc"] }
 sys-mount = { version = "1.2", optional = true }
@@ -47,7 +47,7 @@ tempdir = { version = "0.3", optional = true }
 thiserror = "1.0"
 tokio = { version = "1.0", features = [ "io-util", "net", "rt-multi-thread", "sync", "time"] }
 toml = "0.5"
-url = { version = "2.2", optional = true }
+url = { version = "2.2", features = [ "serde" ] }
 warp = { version = "0.3", optional = true }
 
 quick-xml = { version = "0.22", features = [ "serialize" ] }

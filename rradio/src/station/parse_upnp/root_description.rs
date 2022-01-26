@@ -32,10 +32,12 @@ pub struct DeviceInfo {
 
 pub async fn get_content_directory_control_path(
     client: &reqwest::Client,
-    url: &str,
+    url: url::Url,
 ) -> Result<DeviceInfo> {
+    log::trace!("Fetching {}", url.as_str());
+
     let root_description = client
-        .get(url)
+        .get(url.clone())
         .send()
         .await
         .context("Failed to fetch root description")?
@@ -57,7 +59,7 @@ pub async fn get_content_directory_control_path(
         })
         .context("Content Directory Service not found")?;
 
-    let mut content_directory_url = reqwest::Url::parse(url)?;
+    let mut content_directory_url = url;
 
     content_directory_url.set_path(&content_directory_control_path);
     content_directory_url.set_query(None);

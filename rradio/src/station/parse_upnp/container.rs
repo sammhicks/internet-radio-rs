@@ -45,6 +45,8 @@ pub struct Reference {
 
 #[derive(serde::Deserialize)]
 struct ItemDerive {
+    #[serde(rename = "originalTrackNumber")]
+    track_number: usize,
     title: Vec<String>,
     album: Vec<String>,
     artist: Vec<String>,
@@ -54,6 +56,7 @@ struct ItemDerive {
 
 #[derive(Debug)]
 pub struct Item {
+    pub track_number: usize,
     pub title: Option<ArcStr>,
     pub album: Option<ArcStr>,
     pub artist: Option<ArcStr>,
@@ -70,6 +73,7 @@ impl<'de> serde::Deserialize<'de> for Item {
         let item = ItemDerive::deserialize(deserializer)?;
 
         Ok(Self {
+            track_number: item.track_number,
             title: map_into(item.title.into_iter().next()),
             album: map_into(item.album.into_iter().next()),
             artist: map_into(item.artist.into_iter().next()),
@@ -110,13 +114,13 @@ pub async fn fetch(
         .await
         .and_then(reqwest::Response::error_for_status)
         .context("Failed to fetch container")?
-        .bytes()
+        .text()
         .await
         .context("Failed to fetch text")?;
 
     log::trace!("Parsing XML");
 
-    let browse_result = quick_xml::de::from_reader::<_, SoapEnvelope>(http_response.as_ref())
+    let browse_result = quick_xml::de::from_str::<SoapEnvelope>(&http_response)
         .context("Failed to parse Soap Envelope")?
         .body
         .browse_response
