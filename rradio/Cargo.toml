@@ -51,7 +51,7 @@ url = { version = "2.2", features = [ "serde" ] }
 warp = { version = "0.3", optional = true }
 
 quick-xml = { version = "0.22", features = [ "serialize" ] }
-reqwest = "0.11"
+reqwest = { version = "0.11", default-features = false }
 
 rradio-messages = { path = "../messages" }
 

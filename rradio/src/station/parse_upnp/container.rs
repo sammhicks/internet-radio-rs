@@ -43,7 +43,8 @@ pub struct Reference {
     pub title: String,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Default, serde::Deserialize)]
+#[serde(default)]
 struct ItemDerive {
     #[serde(rename = "originalTrackNumber")]
     track_number: usize,
