@@ -8,13 +8,6 @@ mod parse_m3u;
 mod parse_pls;
 mod parse_upnp;
 
-#[cfg(not(feature = "cd"))]
-mod cd {
-    pub fn tracks(_device: &str) -> Result<Vec<super::Track>, rradio_messages::CdError> {
-        Err(rradio_messages::CdError::CdNotEnabled)
-    }
-}
-
 #[cfg(all(feature = "cd", not(unix)))]
 compile_error!("CD only supported on unix");
 
@@ -42,6 +35,7 @@ pub struct Credentials {
 pub struct PlaylistMetadata(Arc<dyn Any + Send + Sync>);
 
 impl PlaylistMetadata {
+    #[cfg(feature = "mount")]
     fn new(metadata: impl Any + Send + Sync + 'static) -> Self {
         Self(Arc::new(metadata))
     }
@@ -64,6 +58,7 @@ impl Default for PlaylistMetadata {
 pub struct PlaylistHandle(Box<dyn Any + Send + Sync>);
 
 impl PlaylistHandle {
+    #[cfg(feature = "mount")]
     fn new(handle: impl Any + Send + Sync + 'static) -> Self {
         Self(Box::new(handle))
     }
@@ -101,10 +96,12 @@ pub enum Station {
         title: Option<String>,
         tracks: Vec<Track>,
     },
+    #[cfg(feature = "cd")]
     CD {
         index: String,
         device: String,
     },
+    #[cfg(feature = "usb")]
     Usb {
         index: String,
         device: String,
@@ -196,14 +193,20 @@ impl Station {
 
     pub fn index(&self) -> Option<&str> {
         match self {
-            Station::UrlList { index, .. }
-            | Station::CD { index, .. }
-            | Station::Usb { index, .. } => Some(index.as_str()),
+            Station::UrlList { index, .. } => Some(index.as_str()),
+            #[cfg(feature = "cd")]
+            Station::CD { index, .. } => Some(index.as_str()),
+            #[cfg(feature = "usb")]
+            Station::Usb { index, .. } => Some(index.as_str()),
             Station::Singleton { .. } => None,
         }
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     pub fn into_playlist(self, metadata: Option<&PlaylistMetadata>) -> Result<Playlist, Error> {
+        #[cfg(not(feature = "usb"))]
+        let _ = metadata;
+
         match self {
             Station::UrlList {
                 index,
@@ -217,6 +220,7 @@ impl Station {
                 metadata: PlaylistMetadata::default(),
                 handle: PlaylistHandle::default(),
             }),
+            #[cfg(feature = "cd")]
             Station::CD { index, device } => Ok(Playlist {
                 station_index: Some(index),
                 station_title: None,
@@ -225,9 +229,7 @@ impl Station {
                 metadata: PlaylistMetadata::default(),
                 handle: PlaylistHandle::default(),
             }),
-            #[cfg(not(all(feature = "usb", unix)))]
-            Station::Usb { .. } => Err(rradio_messages::MountError::UsbNotEnabled.into()),
-            #[cfg(all(feature = "usb", unix))]
+            #[cfg(feature = "usb")]
             Station::Usb {
                 index,
                 device,

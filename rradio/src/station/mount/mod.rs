@@ -6,6 +6,9 @@ mod directory_search;
 
 use directory_search::SelectedDirectories;
 
+#[cfg(all(feature = "usb", not(unix)))]
+compile_error!("usb feature only supported on unix");
+
 #[cfg(all(unix, feature = "usb"))]
 mod unix;
 
