@@ -24,6 +24,7 @@ default = [ "web" ]
 
 [dependencies]
 anyhow = "1.0"
+askama = "0.11"
 base64 = "0.13"
 crossterm =  { version = "0.20", features = ["event-stream"] }
 flexi_logger = { version = "0.18", default_features = false, features = ["textfilter"] }

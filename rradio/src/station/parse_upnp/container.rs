@@ -114,6 +114,12 @@ pub struct Container {
     pub items: Vec<Item>,
 }
 
+#[derive(askama::Template)]
+#[template(path = "content_directory_request.xml")]
+struct Request<'a> {
+    object_id: &'a str,
+}
+
 pub async fn fetch(
     client: &reqwest::Client,
     control_url: &str,
@@ -121,7 +127,7 @@ pub async fn fetch(
 ) -> Result<Container> {
     log::trace!("Fetching {}", id);
 
-    let body = include_str!("request.xml").replace("%%%ObjectID%%%", &id);
+    let body = Request { object_id: &id }.to_string();
 
     let http_response = client
         .post(control_url)
