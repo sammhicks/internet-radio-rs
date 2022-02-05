@@ -47,8 +47,6 @@ pub fn parse(path: impl AsRef<std::path::Path> + Copy, index: String) -> Result<
     Ok(Station::UrlList {
         index,
         title: None,
-        pause_before_playing: None,
-        show_buffer: None,
         tracks: maybe_tracks?,
     })
 }

@@ -88,6 +88,26 @@ impl<'de> serde::Deserialize<'de> for Item {
     }
 }
 
+impl From<Item> for rradio_messages::Track {
+    fn from(item: Item) -> Self {
+        let Item {
+            track_number: _,
+            title,
+            album,
+            artist,
+            url,
+        } = item;
+
+        Self {
+            title,
+            album,
+            artist,
+            url,
+            is_notification: false,
+        }
+    }
+}
+
 pub struct Container {
     pub title: String,
     pub containers: Vec<Reference>,

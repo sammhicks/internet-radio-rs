@@ -12,13 +12,40 @@ pub mod cd {
     #[derive(Clone, Debug, serde::Deserialize)]
     #[serde(default)]
     pub struct Config {
+        pub station: ArcStr,
         pub device: ArcStr,
     }
 
     impl Default for Config {
         fn default() -> Self {
             Self {
+                station: arcstr::literal!("00"),
                 device: arcstr::literal!("/dev/cdrom"),
+            }
+        }
+    }
+}
+
+#[cfg(feature = "usb")]
+pub mod usb {
+    use std::path::PathBuf;
+
+    use rradio_messages::{arcstr, ArcStr};
+
+    #[derive(Clone, Debug, serde::Deserialize)]
+    #[serde(default)]
+    pub struct Config {
+        pub station: ArcStr,
+        pub device: ArcStr,
+        pub path: PathBuf,
+    }
+
+    impl Default for Config {
+        fn default() -> Self {
+            Self {
+                station: arcstr::literal!("01"),
+                device: arcstr::literal!("/dev/sda1"),
+                path: PathBuf::new(),
             }
         }
     }
@@ -151,6 +178,10 @@ pub struct Config {
     #[serde(rename = "CD")]
     pub cd_config: cd::Config,
 
+    #[cfg(feature = "usb")]
+    #[serde(rename = "USB")]
+    pub usb_config: usb::Config,
+
     #[cfg(feature = "ping")]
     #[serde(rename = "ping")]
     pub ping_config: ping::Config,
@@ -199,6 +230,8 @@ impl Default for Config {
             play_error_sound_on_gstreamer_error: true,
             #[cfg(feature = "cd")]
             cd_config: cd::Config::default(),
+            #[cfg(feature = "usb")]
+            usb_config: usb::Config::default(),
             #[cfg(feature = "ping")]
             ping_config: ping::Config::default(),
             #[cfg(feature = "web")]

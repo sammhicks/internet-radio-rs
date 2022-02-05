@@ -1,11 +1,9 @@
 //! A radio station in rradio
-
-use std::path::Path;
+use std::{any::Any, fmt, sync::Arc};
 
 use rradio_messages::{ArcStr, StationType};
 pub use rradio_messages::{StationError as Error, Track};
 
-mod parse_custom;
 mod parse_m3u;
 mod parse_pls;
 mod parse_upnp;
@@ -40,29 +38,59 @@ pub struct Credentials {
     password: String,
 }
 
-enum InnerHandle {
-    None,
-    #[cfg(all(feature = "mount", unix))]
-    Mount(mount::Handle),
-}
+#[derive(Clone)]
+pub struct PlaylistMetadata(Arc<dyn Any + Send + Sync>);
 
-impl Default for InnerHandle {
-    fn default() -> Self {
-        Self::None
+impl PlaylistMetadata {
+    fn new(metadata: impl Any + Send + Sync + 'static) -> Self {
+        Self(Arc::new(metadata))
     }
 }
 
-#[derive(Default)]
-pub struct Handle(InnerHandle);
+impl fmt::Debug for PlaylistMetadata {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("PlaylistMetadata")
+            .field(&(&*self.0).type_id())
+            .finish()
+    }
+}
+
+impl Default for PlaylistMetadata {
+    fn default() -> Self {
+        Self(Arc::new(()))
+    }
+}
+
+pub struct PlaylistHandle(Box<dyn Any + Send + Sync>);
+
+impl PlaylistHandle {
+    fn new(handle: impl Any + Send + Sync + 'static) -> Self {
+        Self(Box::new(handle))
+    }
+}
+
+impl fmt::Debug for PlaylistHandle {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("PlaylistHandle")
+            .field(&(&*self.0).type_id())
+            .field(&self.0)
+            .finish()
+    }
+}
+
+impl Default for PlaylistHandle {
+    fn default() -> Self {
+        Self(Box::new(()))
+    }
+}
 
 pub struct Playlist {
     pub station_index: Option<String>,
     pub station_title: Option<String>,
     pub station_type: rradio_messages::StationType,
-    pub pause_before_playing: Option<std::time::Duration>,
-    pub show_buffer: Option<bool>,
     pub tracks: Vec<Track>,
-    pub handle: Handle,
+    pub metadata: PlaylistMetadata,
+    pub handle: PlaylistHandle,
 }
 
 /// A station in rradio
@@ -71,17 +99,7 @@ pub enum Station {
     UrlList {
         index: String,
         title: Option<String>,
-        pause_before_playing: Option<std::time::Duration>,
-        show_buffer: Option<bool>, // Show the user how full the gstreamer buffer is
         tracks: Vec<Track>,
-    },
-    SambaServer {
-        index: String,
-        title: Option<String>,
-        credentials: Credentials,
-        show_buffer: Option<bool>, // Show the user how full the gstreamer buffer is
-        remote_address: String,
-        shuffle: Option<usize>,
     },
     CD {
         index: String,
@@ -90,7 +108,7 @@ pub enum Station {
     Usb {
         index: String,
         device: String,
-        shuffle: Option<usize>,
+        path: std::path::PathBuf,
     },
     Singleton {
         track: Track,
@@ -98,11 +116,11 @@ pub enum Station {
 }
 
 fn stations_directory_io_error<T>(
-    directory_name: impl AsRef<Path>,
+    directory: &ArcStr,
     result: std::io::Result<T>,
 ) -> Result<T, Error> {
     result.map_err(|err| Error::StationsDirectoryIoError {
-        directory: directory_name.as_ref().display().to_string().into(),
+        directory: directory.clone(),
         err: err.to_string().into(),
     })
 }
@@ -113,8 +131,27 @@ fn playlist_error<T>(result: anyhow::Result<T>) -> Result<T, Error> {
 
 impl Station {
     /// Load the station with the given index from the given directory, if the index exists
-    pub async fn load(directory: impl AsRef<Path> + Copy, index: String) -> Result<Self, Error> {
-        for entry in stations_directory_io_error(directory, std::fs::read_dir(directory.as_ref()))?
+    pub async fn load(config: &crate::config::Config, index: String) -> Result<Self, Error> {
+        let directory = &config.stations_directory;
+
+        #[cfg(feature = "cd")]
+        if index.as_str() == config.cd_config.station {
+            return Ok(Self::CD {
+                index,
+                device: config.cd_config.device.to_string(),
+            });
+        }
+
+        #[cfg(feature = "usb")]
+        if index.as_str() == config.usb_config.station {
+            return Ok(Self::Usb {
+                index,
+                device: config.usb_config.device.to_string(),
+                path: config.usb_config.path.clone(),
+            });
+        }
+
+        for entry in stations_directory_io_error(directory, std::fs::read_dir(directory.as_str()))?
         {
             let entry = stations_directory_io_error(directory, entry)?;
             let name = entry.file_name();
@@ -130,7 +167,6 @@ impl Station {
                 {
                     "m3u" => playlist_error(parse_m3u::parse(&path, index)),
                     "pls" => playlist_error(parse_pls::parse(path, index)),
-                    "txt" => playlist_error(parse_custom::parse(path, index)),
                     "upnp" => playlist_error(parse_upnp::parse(&path, index).await),
                     extension => Err(Error::BadStationFile(
                         format!("Unsupported format: \"{}\"", extension).into(),
@@ -141,7 +177,7 @@ impl Station {
 
         Err(rradio_messages::StationError::StationNotFound {
             index: index.into(),
-            directory: directory.as_ref().display().to_string().into(),
+            directory: directory.clone(),
         })
     }
 
@@ -158,53 +194,36 @@ impl Station {
         }
     }
 
-    pub fn into_playlist(self) -> Result<Playlist, Error> {
+    pub fn index(&self) -> Option<&str> {
+        match self {
+            Station::UrlList { index, .. }
+            | Station::CD { index, .. }
+            | Station::Usb { index, .. } => Some(index.as_str()),
+            Station::Singleton { .. } => None,
+        }
+    }
+
+    pub fn into_playlist(self, metadata: Option<&PlaylistMetadata>) -> Result<Playlist, Error> {
         match self {
             Station::UrlList {
                 index,
                 title,
-                pause_before_playing,
-                show_buffer,
                 tracks,
             } => Ok(Playlist {
                 station_index: Some(index),
                 station_title: title,
                 station_type: StationType::UrlList,
-                pause_before_playing,
-                show_buffer,
                 tracks,
-                handle: Handle::default(),
+                metadata: PlaylistMetadata::default(),
+                handle: PlaylistHandle::default(),
             }),
-            #[cfg(not(all(feature = "samba", unix)))]
-            Station::SambaServer { .. } => Err(rradio_messages::MountError::SambaNotEnabled.into()),
-            #[cfg(all(feature = "samba", unix))]
-            Station::SambaServer {
-                index,
-                title,
-                credentials,
-                show_buffer,
-                remote_address,
-                shuffle,
-            } => {
-                let (handle, tracks) = mount::samba(&remote_address, &credentials, shuffle)?;
-                Ok(Playlist {
-                    station_index: Some(index),
-                    station_title: title,
-                    station_type: StationType::Samba,
-                    pause_before_playing: None,
-                    show_buffer,
-                    tracks,
-                    handle: Handle(InnerHandle::Mount(handle)),
-                })
-            }
             Station::CD { index, device } => Ok(Playlist {
                 station_index: Some(index),
                 station_title: None,
                 station_type: StationType::CD,
-                pause_before_playing: None,
-                show_buffer: None,
                 tracks: cd::tracks(&device)?,
-                handle: Handle::default(),
+                metadata: PlaylistMetadata::default(),
+                handle: PlaylistHandle::default(),
             }),
             #[cfg(not(all(feature = "usb", unix)))]
             Station::Usb { .. } => Err(rradio_messages::MountError::UsbNotEnabled.into()),
@@ -212,27 +231,25 @@ impl Station {
             Station::Usb {
                 index,
                 device,
-                shuffle,
+                path,
             } => {
-                let (handle, tracks) = mount::usb(&device, shuffle)?;
+                let (tracks, metadata, handle) = mount::usb(&device, &path, metadata)?;
                 Ok(Playlist {
                     station_index: Some(index),
                     station_title: None,
                     station_type: StationType::Usb,
-                    pause_before_playing: None,
-                    show_buffer: None,
                     tracks,
-                    handle: Handle(InnerHandle::Mount(handle)),
+                    metadata,
+                    handle,
                 })
             }
             Station::Singleton { track } => Ok(Playlist {
                 station_index: None,
                 station_title: None,
                 station_type: StationType::UrlList,
-                pause_before_playing: None,
-                show_buffer: None,
                 tracks: vec![track],
-                handle: Handle::default(),
+                metadata: PlaylistMetadata::default(),
+                handle: PlaylistHandle::default(),
             }),
         }
     }

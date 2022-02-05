@@ -170,26 +170,10 @@ pub async fn parse(path: impl AsRef<std::path::Path> + Copy, index: String) -> R
     Ok(Station::UrlList {
         index,
         title: Some(root_device.name),
-        pause_before_playing: None,
-        show_buffer: None,
         tracks: current_container
             .items
             .into_iter()
-            .map(
-                |container::Item {
-                     track_number: _,
-                     title,
-                     album,
-                     artist,
-                     url,
-                 }| Track {
-                    title,
-                    album,
-                    artist,
-                    url,
-                    is_notification: false,
-                },
-            )
+            .map(Track::from)
             .collect(),
     })
 }

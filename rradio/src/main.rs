@@ -38,6 +38,8 @@ fn main() -> Result<()> {
 
     logger.parse_new_spec(&config.log_level)?;
 
+    log::info!("Config: {:?}", config);
+
     let (shutdown_handle, shutdown_signal) = task::ShutdownSignal::new();
 
     let (pipeline_task, port_channels) = pipeline::run(config.clone())?;

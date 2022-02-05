@@ -7,7 +7,7 @@ use rradio_messages::MountError;
 
 type Result<T> = std::result::Result<T, rradio_messages::MountError>;
 
-pub fn mount(
+pub(super) fn mount(
     device: &str,
     file_system_type: &str,
     credentials: Option<&Credentials>,

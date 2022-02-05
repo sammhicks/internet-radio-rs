@@ -1,14 +1,13 @@
-use std::sync::Arc;
-use std::{convert::TryInto, time::Duration};
+use std::{collections::HashMap, convert::TryInto, sync::Arc, time::Duration};
 use tokio::sync::{broadcast, mpsc, watch};
 
-use rradio_messages::{Command, Error, LogMessage, PingTimes, PipelineError, TrackTags};
+use rradio_messages::{ArcStr, Command, Error, LogMessage, PingTimes, PipelineError, TrackTags};
 
 use super::playbin::{PipelineState, Playbin};
 use crate::{
     config::Config,
     ports::PartialPortChannels,
-    station::{Station, Track},
+    station::{PlaylistMetadata, Station, Track},
     tag::Tag,
 };
 
@@ -25,7 +24,8 @@ struct PlaylistState {
     pause_before_playing: Option<std::time::Duration>,
     tracks: Arc<[Track]>,
     current_track_index: usize,
-    _station_handle: crate::station::Handle,
+    playlist_metadata: crate::station::PlaylistMetadata,
+    _playlist_handle: crate::station::PlaylistHandle,
 }
 
 impl PlaylistState {
@@ -65,15 +65,24 @@ pub struct PlayerState {
     pub ping_times: PingTimes,
 }
 
+#[derive(Debug, Clone)]
+struct StationResumeInfo {
+    track_index: usize,
+    track_position: Duration,
+    metadata: PlaylistMetadata,
+}
+
 struct Controller {
     config: Config,
     playbin: Playbin,
     current_playlist: Option<PlaylistState>,
     published_state: PlayerState,
+    station_resume_info: HashMap<ArcStr, StationResumeInfo>,
     new_state_tx: watch::Sender<PlayerState>,
     log_message_tx: broadcast::Sender<LogMessage>,
+    queued_seek: Option<Duration>,
     #[cfg(feature = "ping")]
-    ping_requests_tx: tokio::sync::mpsc::UnboundedSender<Option<rradio_messages::ArcStr>>,
+    ping_requests_tx: tokio::sync::mpsc::UnboundedSender<Option<ArcStr>>,
 }
 
 impl Controller {
@@ -87,7 +96,7 @@ impl Controller {
     }
 
     #[cfg(feature = "ping")]
-    fn request_ping(&mut self, url: rradio_messages::ArcStr) {
+    fn request_ping(&mut self, url: ArcStr) {
         if self.ping_requests_tx.send(Some(url)).is_err() {
             log::error!("Failed to set ping request");
         }
@@ -200,10 +209,50 @@ impl Controller {
         self.log_message_tx.send(error.into()).ok();
     }
 
+    fn save_resume_info(&mut self, new_station: &str) -> Option<()> {
+        let current_station = self.published_state.current_station.as_ref().as_ref()?;
+        let current_station_index = current_station.index.as_ref()?.clone();
+
+        if new_station == current_station_index.as_str() {
+            return None;
+        }
+
+        // If track has no duration, return None
+        self.published_state.track_duration?;
+
+        let station_resume_info = StationResumeInfo {
+            track_index: self.published_state.current_track_index,
+            track_position: self.published_state.track_position?,
+            metadata: self.current_playlist.as_ref()?.playlist_metadata.clone(),
+        };
+
+        log::debug!(
+            "Saving state for {}: {:?}",
+            current_station_index,
+            station_resume_info
+        );
+
+        self.station_resume_info
+            .insert(current_station_index, station_resume_info);
+        Some(())
+    }
+
     async fn play_station(&mut self, new_station: Station) -> Result<(), Error> {
+        if let Some(index) = new_station.index() {
+            self.save_resume_info(index);
+        }
+
+        let resume_info = new_station
+            .index()
+            .and_then(|index| self.station_resume_info.remove(index));
+
         self.clear_playlist();
 
-        let playlist = new_station.into_playlist()?;
+        let playlist = new_station.into_playlist(
+            resume_info
+                .as_ref()
+                .map(|resume_info| &resume_info.metadata),
+        )?;
 
         log::debug!("Station tracks: {:?}", playlist.tracks);
 
@@ -228,11 +277,20 @@ impl Controller {
             .chain(suffix_notification)
             .collect::<Arc<_>>();
 
+        log::trace!(
+            "Resume Info for {:?}: {:?}",
+            playlist.station_index,
+            resume_info
+        );
+
         self.current_playlist = Some(PlaylistState {
-            pause_before_playing: playlist.pause_before_playing,
+            pause_before_playing: None,
             tracks: playlist_tracks.clone(),
-            current_track_index: 0,
-            _station_handle: playlist.handle,
+            current_track_index: resume_info
+                .as_ref()
+                .map_or(0, |resume_info| resume_info.track_index),
+            playlist_metadata: playlist.metadata,
+            _playlist_handle: playlist.handle,
         });
 
         self.published_state.current_station = Arc::new(Some(rradio_messages::Station {
@@ -242,7 +300,9 @@ impl Controller {
             tracks: playlist_tracks,
         }));
 
-        self.published_state.pause_before_playing = playlist.pause_before_playing;
+        self.published_state.pause_before_playing = None;
+
+        self.queued_seek = resume_info.map(|resume_info| resume_info.track_position);
 
         self.play_current_track().await
     }
@@ -267,9 +327,8 @@ impl Controller {
         log::debug!("Command: {:?}", command);
         match command {
             Command::SetChannel(index) => {
-                let new_station =
-                    Station::load(self.config.stations_directory.as_str(), index).await?;
-                self.play_station(new_station).await
+                self.play_station(Station::load(&self.config, index).await?)
+                    .await
             }
             Command::PlayPause => self.play_pause(),
             Command::SmartPreviousItem => self.smart_goto_previous_track().await,
@@ -298,10 +357,15 @@ impl Controller {
                 }
 
                 #[cfg(feature = "cd")]
-                if let Err(err) =
-                    crate::station::eject_cd(self.config.cd_config.device.as_str()).await
                 {
-                    self.broadcast_error_message(err.into());
+                    self.station_resume_info
+                        .remove(self.config.cd_config.station.as_str());
+
+                    if let Err(err) =
+                        crate::station::eject_cd(self.config.cd_config.device.as_str()).await
+                    {
+                        self.broadcast_error_message(err.into());
+                    }
                 }
 
                 #[cfg(not(feature = "cd"))]
@@ -391,6 +455,12 @@ impl Controller {
                     let state_change_target = concat!(module_path!(), "::state_change");
 
                     log::debug!(target: state_change_target, "{:?}", new_state);
+
+                    if let gstreamer::State::Playing = new_state {
+                        if let Some(position) = self.queued_seek.take() {
+                            self.seek_to(position)?;
+                        }
+                    }
                 }
                 Ok(())
             }
@@ -509,8 +579,10 @@ pub fn run(
         playbin,
         current_playlist: None,
         published_state,
+        station_resume_info: HashMap::new(),
         new_state_tx,
         log_message_tx,
+        queued_seek: None,
         #[cfg(feature = "ping")]
         ping_requests_tx,
     };
