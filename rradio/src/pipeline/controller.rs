@@ -217,8 +217,12 @@ impl Controller {
             return None;
         }
 
-        // If track has no duration, return None
-        self.published_state.track_duration?;
+        match current_station.source_type {
+            rradio_messages::StationType::UrlList => return None,
+            rradio_messages::StationType::Samba
+            | rradio_messages::StationType::CD
+            | rradio_messages::StationType::Usb => (),
+        }
 
         let station_resume_info = StationResumeInfo {
             track_index: self.published_state.current_track_index,
