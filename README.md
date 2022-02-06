@@ -34,6 +34,7 @@ Options:
   + Supported formats:
     + `.m3u` - https://en.wikipedia.org/wiki/M3U
     + `.pls` - https://en.wikipedia.org/wiki/PLS_(file_format)
+    + `.upnp` - Custom Format; See Below
 + input_timeout
   + Default: `"2s"`
   + Station indexes are two digits. This is the timeout between the first digit and the second. Uses [`humantime`](https://docs.rs/humantime/2.0.1/humantime/)
@@ -78,9 +79,21 @@ Options:
 + CD
   + Only if `cd` feature is enabled
   + Values:
-    + device - The cd drive to eject when the eject button is pressed
+    + station - The station which plays the cd
+    + device - The cd drive device
   + Defaults:
+    + station: `"00"`
     + device: `"/dev/cdrom"`
++ USB
+  + Only if `usb` feature is enabled
+  + Values:
+    + station - The station which plays the usb
+    + device - The usb device
+    + path - The directory which contains Music. Tracks must be arranged first in a folder per artist, then inside a folder per album of that artist
+  + Defaults:
+    + station: `"01"`
+    + device: `"/dev/sda1"`
+    + path: `""`
 + ping
   + Only if `ping` feature is enabled
   + Values:
@@ -98,11 +111,44 @@ Options:
   + Defaults:
     + web_app_path: `web_app`
 
+## UPnP Station Format
+
+### Single Container
+
+    [container]
+    root_description_url = "http://192.168.0.1:8200/rootDesc.xml"
+    container = "Playlists/My Playlist"
+    sort_by = "none" # Optional, defaults to "none"
+
++ `root_description_url` - The url pointing to the root description url of the UPnP device
++ `container` - The "path" of the container, i.e. a forward slash delimitered list of container names
++ `sort_by` - How to sort the tracks
+  + `none` - As per the Content Directory. This is the default
+  + `track_number`
+  + `random`
+
+### Random Container
+
+    [random_container]
+    root_description_url = "http://192.168.0.1:8200/rootDesc.xml"
+    container = "Album"
+    sort_by = "none" # Optional, defaults to "none"
+
+Same as per `[container]`, but a random container inside the specified container is chosen and all of its items are played
+
+### Flattened Container
+
+    [flattened_container]
+    root_description_url = "http://192.168.0.1:8200/rootDesc.xml"
+    container = "Folders/AC_DC"
+    sort_by = "random"
+
+Same as per `[container]`, but the playlist contains all tracks contained within subcontainers of the selected container
+
 ## Optional Features
 
 + `cd` - Support playing CDs
 + `production-server` - Bind to `0.0.0.0` over TCP
-+ `samba` - Support playing music from remote samba servers
 + `usb` - Support playing music from usb devices
 + `web` (Enabled by default) - Support for a web interface
   + `production-server` - Bind to port `80`
