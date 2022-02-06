@@ -42,24 +42,37 @@ struct RandomContainerEnvelope {
 }
 
 #[derive(Debug, serde::Deserialize)]
+struct FlattenedContainerEnvelope {
+    flattened_container: Container,
+}
+
+#[derive(Debug, serde::Deserialize)]
 #[serde(untagged)]
 enum Envelope {
-    ContainerEnvelope(ContainerEnvelope),
-    RandomContainerEnvelope(RandomContainerEnvelope),
+    Single(ContainerEnvelope),
+    Random(RandomContainerEnvelope),
+    Flattened(FlattenedContainerEnvelope),
 }
 
 impl Envelope {
     fn root_description_url(&self) -> &Url {
         match self {
-            Self::ContainerEnvelope(ContainerEnvelope {
+            Self::Single(ContainerEnvelope {
                 container:
                     Container {
                         root_description_url,
                         ..
                     },
             })
-            | Self::RandomContainerEnvelope(RandomContainerEnvelope {
+            | Self::Random(RandomContainerEnvelope {
                 random_container:
+                    Container {
+                        root_description_url,
+                        ..
+                    },
+            })
+            | Self::Flattened(FlattenedContainerEnvelope {
+                flattened_container:
                     Container {
                         root_description_url,
                         ..
@@ -70,22 +83,28 @@ impl Envelope {
 
     fn container_path(&self) -> &Path {
         match self {
-            Self::ContainerEnvelope(ContainerEnvelope {
+            Self::Single(ContainerEnvelope {
                 container: Container { container, .. },
             })
-            | Self::RandomContainerEnvelope(RandomContainerEnvelope {
+            | Self::Random(RandomContainerEnvelope {
                 random_container: Container { container, .. },
+            })
+            | Self::Flattened(FlattenedContainerEnvelope {
+                flattened_container: Container { container, .. },
             }) => container.as_path(),
         }
     }
 
     fn sort_by(&self) -> SortBy {
         match *self {
-            Self::ContainerEnvelope(ContainerEnvelope {
+            Self::Single(ContainerEnvelope {
                 container: Container { sort_by, .. },
             })
-            | Self::RandomContainerEnvelope(RandomContainerEnvelope {
+            | Self::Random(RandomContainerEnvelope {
                 random_container: Container { sort_by, .. },
+            })
+            | Self::Flattened(FlattenedContainerEnvelope {
+                flattened_container: Container { sort_by, .. },
             }) => sort_by,
         }
     }
@@ -140,9 +159,9 @@ pub async fn parse(path: impl AsRef<std::path::Path> + Copy, index: String) -> R
         .await?;
     }
 
-    match envelope {
-        Envelope::ContainerEnvelope(_) => (),
-        Envelope::RandomContainerEnvelope(_) => {
+    let mut items = match envelope {
+        Envelope::Single(_) => current_container.items,
+        Envelope::Random(_) => {
             if current_container.containers.is_empty() {
                 anyhow::bail!("Container contains no containers");
             }
@@ -150,30 +169,43 @@ pub async fn parse(path: impl AsRef<std::path::Path> + Copy, index: String) -> R
                 .containers
                 .remove(rand::thread_rng().gen_range(0..current_container.containers.len()));
 
-            current_container = container::fetch(
+            container::fetch(
                 &client,
                 &root_device.content_directory_control_url,
                 reference,
             )
-            .await?;
+            .await?
+            .items
         }
-    }
+        Envelope::Flattened(_) => {
+            let mut items = current_container.items;
+            let mut containers = current_container.containers;
+
+            while let Some(container) = containers.pop() {
+                let mut new_container = container::fetch(
+                    &client,
+                    &root_device.content_directory_control_url,
+                    container,
+                )
+                .await?;
+
+                items.append(&mut new_container.items);
+                containers.append(&mut new_container.containers);
+            }
+
+            items
+        }
+    };
 
     match envelope.sort_by() {
         SortBy::None => (),
-        SortBy::TrackNumber => current_container
-            .items
-            .sort_by_key(|item| item.track_number),
-        SortBy::Random => current_container.items.shuffle(&mut rand::thread_rng()),
+        SortBy::TrackNumber => items.sort_by_key(|item| item.track_number),
+        SortBy::Random => items.shuffle(&mut rand::thread_rng()),
     }
 
     Ok(Station::UrlList {
         index,
         title: Some(root_device.name),
-        tracks: current_container
-            .items
-            .into_iter()
-            .map(Track::from)
-            .collect(),
+        tracks: items.into_iter().map(Track::from).collect(),
     })
 }
