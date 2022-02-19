@@ -6,4 +6,4 @@ mod wait_group;
 
 pub use log_error::FailableFuture;
 pub use shutdown::Signal as ShutdownSignal;
-pub use wait_group::WaitGroup;
+pub use wait_group::{Handle as WaitGroupHandle, WaitGroup};
