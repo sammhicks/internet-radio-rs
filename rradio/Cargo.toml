@@ -35,7 +35,6 @@ gstreamer-audio = "0.17"
 gstreamer-sys = "0.17"
 humantime-serde = "1.0"
 log = { version = "0.4", features = ["std"] }
-m3u = "1.0"
 pnet = { version = "0.28", optional = true }
 pnet_macros_support = { version = "0.28", optional = true }
 pls = "0.2"
