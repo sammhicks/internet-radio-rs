@@ -161,22 +161,28 @@ pub async fn parse(path: impl AsRef<std::path::Path> + Copy, index: String) -> R
 
     let mut items = match envelope {
         Envelope::Single(_) => current_container.items,
-        Envelope::Random(_) => {
+        Envelope::Random(_) => loop {
+            if !current_container.items.is_empty() {
+                break current_container.items;
+            }
+
             if current_container.containers.is_empty() {
                 anyhow::bail!("Container contains no containers");
             }
+
             let reference = current_container
                 .containers
                 .remove(rand::thread_rng().gen_range(0..current_container.containers.len()));
 
-            container::fetch(
+            log::trace!("Selecting container {:?}", reference.title);
+
+            current_container = container::fetch(
                 &client,
                 &root_device.content_directory_control_url,
                 reference,
             )
-            .await?
-            .items
-        }
+            .await?;
+        },
         Envelope::Flattened(_) => {
             let mut items = current_container.items;
             let mut containers = current_container.containers;
