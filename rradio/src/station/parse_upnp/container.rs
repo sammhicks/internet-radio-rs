@@ -125,7 +125,7 @@ pub async fn fetch(
     control_url: &str,
     Reference { id, title }: Reference,
 ) -> Result<Container> {
-    log::trace!("Fetching {}", id);
+    log::trace!("Fetching {} - {}", id, title);
 
     let body = Request { object_id: &id }.to_string();
 

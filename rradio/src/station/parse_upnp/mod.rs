@@ -174,8 +174,6 @@ pub async fn parse(path: impl AsRef<std::path::Path> + Copy, index: String) -> R
                 .containers
                 .remove(rand::thread_rng().gen_range(0..current_container.containers.len()));
 
-            log::trace!("Selecting container {:?}", reference.title);
-
             current_container = container::fetch(
                 &client,
                 &root_device.content_directory_control_url,
