@@ -153,6 +153,12 @@ impl<T> OptionDiff<T> {
     }
 }
 
+impl<T> From<OptionDiff<T>> for Option<Option<T>> {
+    fn from(diff: OptionDiff<T>) -> Self {
+        diff.into_option()
+    }
+}
+
 impl<T> std::convert::From<Option<T>> for OptionDiff<T> {
     fn from(maybe_t: Option<T>) -> Self {
         match maybe_t {
@@ -210,6 +216,12 @@ pub enum PingTimes {
     FinishedPingingRemote {
         gateway_ping: Duration,
     },
+}
+
+impl Default for PingTimes {
+    fn default() -> Self {
+        Self::None
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]

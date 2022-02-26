@@ -1,3 +1,4 @@
+use anyhow::Context;
 use futures::{SinkExt, StreamExt};
 use tokio::sync::oneshot;
 use warp::{Filter, Reply};
@@ -44,7 +45,10 @@ fn handle_websocket(
                             break;
                         }
 
-                        commands.send(rmp_serde::from_slice(message.as_bytes())?)?;
+                        commands.send(
+                            rmp_serde::from_read_ref(message.as_bytes())
+                                .context("Failed to decode Command")?,
+                        )?;
                     }
 
                     drop(shutdown_tx);
