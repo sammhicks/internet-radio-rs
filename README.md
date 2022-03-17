@@ -4,6 +4,14 @@
 
 + `RRADIO_CONFIG_PATH` - The default location of the config path if not set using command line option `-c`. Defaults to `config.toml`
 
+### Notable Dependencies
+
+Most dependencies are pure Rust, and thus Cargo handles them without problem.
+However, there are a couple of exceptions
+
++ [gstreamer](https://gitlab.freedesktop.org/gstreamer/gstreamer-rs)
++ [pnet ("`ping`" feature only)](https://github.com/libpnet/libpnet)
+
 ## Example Config file
     stations_directory = "stations"
     input_timeout = "2s"
