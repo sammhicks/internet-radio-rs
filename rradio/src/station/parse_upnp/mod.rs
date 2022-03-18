@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use rand::{prelude::SliceRandom, Rng};
@@ -25,10 +25,14 @@ impl Default for SortBy {
 
 #[derive(Debug, serde::Deserialize)]
 struct Container {
+    #[serde(default)]
+    station_title: Option<String>,
     root_description_url: Url,
     container: PathBuf,
     #[serde(default)]
     sort_by: SortBy,
+    #[serde(default)]
+    limit_track_count: Option<usize>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -55,57 +59,15 @@ enum Envelope {
 }
 
 impl Envelope {
-    fn root_description_url(&self) -> &Url {
+    fn container(&self) -> &Container {
         match self {
-            Self::Single(ContainerEnvelope {
-                container:
-                    Container {
-                        root_description_url,
-                        ..
-                    },
+            Envelope::Single(ContainerEnvelope { container })
+            | Envelope::Random(RandomContainerEnvelope {
+                random_container: container,
             })
-            | Self::Random(RandomContainerEnvelope {
-                random_container:
-                    Container {
-                        root_description_url,
-                        ..
-                    },
-            })
-            | Self::Flattened(FlattenedContainerEnvelope {
-                flattened_container:
-                    Container {
-                        root_description_url,
-                        ..
-                    },
-            }) => root_description_url,
-        }
-    }
-
-    fn container_path(&self) -> &Path {
-        match self {
-            Self::Single(ContainerEnvelope {
-                container: Container { container, .. },
-            })
-            | Self::Random(RandomContainerEnvelope {
-                random_container: Container { container, .. },
-            })
-            | Self::Flattened(FlattenedContainerEnvelope {
-                flattened_container: Container { container, .. },
-            }) => container.as_path(),
-        }
-    }
-
-    fn sort_by(&self) -> SortBy {
-        match *self {
-            Self::Single(ContainerEnvelope {
-                container: Container { sort_by, .. },
-            })
-            | Self::Random(RandomContainerEnvelope {
-                random_container: Container { sort_by, .. },
-            })
-            | Self::Flattened(FlattenedContainerEnvelope {
-                flattened_container: Container { sort_by, .. },
-            }) => sort_by,
+            | Envelope::Flattened(FlattenedContainerEnvelope {
+                flattened_container: container,
+            }) => container,
         }
     }
 }
@@ -119,6 +81,8 @@ pub async fn parse(path: impl AsRef<std::path::Path> + Copy, index: String) -> R
     let envelope = toml::from_str::<Envelope>(&file)
         .with_context(|| format!(r#"Failed to parse "{}""#, path.as_ref().display()))?;
 
+    log::debug!("Station: {:?}", envelope);
+
     let client = reqwest::Client::builder()
         .user_agent("rradio")
         .build()
@@ -126,7 +90,7 @@ pub async fn parse(path: impl AsRef<std::path::Path> + Copy, index: String) -> R
 
     let root_device = root_description::get_content_directory_control_path(
         &client,
-        envelope.root_description_url().clone(),
+        envelope.container().root_description_url.clone(),
     )
     .await?;
 
@@ -140,7 +104,7 @@ pub async fn parse(path: impl AsRef<std::path::Path> + Copy, index: String) -> R
     )
     .await?;
 
-    for section in envelope.container_path() {
+    for section in envelope.container().container.as_path() {
         let section = section.to_str().context("Bad path")?;
 
         let title = current_container.title;
@@ -201,15 +165,23 @@ pub async fn parse(path: impl AsRef<std::path::Path> + Copy, index: String) -> R
         }
     };
 
-    match envelope.sort_by() {
+    match envelope.container().sort_by {
         SortBy::None => (),
         SortBy::TrackNumber => items.sort_by_key(|item| item.track_number),
         SortBy::Random => items.shuffle(&mut rand::thread_rng()),
     }
 
+    if let Some(limit_track_count) = envelope.container().limit_track_count {
+        items.truncate(limit_track_count);
+    }
+
     Ok(Station::UrlList {
         index,
-        title: Some(root_device.name),
+        title: envelope
+            .container()
+            .station_title
+            .clone()
+            .or(Some(root_device.name)),
         tracks: items.into_iter().map(Track::from).collect(),
     })
 }

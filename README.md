@@ -124,9 +124,12 @@ Options:
 ### Single Container
 
     [container]
+    station_title = "UPnP - Single Container" # Optional, defaults to UPnP Media Server name
     root_description_url = "http://192.168.0.1:8200/rootDesc.xml"
     container = "Playlists/My Playlist"
     sort_by = "none" # Optional, defaults to "none"
+    limit_track_count = 20 # Optional, defaults to unlimited
+
 
 + `root_description_url` - The url pointing to the root description url of the UPnP device
 + `container` - The "path" of the container, i.e. a forward slash delimitered list of container names
@@ -138,18 +141,22 @@ Options:
 ### Random Container
 
     [random_container]
+    station_title = "UPnP - Random Container"
     root_description_url = "http://192.168.0.1:8200/rootDesc.xml"
     container = "Album"
     sort_by = "none" # Optional, defaults to "none"
+    limit_track_count = 20 # Optional, defaults to unlimited
 
 Same as per `[container]`, but a random container inside the specified container is chosen and all of its items are played
 
 ### Flattened Container
 
     [flattened_container]
+    station_title = "UPnP - Flattened Container"
     root_description_url = "http://192.168.0.1:8200/rootDesc.xml"
     container = "Folders/AC_DC"
     sort_by = "random"
+    limit_track_count = 20 # Optional, defaults to unlimited
 
 Same as per `[container]`, but the playlist contains all tracks contained within subcontainers of the selected container
 
