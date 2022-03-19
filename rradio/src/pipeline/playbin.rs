@@ -34,7 +34,7 @@ impl Playbin {
             .context("Failed to create a playbin")?;
 
         let flags = playbin_element
-            .property("flags")
+            .try_property_value("flags")
             .context("Failed to get the playbin flags")?;
         let flags_class =
             glib::FlagsClass::new(flags.type_()).context("Failed to create a flags class")?;
@@ -46,7 +46,7 @@ impl Playbin {
             .build()
             .context("Failed to set flags")?;
         playbin_element
-            .set_property("flags", &flags)
+            .try_set_property_from_value("flags", &flags)
             .context("Failed to set playbin flags")?;
 
         if let Some(buffering_duration) = config.buffering_duration {
@@ -56,7 +56,7 @@ impl Playbin {
                 .context("Bad buffer duration")?;
 
             playbin_element
-                .set_property("buffer-duration", &duration_nanos)
+                .try_set_property("buffer-duration", &duration_nanos)
                 .context("Failed to set buffer duration")?;
         }
 
@@ -106,7 +106,7 @@ impl Playbin {
     pub fn set_url(&self, url: &str) -> Result<(), PipelineError> {
         self.set_pipeline_state(PipelineState::Null)?;
         self.0
-            .set_property("uri", &glib::Value::from(url))
+            .try_set_property("uri", &glib::Value::from(url))
             .map_err(|err| {
                 rradio_messages::PipelineError(
                     format!("Unable to set the playbin url to {:?}: {}", url, err).into(),
