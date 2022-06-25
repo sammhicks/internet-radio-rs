@@ -59,7 +59,7 @@ impl std::fmt::Display for PipelineState {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Track {
     pub title: Option<ArcStr>,
     pub album: Option<ArcStr>,
@@ -93,6 +93,7 @@ impl Track {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub enum StationType {
     UrlList,
+    UPnP,
     Samba,
     CD,
     Usb,
@@ -102,6 +103,7 @@ impl std::fmt::Display for StationType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.pad(match self {
             Self::UrlList => "URL List",
+            Self::UPnP => "UPnP",
             Self::Samba => "Samba Server",
             Self::CD => "CD",
             Self::Usb => "USB",
@@ -304,6 +306,8 @@ pub enum StationError {
     CdError(#[from] CdError),
     #[error("Mount Error: {0}")]
     MountError(#[from] MountError),
+    #[error("UPnP Error: {0}")]
+    UPnPError(ArcStr),
     #[error("Failed to read from stations directory {directory:?}: {err}")]
     StationsDirectoryIoError { directory: ArcStr, err: ArcStr },
     #[error("Station {index} not found in {directory}")]

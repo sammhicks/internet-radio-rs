@@ -129,6 +129,7 @@ Options:
     container = "Playlists/My Playlist"
     sort_by = "none" # Optional, defaults to "none"
     limit_track_count = 20 # Optional, defaults to unlimited
+    filter_upnp_class = "object.item.audioItem.musicTrack" # Optional, defaults to not filtering
 
 
 + `root_description_url` - The url pointing to the root description url of the UPnP device

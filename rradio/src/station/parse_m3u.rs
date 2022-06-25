@@ -3,9 +3,9 @@ use anyhow::{Context, Result};
 use super::{Station, Track};
 
 /// Parse an [M3U playlist](https://en.wikipedia.org/wiki/M3U)
-pub fn parse(path: impl AsRef<std::path::Path> + Copy, index: String) -> Result<Station> {
+pub fn parse(path: &std::path::Path, index: String) -> Result<Station> {
     let playlist_text = std::fs::read_to_string(path)
-        .with_context(|| format!("Failed to read {}", path.as_ref().display()))?;
+        .with_context(|| format!("Failed to read {}", path.display()))?;
 
     parse_from_str(&playlist_text, index)
 }

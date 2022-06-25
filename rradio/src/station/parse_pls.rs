@@ -3,7 +3,7 @@ use anyhow::{Error, Result};
 use super::{Station, Track};
 
 /// Parse a [PLS playlist](https://en.wikipedia.org/wiki/PLS_(file_format))
-pub fn parse(path: impl AsRef<std::path::Path>, index: String) -> Result<Station> {
+pub fn parse(path: &std::path::Path, index: String) -> Result<Station> {
     let mut reader = std::fs::File::open(path)?;
     let maybe_tracks = pls::parse(&mut reader)
         .map(|entries| {

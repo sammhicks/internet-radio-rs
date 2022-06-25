@@ -219,7 +219,8 @@ impl Controller {
 
         match current_station.source_type {
             rradio_messages::StationType::UrlList => return None,
-            rradio_messages::StationType::Samba
+            rradio_messages::StationType::UPnP
+            | rradio_messages::StationType::Samba
             | rradio_messages::StationType::CD
             | rradio_messages::StationType::Usb => (),
         }
@@ -252,11 +253,13 @@ impl Controller {
 
         self.clear_playlist();
 
-        let playlist = new_station.into_playlist(
-            resume_info
-                .as_ref()
-                .map(|resume_info| &resume_info.metadata),
-        )?;
+        let playlist = new_station
+            .into_playlist(
+                resume_info
+                    .as_ref()
+                    .map(|resume_info| &resume_info.metadata),
+            )
+            .await?;
 
         log::debug!("Station tracks: {:?}", playlist.tracks);
 
@@ -331,8 +334,7 @@ impl Controller {
         log::debug!("Command: {:?}", command);
         match command {
             Command::SetChannel(index) => {
-                self.play_station(Station::load(&self.config, index).await?)
-                    .await
+                self.play_station(Station::load(&self.config, index)?).await
             }
             Command::PlayPause => self.play_pause(),
             Command::SmartPreviousItem => self.smart_goto_previous_track().await,
@@ -508,7 +510,12 @@ impl Controller {
                 } else {
                     ""
                 };
-                let message = format!("{}{} ({:?})", prefix, err.error(), err.debug());
+                let message = format!(
+                    "GStreamer Error: {}{} ({:?})",
+                    prefix,
+                    err.error(),
+                    err.debug()
+                );
                 let error = Error::PipelineError(PipelineError(message.into()));
                 if self.config.play_error_sound_on_gstreamer_error {
                     Err(error)

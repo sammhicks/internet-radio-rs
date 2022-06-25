@@ -46,6 +46,8 @@ pub struct Reference {
 #[derive(Default, serde::Deserialize)]
 #[serde(default)]
 struct ItemDerive {
+    #[serde(rename = "class")]
+    upnp_class: String,
     #[serde(rename = "originalTrackNumber")]
     track_number: usize,
     title: Vec<String>,
@@ -57,6 +59,7 @@ struct ItemDerive {
 
 #[derive(Debug)]
 pub struct Item {
+    pub upnp_class: String,
     pub track_number: usize,
     pub title: Option<ArcStr>,
     pub album: Option<ArcStr>,
@@ -71,15 +74,22 @@ impl<'de> serde::Deserialize<'de> for Item {
     {
         use serde::de::Error;
 
-        let item = ItemDerive::deserialize(deserializer)?;
+        let ItemDerive {
+            upnp_class,
+            track_number,
+            title,
+            album,
+            artist,
+            urls,
+        } = ItemDerive::deserialize(deserializer)?;
 
         Ok(Self {
-            track_number: item.track_number,
-            title: map_into(item.title.into_iter().next()),
-            album: map_into(item.album.into_iter().next()),
-            artist: map_into(item.artist.into_iter().next()),
-            url: item
-                .urls
+            upnp_class,
+            track_number,
+            title: map_into(title.into_iter().next()),
+            album: map_into(album.into_iter().next()),
+            artist: map_into(artist.into_iter().next()),
+            url: urls
                 .into_iter()
                 .next()
                 .ok_or_else(|| D::Error::missing_field("res"))?
@@ -91,6 +101,7 @@ impl<'de> serde::Deserialize<'de> for Item {
 impl From<Item> for rradio_messages::Track {
     fn from(item: Item) -> Self {
         let Item {
+            upnp_class: _,
             track_number: _,
             title,
             album,
@@ -154,8 +165,10 @@ pub async fn fetch(
         .result
         .body;
 
-    let DidlRoot { containers, items } = quick_xml::de::from_str::<DidlRoot>(&browse_result)
-        .context("Failed to parse Soap Payload")?;
+    log::trace!("{browse_result}");
+
+    let DidlRoot { containers, items } =
+        quick_xml::de::from_str(&browse_result).context("Failed to parse Soap Payload")?;
 
     Ok(Container {
         title,

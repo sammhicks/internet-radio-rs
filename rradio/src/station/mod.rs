@@ -35,7 +35,6 @@ pub struct Credentials {
 pub struct PlaylistMetadata(Arc<dyn Any + Send + Sync>);
 
 impl PlaylistMetadata {
-    #[cfg(feature = "mount")]
     fn new(metadata: impl Any + Send + Sync + 'static) -> Self {
         Self(Arc::new(metadata))
     }
@@ -89,7 +88,7 @@ pub struct Playlist {
 }
 
 /// A station in rradio
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum Station {
     UrlList {
         index: String,
@@ -107,6 +106,7 @@ pub enum Station {
         device: String,
         path: std::path::PathBuf,
     },
+    Upnp(parse_upnp::Station),
     Singleton {
         track: Track,
     },
@@ -128,7 +128,7 @@ fn playlist_error<T>(result: anyhow::Result<T>) -> Result<T, Error> {
 
 impl Station {
     /// Load the station with the given index from the given directory, if the index exists
-    pub async fn load(config: &crate::config::Config, index: String) -> Result<Self, Error> {
+    pub fn load(config: &crate::config::Config, index: String) -> Result<Self, Error> {
         let directory = &config.stations_directory;
 
         #[cfg(feature = "cd")]
@@ -163,8 +163,8 @@ impl Station {
                     .as_ref()
                 {
                     "m3u" => playlist_error(parse_m3u::parse(&path, index)),
-                    "pls" => playlist_error(parse_pls::parse(path, index)),
-                    "upnp" => playlist_error(parse_upnp::parse(&path, index).await),
+                    "pls" => playlist_error(parse_pls::parse(&path, index)),
+                    "upnp" => playlist_error(parse_upnp::parse(&path, index)),
                     extension => Err(Error::BadStationFile(
                         format!("Unsupported format: \"{}\"", extension).into(),
                     )),
@@ -198,15 +198,16 @@ impl Station {
             Station::CD { index, .. } => Some(index.as_str()),
             #[cfg(feature = "usb")]
             Station::Usb { index, .. } => Some(index.as_str()),
+            Station::Upnp(station) => Some(station.index()),
             Station::Singleton { .. } => None,
         }
     }
 
     #[allow(clippy::unnecessary_wraps)]
-    pub fn into_playlist(self, metadata: Option<&PlaylistMetadata>) -> Result<Playlist, Error> {
-        #[cfg(not(feature = "usb"))]
-        let _ = metadata;
-
+    pub async fn into_playlist(
+        self,
+        metadata: Option<&PlaylistMetadata>,
+    ) -> Result<Playlist, Error> {
         match self {
             Station::UrlList {
                 index,
@@ -245,6 +246,10 @@ impl Station {
                     handle,
                 })
             }
+            Station::Upnp(station) => station
+                .into_playlist(metadata)
+                .await
+                .map_err(|err| rradio_messages::StationError::UPnPError(err.to_string().into())),
             Station::Singleton { track } => Ok(Playlist {
                 station_index: None,
                 station_title: None,

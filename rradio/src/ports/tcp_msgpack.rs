@@ -26,7 +26,9 @@ fn extract_eof<T: std::fmt::Debug>(result: Result<T>) -> Option<Result<T>> {
         Ok(success) => Some(Ok(success)),
         Err(err) => {
             if let Some(io_error) = err.downcast_ref::<std::io::Error>() {
-                if let std::io::ErrorKind::UnexpectedEof = io_error.kind() {
+                if let std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::UnexpectedEof =
+                    io_error.kind()
+                {
                     return None;
                 }
             }
