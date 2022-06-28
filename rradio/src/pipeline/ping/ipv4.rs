@@ -55,7 +55,7 @@ impl<'a> IcmpTransportChannelIterator<'a> {
     ) -> Result<Option<(IcmpPacket<'_>, IpAddr)>, PingError> {
         self.0.next_with_timeout(timeout).map_err(|io_err| {
             let err = PingError::FailedToRecieveICMP;
-            log::error!("{}: {}", err, io_err);
+            tracing::error!("{}: {}", err, io_err);
             err
         })
     }
@@ -74,7 +74,7 @@ impl<'a> IcmpTransportChannelIterator<'a> {
     ) -> Result<(IcmpPacket<'_>, IpAddr), PingError> {
         self.0.next().map_err(|io_err| {
             let err = PingError::FailedToRecieveICMP;
-            log::error!("{}: {}", err, io_err);
+            tracing::error!("{}: {}", err, io_err);
             err
         })
     }
@@ -92,7 +92,7 @@ impl Pinger {
     }
 
     pub fn ping(&mut self, address: Ipv4Addr) -> Result<Duration, PingError> {
-        log::debug!("Pinging {}", address);
+        tracing::debug!("Pinging {}", address);
 
         let mut packet_iter = IcmpTransportChannelIterator(icmp_packet_iter(&mut self.receiver));
 
@@ -113,38 +113,38 @@ impl Pinger {
             .send_to(echo_packet, address.into())
             .map_err(|io_err| {
                 let err = PingError::FailedToSendICMP;
-                log::error!("{} to {}: {}", err, address, io_err);
+                tracing::error!("{} to {}: {}", err, address, io_err);
                 err
             })?;
 
         let send_time = Instant::now();
 
         loop {
-            log::trace!("Waiting for next icmp message");
+            tracing::trace!("Waiting for next icmp message");
 
             let (packet, remote_address) = packet_iter.next(std::time::Duration::from_secs(4))?;
             let ping_time = Instant::now().saturating_duration_since(send_time);
 
             match packet.get_icmp_type() {
-                IcmpTypes::EchoReply => log::trace!("Got ping reply"),
+                IcmpTypes::EchoReply => tracing::trace!("Got ping reply"),
                 IcmpTypes::DestinationUnreachable => {
                     let err = PingError::DestinationUnreachable;
-                    log::error!("{}: {}", err, address);
+                    tracing::error!("{}: {}", err, address);
                     return Err(err);
                 }
                 icmp_type => {
-                    log::debug!("Ignoring {:?}", icmp_type);
+                    tracing::debug!("Ignoring {:?}", icmp_type);
                     continue;
                 }
             }
 
             if packet.get_icmp_code() != IcmpCodes::NoCode {
-                log::debug!("Ignoring Invalid ICMP Packet");
+                tracing::debug!("Ignoring Invalid ICMP Packet");
                 continue;
             }
 
             if remote_address != address {
-                log::debug!(
+                tracing::debug!(
                     "Ignoring Unexpected ping response from {:<16}:",
                     remote_address
                 );
@@ -155,7 +155,7 @@ impl Pinger {
 
             let echo_sequence_number = echo_packet.get_sequence_number();
             if sequence_number != echo_sequence_number {
-                log::debug!(
+                tracing::debug!(
                     "IPV4 packet with invalid sequence number: Request: {}; Response: {}",
                     sequence_number,
                     echo_sequence_number
@@ -165,7 +165,7 @@ impl Pinger {
 
             let echo_identifier = echo_packet.get_identifier();
             if identifier != echo_identifier {
-                log::debug!(
+                tracing::debug!(
                     "IPV4 packet with invalid identifier: Request: {}; Response: {}",
                     identifier,
                     echo_identifier
@@ -173,7 +173,7 @@ impl Pinger {
                 continue; // Ignore unexpected packet
             }
 
-            log::info!(
+            tracing::info!(
                 "Ping time to {:>16}: {:.3}ms",
                 address,
                 ping_time.as_secs_f32() * 1000.0

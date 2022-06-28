@@ -53,11 +53,11 @@ fn handle_websocket(
 
                     drop(shutdown_tx);
 
-                    log::debug!("Close message received");
+                    tracing::debug!("Close message received");
 
                     Ok(())
                 }
-                .log_error(std::module_path!()),
+                .log_error(),
             );
 
             let events = super::event_stream(
@@ -86,7 +86,7 @@ fn handle_websocket(
 
             Ok(())
         }
-        .log_error(std::module_path!())
+        .log_error()
     })
 }
 
@@ -136,13 +136,13 @@ pub async fn run(port_channels: super::PortChannels, web_app_path: String) {
     let (server_addr, server) =
         warp::serve(filter).bind_with_graceful_shutdown(socket_addr, ws_shutdown_signal.wait());
 
-    log::info!("Listening on {}", server_addr);
+    tracing::info!("Listening on {}", server_addr);
 
     server.await;
 
-    log::debug!("Shutting down");
+    tracing::debug!("Shutting down");
 
     wait_group.wait().await;
 
-    log::debug!("Shut down");
+    tracing::debug!("Shut down");
 }

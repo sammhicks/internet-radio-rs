@@ -23,7 +23,7 @@ enum PingInterruption {
 
 impl From<mpsc::error::SendError<PingTimes>> for PingInterruption {
     fn from(_: mpsc::error::SendError<PingTimes>) -> Self {
-        log::error!("Could not send ping times");
+        tracing::error!("Could not send ping times");
         Self::Finished
     }
 }
@@ -44,7 +44,7 @@ impl Pinger {
         match url::Url::parse(&url_str) {
             Ok(parsed_url) => Ok((url_str, parsed_url)),
             Err(err) => {
-                log::error!("Bad url ({:?}): {}", url_str, err);
+                tracing::error!("Bad url ({:?}): {}", url_str, err);
                 self.ping_times.send(PingTimes::BadUrl)?;
                 Err(PingInterruption::SuspendUntilNewTrack)
             }
@@ -76,7 +76,7 @@ impl Pinger {
                 Ok(ping_time)
             }
             Err(err) => {
-                log::error!("Failed to ping {} ({:?}): {}", name, address, err);
+                tracing::error!("Failed to ping {} ({:?}): {}", name, address, err);
                 self.ping_times.send(f(Err(err)))?;
                 Err(FailedToPing(err))
             }
@@ -108,7 +108,7 @@ impl Pinger {
             match std::net::ToSocketAddrs::to_socket_addrs(&(host, 0)) {
                 Ok(addrs) => break addrs,
                 Err(err) => {
-                    log::error!("Could not resolve DNS ({:?}): {}", host, err);
+                    tracing::error!("Could not resolve DNS ({:?}): {}", host, err);
                     self.ping_times
                         .send(rradio_messages::PingTimes::GatewayAndRemote {
                             gateway_ping,
@@ -123,12 +123,12 @@ impl Pinger {
             match address {
                 SocketAddr::V4(ipv4_address) => return Ok(*ipv4_address.ip()),
                 SocketAddr::V6(ipv6_address) => {
-                    log::debug!("Ignoring ipv6 address ({:?}): {}", host, ipv6_address);
+                    tracing::debug!("Ignoring ipv6 address ({:?}): {}", host, ipv6_address);
                 }
             }
         }
 
-        log::error!("No addresses ({:?})", host);
+        tracing::error!("No addresses ({:?})", host);
         Err(PingInterruption::SuspendUntilNewTrack)
     }
 
@@ -137,7 +137,7 @@ impl Pinger {
         track_url_str: ArcStr,
         ping_remote_forever: bool,
     ) -> Result<Never, PingInterruption> {
-        log::debug!(
+        tracing::debug!(
             "Running sequence: track_url_str - {:?}, ping_remote_forever - {}",
             track_url_str,
             ping_remote_forever
@@ -147,23 +147,23 @@ impl Pinger {
 
         let scheme = track_url.scheme();
         if let "file" | "cdda" = scheme {
-            log::info!("Ignoring {}", scheme);
+            tracing::info!("Ignoring {}", scheme);
             return Err(PingInterruption::SuspendUntilNewTrack);
         }
 
         let host = track_url.host_str().ok_or_else(|| {
-            log::error!("No host ({:?})", track_url_str);
+            tracing::error!("No host ({:?})", track_url_str);
             PingInterruption::SuspendUntilNewTrack
         })?;
 
         let remote_address = self.get_remote_address(host).await?;
 
-        log::trace!("Remote address: {}", remote_address);
+        tracing::trace!("Remote address: {}", remote_address);
 
         let mut maybe_remote_ping = None;
 
         'retry: loop {
-            log::trace!("Checking gateway ping");
+            tracing::trace!("Checking gateway ping");
             let mut gateway_ping = match self
                 .ping_gateway(|gateway_ping| match (gateway_ping, maybe_remote_ping) {
                     (Err(err), _) => PingTimes::Gateway(Err(err)),
@@ -180,7 +180,7 @@ impl Pinger {
                 Err(FailedToPing(_err)) => continue 'retry,
             };
 
-            log::trace!("Pinging gateway and remote");
+            tracing::trace!("Pinging gateway and remote");
 
             let mut remote_pings_remaining = self.ping_count;
 
@@ -222,7 +222,7 @@ impl Pinger {
 
             maybe_remote_ping.take();
 
-            log::trace!("Finished pinging remote.");
+            tracing::trace!("Finished pinging remote.");
 
             loop {
                 if self
@@ -243,7 +243,7 @@ impl Pinger {
         let initial_url_str = rradio_messages::arcstr::format!("http://{}", initial_ping_address);
         let mut track_url_str = {
             let interruption = self.run_sequence(initial_url_str, true).await.unwrap_err();
-            log::trace!("Ping Interruption: {:?}", interruption);
+            tracing::trace!("Ping Interruption: {:?}", interruption);
             match interruption {
                 PingInterruption::Finished => return,
                 PingInterruption::SuspendUntilNewTrack => loop {
@@ -259,7 +259,7 @@ impl Pinger {
 
         loop {
             let interruption = self.run_sequence(track_url_str, false).await.unwrap_err();
-            log::trace!("Ping Interruption: {:?}", interruption);
+            tracing::trace!("Ping Interruption: {:?}", interruption);
             track_url_str = match interruption {
                 PingInterruption::Finished => return,
                 PingInterruption::SuspendUntilNewTrack => loop {
@@ -291,7 +291,7 @@ pub fn run(
 
     let (ping_time_tx, ping_time_rx) = mpsc::unbounded_channel();
 
-    log::info!("Gateway address: {:?}", config.gateway_address);
+    tracing::info!("Gateway address: {:?}", config.gateway_address);
 
     let task = Pinger {
         gateway_address: config.gateway_address,

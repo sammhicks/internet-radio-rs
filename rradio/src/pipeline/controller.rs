@@ -88,9 +88,9 @@ struct Controller {
 impl Controller {
     #[cfg(feature = "ping")]
     fn clear_ping(&mut self) {
-        log::info!("Clearing ping");
+        tracing::info!("Clearing ping");
         if self.ping_requests_tx.send(None).is_err() {
-            log::error!("Failed to clear ping requests");
+            tracing::error!("Failed to clear ping requests");
         }
         self.handle_ping_times(PingTimes::None);
     }
@@ -98,7 +98,7 @@ impl Controller {
     #[cfg(feature = "ping")]
     fn request_ping(&mut self, url: ArcStr) {
         if self.ping_requests_tx.send(Some(url)).is_err() {
-            log::error!("Failed to set ping request");
+            tracing::error!("Failed to set ping request");
         }
     }
 
@@ -126,7 +126,7 @@ impl Controller {
         self.published_state.current_track_index = current_playlist.current_track_index;
         self.published_state.current_track_tags = Arc::new(None);
         if let Some(pause_duration) = pause_before_playing {
-            log::info!("Pausing for {}s", pause_duration.as_secs());
+            tracing::info!("Pausing for {}s", pause_duration.as_secs());
             self.playbin.set_pipeline_state(PipelineState::Paused)?;
             self.broadcast_state_change();
             tokio::time::sleep(pause_duration).await;
@@ -192,7 +192,7 @@ impl Controller {
 
         if let Some(url) = &self.config.notifications.error {
             if let Err(err) = self.playbin.play_url(url.as_str()) {
-                log::error!("{:#}", err);
+                tracing::error!("{:#}", err);
             }
         }
     }
@@ -205,7 +205,7 @@ impl Controller {
     }
 
     fn broadcast_error_message(&mut self, error: Error) {
-        log::error!("{}", error);
+        tracing::error!("{}", error);
         self.log_message_tx.send(error.into()).ok();
     }
 
@@ -231,7 +231,7 @@ impl Controller {
             metadata: self.current_playlist.as_ref()?.playlist_metadata.clone(),
         };
 
-        log::debug!(
+        tracing::debug!(
             "Saving state for {}: {:?}",
             current_station_index,
             station_resume_info
@@ -261,7 +261,7 @@ impl Controller {
             )
             .await?;
 
-        log::debug!("Station tracks: {:?}", playlist.tracks);
+        tracing::debug!("Station tracks: {:?}", playlist.tracks);
 
         let prefix_notification = self
             .config
@@ -284,7 +284,7 @@ impl Controller {
             .chain(suffix_notification)
             .collect::<Arc<_>>();
 
-        log::trace!(
+        tracing::trace!(
             "Resume Info for {:?}: {:?}",
             playlist.station_index,
             resume_info
@@ -331,7 +331,7 @@ impl Controller {
     }
 
     async fn handle_command(&mut self, command: Command) -> Result<(), Error> {
-        log::debug!("Command: {:?}", command);
+        tracing::debug!("Command: {:?}", command);
         match command {
             Command::SetChannel(index) => {
                 self.play_station(Station::load(&self.config, index)?).await
@@ -375,7 +375,7 @@ impl Controller {
                 }
 
                 #[cfg(not(feature = "cd"))]
-                log::info!("Ignoring Eject");
+                tracing::info!("Ignoring Eject");
 
                 Ok(())
             }
@@ -386,16 +386,21 @@ impl Controller {
         }
     }
 
+    #[tracing::instrument(skip(self, message))]
     #[allow(clippy::too_many_lines)]
     async fn handle_gstreamer_message(
         &mut self,
         message: &gstreamer::Message,
     ) -> Result<(), Error> {
         use gstreamer::MessageView;
+
         match message.view() {
             MessageView::Buffering(b) => {
-                let buffering_target = concat!(module_path!(), "::buffering");
-                log::debug!(target: buffering_target, "{}", b.percent());
+                tracing::trace!(
+                    parent: &tracing::trace_span!("buffering"),
+                    "{}",
+                    b.percent()
+                );
 
                 self.published_state.buffering = b.percent().try_into().map_err(|_err| {
                     PipelineError(format!("Bad buffering value: {}", b.percent()).into())
@@ -415,9 +420,7 @@ impl Controller {
 
                 for (i, (name, value)) in tag.tags().as_ref().iter().enumerate() {
                     let tag = Tag::from_value(name, &value);
-                    let tag_target = concat!(module_path!(), "::tag");
-
-                    log::debug!(target: tag_target, "{} - {:?}", i, tag);
+                    tracing::trace!(parent: &tracing::trace_span!("tag"), "{} - {:?}", i, tag);
 
                     match tag {
                         Ok(Tag::Title(title)) => new_tags.title = Some(title),
@@ -458,9 +461,11 @@ impl Controller {
 
                     self.broadcast_state_change();
 
-                    let state_change_target = concat!(module_path!(), "::state_change");
-
-                    log::debug!(target: state_change_target, "{:?}", new_state);
+                    tracing::debug!(
+                        parent: &tracing::debug_span!("state_change"),
+                        "{:?}",
+                        new_state
+                    );
 
                     if let gstreamer::State::Playing = new_state {
                         if let Some(position) = self.queued_seek.take() {
@@ -471,8 +476,7 @@ impl Controller {
                 Ok(())
             }
             MessageView::Eos(..) => {
-                let end_of_stream_target = concat!(module_path!(), "::end_of_stream");
-                log::debug!(target: end_of_stream_target, "");
+                tracing::debug!(parent: &tracing::debug_span!("end_of_stream"), "");
 
                 if self.current_playlist.is_some() {
                     if self.published_state.track_duration.is_some() {
@@ -556,7 +560,7 @@ pub fn run(
 
     if let Some(url) = &config.notifications.ready {
         if let Some(err) = playbin.play_url(url).err() {
-            log::error!("{:#}", err);
+            tracing::error!("{:#}", err);
         }
     }
 
@@ -659,7 +663,7 @@ pub fn run(
         {
             drop(controller.ping_requests_tx);
             if let Err(err) = ping_handle.await {
-                log::error!("Error with ping routine: {}", err);
+                tracing::error!("Error with ping routine: {}", err);
             }
         }
     };

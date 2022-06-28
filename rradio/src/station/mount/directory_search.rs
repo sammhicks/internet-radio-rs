@@ -62,7 +62,7 @@ fn random_artist_directory(
     directory_path: &Path,
     rng: &mut impl Rng,
 ) -> Result<Option<(Vec<Track>, SelectedDirectories)>> {
-    log::debug!("Searching {}", directory_path.display());
+    tracing::debug!("Searching {}", directory_path.display());
     for directory in random_subdirectories(directory_path, rng)? {
         let artist_directory_name = directory.file_name();
         let artist = artist_directory_name.to_string_lossy().into_owned();
@@ -82,7 +82,7 @@ fn random_album_directory(
     artist: &str,
     rng: &mut impl Rng,
 ) -> Result<Option<(Vec<Track>, SelectedDirectories)>> {
-    log::debug!("Searching {}", directory_path.display());
+    tracing::debug!("Searching {}", directory_path.display());
     for directory in random_subdirectories(directory_path, rng)? {
         let album_directory_name = directory.file_name();
         let album = album_directory_name.to_string_lossy();
@@ -101,7 +101,7 @@ fn random_album_directory(
 }
 
 fn album_directory(directory_path: &Path, artist: &str, album: &str) -> Result<Option<Vec<Track>>> {
-    log::debug!("Creating playlist from {}", directory_path.display());
+    tracing::debug!("Creating playlist from {}", directory_path.display());
     let handled_extensions = ["mp3", "wma", "aac", "ogg", "wav"];
 
     let mut tracks = Vec::new();
@@ -116,7 +116,7 @@ fn album_directory(directory_path: &Path, artist: &str, album: &str) -> Result<O
                     .any(|handled_extension| handled_extension == &extension)
                 {
                     let title = name.to_string_lossy();
-                    log::debug!("Track: {}", title);
+                    tracing::debug!("Track: {}", title);
 
                     tracks.push(Track {
                         title: Some(title.into()),

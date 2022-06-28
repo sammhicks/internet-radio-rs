@@ -1,85 +1,29 @@
 //! Allows tasks to log errors
 
-use std::{fmt::Display, future::Future, pin::Pin, task::Poll};
+use std::future::Future;
 
-pub struct FutureWithContext<F, C> {
-    future: F,
-    context: C,
-}
-
-impl<F, C> FutureWithContext<F, C> {
-    fn project(self: Pin<&mut Self>) -> (Pin<&mut F>, &C) {
-        unsafe {
-            let this = self.get_unchecked_mut();
-            (Pin::new_unchecked(&mut this.future), &this.context)
-        }
-    }
-}
-
-impl<F: Future<Output = anyhow::Result<()>>, C: Clone + Display + Send + Sync + 'static> Future
-    for FutureWithContext<F, C>
-{
-    type Output = anyhow::Result<()>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
-        let (future, context) = self.project();
-        match future.poll(cx) {
-            Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
-            Poll::Ready(Err(err)) => Poll::Ready(Err(err.context(context.clone()))),
-            Poll::Pending => Poll::Pending,
-        }
-    }
-}
-
-pub struct LoggingFuture<F> {
-    future: F,
-    target: &'static str,
-}
-
-impl<F> LoggingFuture<F> {
-    fn project(self: Pin<&mut Self>) -> (Pin<&mut F>, &'static str) {
-        unsafe {
-            let this = self.get_unchecked_mut();
-            (Pin::new_unchecked(&mut this.future), this.target)
-        }
-    }
-}
+pub struct LoggingFuture<F>(F);
 
 impl<F: Future<Output = anyhow::Result<()>>> Future for LoggingFuture<F> {
     type Output = ();
 
-    fn poll(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
-        let (future, target) = self.project();
-        match future.poll(cx) {
-            Poll::Ready(Ok(())) => Poll::Ready(()),
-            Poll::Ready(Err(err)) => {
-                log::error!(target: target, "{:#}", err);
-                Poll::Ready(())
-            }
-            Poll::Pending => Poll::Pending,
-        }
+    fn poll(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        unsafe { self.map_unchecked_mut(|LoggingFuture(err)| err) }
+            .poll(cx)
+            .map_err(|err| tracing::error!("{}", err))
+            .map(|_: Result<(), ()>| ())
     }
 }
 
 /// A Future which can return an error
 pub trait FailableFuture: Future<Output = anyhow::Result<()>> + Sized {
-    /// Add context to errors produced by a task
-    fn context<C: Clone + Display + Send + Sync + 'static>(
-        self,
-        context: C,
-    ) -> FutureWithContext<Self, C> {
-        FutureWithContext {
-            future: self,
-            context,
-        }
-    }
-
     /// Log and swallow errors produced by a task
-    fn log_error(self, target: &'static str) -> LoggingFuture<Self> {
-        LoggingFuture {
-            future: self,
-            target,
-        }
+    fn log_error(self) -> tracing::instrument::Instrumented<LoggingFuture<Self>> {
+        use tracing::Instrument;
+        LoggingFuture(self).instrument(tracing::Span::current())
     }
 }
 

@@ -1,9 +1,19 @@
 //! A description of the rradio configuration file
 
-use log::LevelFilter;
 use tokio::time::Duration;
 
 use rradio_messages::{arcstr, ArcStr};
+
+fn remove_whitespace<'de, D: serde::Deserializer<'de>, T: From<String>>(
+    deserializer: D,
+) -> Result<T, D::Error> {
+    use serde::Deserialize;
+    let mut s = String::deserialize(deserializer)?;
+
+    s.retain(|c| !c.is_whitespace());
+
+    Ok(s.into())
+}
 
 #[cfg(feature = "cd")]
 pub mod cd {
@@ -79,7 +89,7 @@ pub mod ping {
     fn default_gateway() -> Ipv4Addr {
         let path = "/proc/net/route";
         std::fs::read_to_string(path)
-            .map_err(|err| log::error!("Failed to read {:?}: {}", path, err))
+            .map_err(|err| tracing::error!("Failed to read {:?}: {}", path, err))
             .ok()
             .and_then(|route| {
                 route.lines().find_map(|line| {
@@ -164,7 +174,8 @@ pub struct Config {
     #[serde(with = "humantime_serde")]
     pub smart_goto_previous_track_duration: Duration,
 
-    /// Controls the logging level. See the [Log Specification](https://docs.rs/flexi_logger/latest/flexi_logger/struct.LogSpecification.html)
+    /// Controls the logging level. See the [Log Specification](https://docs.rs/tracing-subscriber/0.3.8/tracing_subscriber/struct.EnvFilter.html)
+    #[serde(deserialize_with = "remove_whitespace")]
     pub log_level: ArcStr,
 
     /// Notification sounds
@@ -195,7 +206,7 @@ impl Config {
     pub fn load(path: impl AsRef<std::path::Path> + Copy) -> Self {
         std::fs::read_to_string(path)
             .map_err(|err| {
-                log::error!(
+                tracing::error!(
                     "Failed to read config file {:?}: {}",
                     path.as_ref().display(),
                     err
@@ -203,7 +214,7 @@ impl Config {
             })
             .and_then(|config| {
                 toml::from_str(&config).map_err(|err| {
-                    log::error!(
+                    tracing::error!(
                         "Failed to parse config file {:?}: {}",
                         path.as_ref().display(),
                         err
@@ -225,7 +236,7 @@ impl Default for Config {
             pause_before_playing_increment: Duration::from_secs(1),
             max_pause_before_playing: Duration::from_secs(5),
             smart_goto_previous_track_duration: Duration::from_secs(2),
-            log_level: arcstr::literal!("Info"),
+            log_level: arcstr::literal!("info"),
             notifications: Notifications::default(),
             play_error_sound_on_gstreamer_error: true,
             #[cfg(feature = "cd")]
@@ -236,31 +247,6 @@ impl Default for Config {
             ping_config: ping::Config::default(),
             #[cfg(feature = "web")]
             web_config: web::Config::default(),
-        }
-    }
-}
-
-struct LogLevelParser;
-
-impl<'de> serde::de::Visitor<'de> for LogLevelParser {
-    type Value = LevelFilter;
-
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(formatter, "A log level filter")
-    }
-
-    fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
-        match v {
-            "Off" => Ok(LevelFilter::Off),
-            "Error" => Ok(LevelFilter::Error),
-            "Warn" => Ok(LevelFilter::Warn),
-            "Info" => Ok(LevelFilter::Info),
-            "Debug" => Ok(LevelFilter::Debug),
-            "Trace" => Ok(LevelFilter::Trace),
-            _ => Err(serde::de::Error::unknown_variant(
-                v,
-                &["Off", "Error", "Warn", "Info", "Debug", "Trace"],
-            )),
         }
     }
 }

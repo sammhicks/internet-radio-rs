@@ -17,7 +17,7 @@ However, there are a couple of exceptions
     input_timeout = "2s"
     volume_offset = 5
     buffering_duration = "40s"
-    log_level = "Info"
+    log_level = "info"
 
     [Notifications]
     ready = "file:///usr/share/sounds/success.mp3"
@@ -65,15 +65,15 @@ Options:
   + Default: `"2s"`
   + The amount of time at the start of a track where winding back will take you to the previous track, rather than seeking to the start of the current track
 + log_level
-  + Default: `"Warn"`
+  + Default: `"warn"`
   + Options:
-    + `"Off"`
-    + `"Error"`
-    + `"Warn"`
-    + `"Info"`
-    + `"Debug"`
-    + `"Trace"`
-  + You can also specify per-module logging, using the same format as passed to [env_logger](https://docs.rs/env_logger/*/env_logger/)
+    + `"off"`
+    + `"error"`
+    + `"warn"`
+    + `"info"`
+    + `"debug"`
+    + `"trace"`
+  + You can also specify per-module logging, see [tracing](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/struct.EnvFilter.html)
 + Notifications
   + Default: None
   + Values:

@@ -3,6 +3,7 @@ use std::fmt::{Debug, Display, Formatter};
 use anyhow::Result;
 
 use rradio_messages::Command;
+use tracing::{info_span, Instrument};
 
 use super::BroadcastEvent;
 
@@ -161,12 +162,7 @@ fn decode_command(
 }
 
 pub async fn run(port_channels: super::PortChannels) {
-    super::tcp::run(
-        port_channels,
-        std::module_path!(),
-        8001,
-        encode_message,
-        decode_command,
-    )
-    .await;
+    super::tcp::run(port_channels, 8001, encode_message, decode_command)
+        .instrument(info_span!("tcp_text"))
+        .await;
 }

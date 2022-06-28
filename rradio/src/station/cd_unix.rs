@@ -266,11 +266,11 @@ where
         };
 
         if start_time.elapsed() > Duration::from_secs(3) {
-            log::error!("{:?} ({:?}): {}", request, parameter, error);
+            tracing::error!("{:?} ({:?}): {}", request, parameter, error);
             return Err(error);
         }
 
-        log::warn!("{:?} ({:?}): {}", request, parameter, error);
+        tracing::warn!("{:?} ({:?}): {}", request, parameter, error);
 
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
@@ -290,7 +290,7 @@ pub fn tracks(device: &str) -> Result<Vec<Track>> {
         1 => return Err(CdError::NoCd),             // CDS_NO_DISC
         2 => return Err(CdError::CdTrayIsOpen),     // CDS_TRAY_OPEN
         3 => return Err(CdError::CdTrayIsNotReady), // CDS_DRIVE_NOT_READY
-        4 => log::debug!("CD drive OK"),            // CDS_DISC_OK
+        4 => tracing::debug!("CD drive OK"),            // CDS_DISC_OK
         n => return Err(CdError::UnknownDriveStatus(n as isize)),
     }
 
@@ -299,12 +299,12 @@ pub fn tracks(device: &str) -> Result<Vec<Track>> {
         1 => return Err(CdError::NoCd),             // CDS_NO_DISC
         2 => return Err(CdError::CdTrayIsOpen),     // CDS_TRAY_OPEN
         3 => return Err(CdError::CdTrayIsNotReady), // CDS_DRIVE_NOT_READY
-        100 => log::debug!("Audio CD"),             // CDS_AUDIO
+        100 => tracing::debug!("Audio CD"),             // CDS_AUDIO
         101 => return Err(CdError::CdIsData1),      // CDS_DATA_1
         102 => return Err(CdError::CdIsData2),      // CDS_DATA_2
         103 => return Err(CdError::CdIsXA21),       // CDS_XA_2_1
         104 => return Err(CdError::CdIsXA22),       // CDS_XA_2_2
-        105 => log::debug!("Mixed CD"),             // CDS_MIXED
+        105 => tracing::debug!("Mixed CD"),             // CDS_MIXED
         n => return Err(CdError::UnknownDriveStatus(n as isize)),
     }
 
@@ -314,7 +314,7 @@ pub fn tracks(device: &str) -> Result<Vec<Track>> {
         .ioctl_with_parameter(CDROMREADTOCHDR, &mut toc)
         .map_err(ioctl_error)?;
 
-    log::debug!("CD toc: {:?}", toc);
+    tracing::debug!("CD toc: {:?}", toc);
 
     (toc.cdth_trk0..=toc.cdth_trk1)
         .filter_map(|track_index| cd_track(&mut device, track_index, toc.cdth_trk1).transpose())
@@ -332,7 +332,7 @@ fn cd_track(device: &mut std::fs::File, track_index: u8, track_count: u8) -> Res
         .ioctl_with_parameter(CDROMREADTOCENTRY, &mut toc_entry)
         .map_err(ioctl_error)?;
 
-    log::debug!("{:?}", toc_entry);
+    tracing::debug!("{:?}", toc_entry);
 
     if (0b0100 & toc_entry.cdte_adr_ctrl.ctrl()) > 0 {
         // This is a data track

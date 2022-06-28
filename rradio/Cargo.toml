@@ -27,18 +27,18 @@ anyhow = "1.0"
 askama = "0.11"
 base64 = "0.13"
 crossterm =  { version = "0.23", features = ["event-stream"] }
-flexi_logger = { version = "0.22", default_features = false, features = ["textfilter"] }
 futures = "0.3"
 glib = "0.15"
 gstreamer = "0.18"
 gstreamer-audio = "0.18"
 gstreamer-sys = "0.18"
 humantime-serde = "1.0"
-log = { version = "0.4", features = ["std"] }
 pnet = { version = "0.29", optional = true }
 pnet_macros_support = { version = "0.29", optional = true }
 pls = "0.2"
+quick-xml = { version = "0.22", features = [ "serialize" ] }
 rand = "0.8"
+reqwest = { version = "0.11", default-features = false }
 rmp-serde = "0.15"
 serde = { version = "1.0", features = ["derive", "rc"] }
 sys-mount = { version = "1.2", optional = true }
@@ -46,11 +46,10 @@ tempdir = { version = "0.3", optional = true }
 thiserror = "1.0"
 tokio = { version = "1.0", features = [ "io-util", "net", "rt-multi-thread", "sync", "time"] }
 toml = "0.5"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = [ "env-filter" ] }
 url = { version = "2.2", features = [ "serde" ] }
 warp = { version = "0.3", optional = true }
-
-quick-xml = { version = "0.22", features = [ "serialize" ] }
-reqwest = { version = "0.11", default-features = false }
 
 rradio-messages = { path = "../messages" }
 

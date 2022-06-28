@@ -34,7 +34,7 @@ pub async fn get_content_directory_control_path(
     client: &reqwest::Client,
     url: url::Url,
 ) -> Result<DeviceInfo> {
-    log::trace!("Fetching {}", url.as_str());
+    tracing::trace!("Fetching {}", url.as_str());
 
     let root_description = client
         .get(url.clone())

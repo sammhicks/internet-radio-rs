@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 
 use rradio_messages::Command;
+use tracing::Instrument;
 
 fn encode_event_length(
     len: usize,
@@ -71,12 +72,7 @@ fn decode_command(
 }
 
 pub async fn run(port_channels: super::PortChannels) {
-    super::tcp::run(
-        port_channels,
-        std::module_path!(),
-        8002,
-        encode_event,
-        decode_command,
-    )
-    .await;
+    super::tcp::run(port_channels, 8002, encode_event, decode_command)
+        .instrument(tracing::info_span!("tcp_msgpack"))
+        .await;
 }

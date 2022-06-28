@@ -136,7 +136,7 @@ pub async fn fetch(
     control_url: &str,
     Reference { id, title }: Reference,
 ) -> Result<Container> {
-    log::trace!("Fetching {} - {}", id, title);
+    tracing::trace!("Fetching {} - {}", id, title);
 
     let body = Request { object_id: &id }.to_string();
 
@@ -156,7 +156,7 @@ pub async fn fetch(
         .await
         .context("Failed to fetch text")?;
 
-    log::trace!("Parsing XML");
+    tracing::trace!("Parsing XML");
 
     let browse_result = quick_xml::de::from_str::<SoapEnvelope>(&http_response)
         .context("Failed to parse Soap Envelope")?
@@ -165,7 +165,7 @@ pub async fn fetch(
         .result
         .body;
 
-    log::trace!("{browse_result}");
+    tracing::trace!("{browse_result}");
 
     let DidlRoot { containers, items } =
         quick_xml::de::from_str(&browse_result).context("Failed to parse Soap Payload")?;

@@ -7,6 +7,7 @@ use tokio::{
 };
 
 use rradio_messages::Command;
+use tracing::Instrument;
 
 use crate::task::FailableFuture;
 
@@ -72,7 +73,6 @@ where
 
 pub async fn run<Encode, Decode, DecodeStream>(
     port_channels: super::PortChannels,
-    current_module: &'static str,
     port: u16,
     encode_event: Encode,
     decode_command: Decode,
@@ -106,12 +106,13 @@ pub async fn run<Encode, Decode, DecodeStream>(
         })
         .take_until(port_channels.shutdown_signal.clone().wait());
 
-        log::info!(target: current_module, "Listening on {:?}", local_addr);
+        tracing::info!("Listening on {:?}", local_addr);
 
         tokio::pin!(connections);
 
         while let Some((connection, remote_addr)) = connections.next().await.transpose()? {
-            log::info!(target: current_module, "Connection from {}", remote_addr);
+            let _span = tracing::info_span!("tcp", %remote_addr).entered();
+            tracing::info!("Connection");
 
             let (stream_rx, stream_tx) = connection.into_split();
             let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
@@ -122,13 +123,12 @@ pub async fn run<Encode, Decode, DecodeStream>(
                 async move {
                     recieve_messages(stream_rx, decode_command, commands).await?;
 
-                    log::debug!(target: current_module, "Disconnection from {}", remote_addr);
+                    tracing::debug!("Disconnection");
 
                     drop(shutdown_tx);
                     Ok(())
                 }
-                .context(remote_addr)
-                .log_error(current_module)
+                .log_error()
             });
 
             wait_group.spawn_task({
@@ -142,26 +142,22 @@ pub async fn run<Encode, Decode, DecodeStream>(
                 let encode_event = encode_event.clone();
                 async move {
                     send_messages(events, encode_event, stream_tx).await?;
-                    log::debug!(
-                        target: current_module,
-                        "Closing connection to {}",
-                        remote_addr
-                    );
+                    tracing::debug!("Closing connection");
                     Ok(())
                 }
-                .context(remote_addr)
-                .log_error(current_module)
+                .log_error()
             });
         }
 
-        log::debug!(target: current_module, "Shutting down");
+        tracing::debug!("Shutting down");
 
         wait_group.wait().await;
 
-        log::debug!(target: current_module, "Shut down");
+        tracing::debug!("Shut down");
 
         Ok(())
     }
-    .log_error(current_module)
+    .log_error()
+    .instrument(tracing::Span::current())
     .await;
 }

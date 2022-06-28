@@ -137,7 +137,7 @@ impl Playbin {
 
         let scaled_volume = current_volume + rradio_messages::VOLUME_ZERO_DB;
 
-        log::debug!("Current Volume: {}", scaled_volume);
+        tracing::debug!("Current Volume: {}", scaled_volume);
 
         Ok(scaled_volume)
     }
@@ -146,7 +146,7 @@ impl Playbin {
         let volume = volume
             .max(rradio_messages::VOLUME_MIN)
             .min(rradio_messages::VOLUME_MAX);
-        log::debug!("New Volume: {}", volume);
+        tracing::debug!("New Volume: {}", volume);
 
         self.0
             .dynamic_cast_ref::<gstreamer_audio::StreamVolume>()
@@ -176,7 +176,7 @@ impl Playbin {
                     position
                         .as_nanos()
                         .try_into()
-                        .map_err(|err| log::error!("Cannot cast time: {}", err))
+                        .map_err(|err| tracing::error!("Cannot cast time: {}", err))
                         .unwrap_or_default(),
                 ),
             )
@@ -216,14 +216,14 @@ impl Playbin {
             env!("CARGO_PKG_NAME"),
         );
 
-        log::info!("Created dotfile in {}", gst_debug_dump_dot_dir);
+        tracing::info!("Created dotfile in {}", gst_debug_dump_dot_dir);
 
         Ok(())
     }
 
     pub fn debug_pipeline(&self) {
         if let Err(err) = self.do_debug_pipeline() {
-            log::error!("{:#}", err);
+            tracing::error!("{:#}", err);
         }
     }
 }
@@ -231,7 +231,7 @@ impl Playbin {
 impl Drop for Playbin {
     fn drop(&mut self) {
         if let Err(err) = self.set_pipeline_state(PipelineState::Null) {
-            log::error!("{:#}", err);
+            tracing::error!("{:#}", err);
         }
     }
 }

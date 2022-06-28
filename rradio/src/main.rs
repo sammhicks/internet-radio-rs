@@ -2,8 +2,8 @@
 #![allow(clippy::used_underscore_binding)]
 
 use anyhow::{Context, Result};
+use tracing_subscriber::prelude::*;
 
-mod bool_mutex;
 mod config;
 mod keyboard_commands;
 mod pipeline;
@@ -13,9 +13,16 @@ mod tag;
 mod task;
 
 fn main() -> Result<()> {
-    let mut logger = flexi_logger::Logger::try_with_str("error")?
-        .format(log_format)
-        .start()?;
+    let (filter, reload_handle) =
+        tracing_subscriber::reload::Layer::new(None::<tracing_subscriber::EnvFilter>);
+
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(
+            tracing_subscriber::fmt::Layer::default()
+                .with_writer(std::sync::Mutex::new(ForceCR(std::io::stdout()))),
+        )
+        .init();
 
     let mut config_path = String::from(option_env!("RRADIO_CONFIG_PATH").unwrap_or("config.toml"));
 
@@ -36,9 +43,11 @@ fn main() -> Result<()> {
 
     let config = config::Config::load(&config_path);
 
-    logger.parse_new_spec(&config.log_level)?;
+    reload_handle
+        .reload(Some(tracing_subscriber::EnvFilter::new(&config.log_level)))
+        .context("Failed to reload logger filter")?;
 
-    log::info!("Config: {:?}", config);
+    tracing::info!("Config: {:?}", config);
 
     let (shutdown_handle, shutdown_signal) = task::ShutdownSignal::new();
 
@@ -79,50 +88,28 @@ fn main() -> Result<()> {
             .await
             .is_err()
         {
-            log::error!("Not all tasks shutdown within time limit");
+            tracing::error!("Not all tasks shutdown within time limit");
         }
     });
-
-    drop(runtime);
-
-    logger.shutdown();
 
     Ok(())
 }
 
-static LOG_MUTEX: bool_mutex::BoolMutex = bool_mutex::BoolMutex::new();
+struct ForceCR<W>(W);
 
-fn log_format(
-    w: &mut dyn std::io::Write,
-    _now: &mut flexi_logger::DeferredNow,
-    record: &log::Record,
-) -> Result<(), std::io::Error> {
-    use crossterm::style::{style, Attribute, Color, Stylize};
-    use log::Level;
+impl<W: std::io::Write> std::io::Write for ForceCR<W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        for segment in buf.split(|&b| b == b'\n') {
+            if !segment.is_empty() {
+                self.0.write_all(segment)?;
+                self.0.write_all(b"\r\n")?;
+            }
+        }
 
-    let lock = LOG_MUTEX.lock();
+        Ok(buf.len())
+    }
 
-    let color = match record.level() {
-        Level::Trace => Color::Magenta,
-        Level::Debug => Color::Blue,
-        Level::Info => Color::Green,
-        Level::Warn => Color::Yellow,
-        Level::Error => Color::Red,
-    };
-
-    let level = style(record.level()).with(color);
-
-    let target = record.target();
-
-    let args = match record.level() {
-        Level::Trace => style(record.args()).with(Color::DarkGrey),
-        Level::Debug | Level::Info => style(record.args()),
-        Level::Warn | Level::Error => style(record.args()).with(color).attribute(Attribute::Bold),
-    };
-
-    write!(w, "{:<5} [{}] {}\r", level, target, args)?;
-
-    drop(lock);
-
-    Ok(())
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.0.flush()
+    }
 }

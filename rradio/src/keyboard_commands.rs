@@ -44,7 +44,7 @@ impl std::ops::Drop for RawMode {
     /// Attempt to disable raw mode for stdin and stdout if not already disabled
     fn drop(&mut self) {
         if let Some(err) = self.disable().err() {
-            log::error!("Failed to disable raw mode: {:#}", err);
+            tracing::error!("Failed to disable raw mode: {:#}", err);
         }
     }
 }
@@ -54,7 +54,7 @@ pub async fn run(commands: mpsc::UnboundedSender<Command>, config: crate::config
     async move {
         let mut raw_mode = RawMode::new()?;
 
-        log::info!("Ready");
+        tracing::info!("Ready");
 
         let mut keyboard_events = EventStream::new();
 
@@ -73,7 +73,7 @@ pub async fn run(commands: mpsc::UnboundedSender<Command>, config: crate::config
                     keyboard_event = event;
                 } else {
                     // The user didn't press a second key, so continue (discarding the previous key entry)
-                    log::debug!("Station number input timeout");
+                    tracing::debug!("Station number input timeout");
                     continue;
                 }
             } else {
@@ -105,7 +105,7 @@ pub async fn run(commands: mpsc::UnboundedSender<Command>, config: crate::config
                 KeyCode::Char('/') => Command::VolumeDown,
                 KeyCode::Char('.') => Command::Eject,
                 KeyCode::Char(c) if c.is_ascii_digit() => {
-                    log::debug!("ASCII entry: {}", c);
+                    tracing::debug!("ASCII entry: {}", c);
                     if let Some(previous_digit) = previous_digit {
                         Command::SetChannel([previous_digit, c].iter().collect())
                     } else {
@@ -115,7 +115,7 @@ pub async fn run(commands: mpsc::UnboundedSender<Command>, config: crate::config
                 }
                 KeyCode::Char('d') => Command::DebugPipeline,
                 code => {
-                    log::debug!("Unhandled key: {:?}", code);
+                    tracing::debug!("Unhandled key: {:?}", code);
                     continue;
                 }
             };
@@ -123,14 +123,14 @@ pub async fn run(commands: mpsc::UnboundedSender<Command>, config: crate::config
             commands.send(command)?;
         }
 
-        log::debug!("Shutting down");
+        tracing::debug!("Shutting down");
 
         raw_mode.disable()?;
 
-        log::debug!("Shut down");
+        tracing::debug!("Shut down");
 
         Ok(())
     }
-    .log_error(std::module_path!())
+    .log_error()
     .await;
 }

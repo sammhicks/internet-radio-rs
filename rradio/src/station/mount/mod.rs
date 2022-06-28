@@ -40,7 +40,7 @@ pub fn usb(
                 .as_ref()
                 .downcast_ref::<SelectedDirectories>()
                 .or_else(|| {
-                    log::error!(
+                    tracing::error!(
                         "metadata is not SelectedDirectories, but is {:?}",
                         metadata.type_id()
                     );
