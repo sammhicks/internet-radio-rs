@@ -1,93 +1,95 @@
 use anyhow::Context;
-use futures::{SinkExt, StreamExt};
+use axum::{
+    response::IntoResponse,
+    routing::{get, get_service, post},
+};
+use futures::{FutureExt, SinkExt, StreamExt};
 use tokio::sync::oneshot;
-use warp::{Filter, Reply};
 
 use super::Event;
 
 use crate::task::FailableFuture;
 
-fn handle_websocket(
+async fn handle_websocket(
     port_channels: super::PortChannels,
     wait_handle: crate::task::WaitGroupHandle,
-    ws: warp::ws::Ws,
-) -> impl Reply {
-    ws.on_upgrade(|websocket| {
+    ws: axum::extract::ws::WebSocket,
+) -> anyhow::Result<()> {
+    let (ws_tx, mut ws_rx) = ws.split();
+
+    let ws_tx = ws_tx
+        .sink_map_err(|err| anyhow::Error::new(err).context("Failed to send Websocket message"))
+        .with(|event: super::BroadcastEvent| async move {
+            rmp_serde::to_vec_named(&event)
+                .map(axum::extract::ws::Message::Binary)
+                .map_err(anyhow::Error::new)
+        });
+
+    tokio::pin!(ws_tx);
+
+    ws_tx
+        .send(rradio_messages::protocol_version_message())
+        .await?;
+
+    let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+
+    let commands = port_channels.commands;
+
+    wait_handle.spawn_task(
         async move {
-            let (ws_tx, mut ws_rx) = websocket.split();
-
-            let ws_tx = ws_tx
-                .sink_map_err(|err| {
-                    anyhow::Error::new(err).context("Failed to send Websocket message")
-                })
-                .with(|event: super::BroadcastEvent| async move {
-                    rmp_serde::to_vec_named(&event)
-                        .map(warp::ws::Message::binary)
-                        .map_err(anyhow::Error::new)
-                });
-
-            tokio::pin!(ws_tx);
-
-            ws_tx
-                .send(rradio_messages::protocol_version_message())
-                .await?;
-
-            let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
-
-            let commands = port_channels.commands;
-
-            wait_handle.spawn_task(
-                async move {
-                    while let Some(message) = ws_rx.next().await {
-                        let message = message?;
-
-                        if message.is_close() {
-                            break;
-                        }
-
-                        commands.send(
-                            rmp_serde::from_read_ref(message.as_bytes())
-                                .context("Failed to decode Command")?,
-                        )?;
+            while let Some(message) = ws_rx.next().await {
+                let data = match message? {
+                    axum::extract::ws::Message::Text(text) => text.into_bytes(),
+                    axum::extract::ws::Message::Binary(binary) => binary,
+                    axum::extract::ws::Message::Ping(_) => {
+                        tracing::debug!("Ignoring ping messages");
+                        continue;
                     }
-
-                    drop(shutdown_tx);
-
-                    tracing::debug!("Close message received");
-
-                    Ok(())
-                }
-                .log_error(),
-            );
-
-            let events = super::event_stream(
-                port_channels.player_state.clone(),
-                port_channels.log_message_source.subscribe(),
-            )
-            .take_until(shutdown_rx)
-            .take_until(port_channels.shutdown_signal.clone().wait());
-
-            tokio::pin!(events);
-
-            while let Some(event) = events.next().await {
-                match event {
-                    Event::StateUpdate(diff) => {
-                        ws_tx.send(diff.into()).await?;
+                    axum::extract::ws::Message::Pong(_) => {
+                        tracing::debug!("Ignoring pong messages");
+                        continue;
                     }
-                    Event::LogMessage(log_message) => {
-                        ws_tx.send(log_message.into()).await?;
-                    }
-                }
+                    axum::extract::ws::Message::Close(_) => break,
+                };
+
+                commands
+                    .send(rmp_serde::from_read_ref(&data).context("Failed to decode Command")?)?;
             }
 
-            ws_tx.close().await?;
+            drop(shutdown_tx);
 
-            drop(wait_handle);
+            tracing::debug!("Close message received");
 
             Ok(())
         }
-        .log_error()
-    })
+        .log_error(),
+    );
+
+    let events = super::event_stream(
+        port_channels.player_state.clone(),
+        port_channels.log_message_source.subscribe(),
+    )
+    .take_until(shutdown_rx)
+    .take_until(port_channels.shutdown_signal.clone().wait());
+
+    tokio::pin!(events);
+
+    while let Some(event) = events.next().await {
+        match event {
+            Event::StateUpdate(diff) => {
+                ws_tx.send(diff.into()).await?;
+            }
+            Event::LogMessage(log_message) => {
+                ws_tx.send(log_message.into()).await?;
+            }
+        }
+    }
+
+    ws_tx.close().await?;
+
+    drop(wait_handle);
+
+    Ok(())
 }
 
 pub async fn run(port_channels: super::PortChannels, web_app_path: String) {
@@ -97,28 +99,46 @@ pub async fn run(port_channels: super::PortChannels, web_app_path: String) {
     let commands_tx = port_channels.commands.clone();
     let ws_shutdown_signal = port_channels.shutdown_signal.clone();
 
-    let commands = warp::path!("command")
-        .and(warp::body::json::<rradio_messages::Command>())
-        .map(move |command| {
-            commands_tx.send(command).map_or_else(
-                |tokio::sync::mpsc::error::SendError(_)| {
-                    warp::reply::with_status(
-                        "Failed to send command",
-                        warp::http::StatusCode::INTERNAL_SERVER_ERROR,
-                    )
-                    .into_response()
-                },
-                |()| "OK".into_response(),
+    let app = axum::Router::new()
+        .fallback(
+            get_service(
+                tower_http::services::ServeDir::new(web_app_path).not_found_service(
+                    tower::service_fn(|request: axum::http::Request<_>| async move {
+                        std::io::Result::Ok(format!("{} not found", request.uri()).into_response())
+                    }),
+                ),
             )
-        });
-
-    let events = warp::path!("api")
-        .and(warp::ws())
-        .map(move |ws| handle_websocket(port_channels.clone(), wait_handle.clone(), ws));
-
-    let static_content = warp::filters::fs::dir(web_app_path);
-
-    let filter = commands.or(events).or(static_content);
+            .handle_error(|err: std::io::Error| async move {
+                (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    err.to_string(),
+                )
+            }),
+        )
+        .route(
+            "/command",
+            post({
+                let commands_tx = commands_tx.clone();
+                |axum::Json(command): axum::Json<rradio_messages::Command>| async move {
+                    commands_tx
+                        .send(command)
+                        .map_err(|tokio::sync::mpsc::error::SendError(_)| {
+                            (
+                                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                                "Failed to send command",
+                            )
+                        })
+                }
+            }),
+        )
+        .route(
+            "/api",
+            get(|ws: axum::extract::WebSocketUpgrade| async move {
+                ws.on_upgrade(move |ws| {
+                    handle_websocket(port_channels.clone(), wait_handle, ws).log_error()
+                })
+            }),
+        );
 
     let addr = if cfg!(feature = "production-server") {
         std::net::Ipv4Addr::UNSPECIFIED
@@ -133,12 +153,18 @@ pub async fn run(port_channels: super::PortChannels, web_app_path: String) {
     };
     let socket_addr = (addr, port);
 
-    let (server_addr, server) =
-        warp::serve(filter).bind_with_graceful_shutdown(socket_addr, ws_shutdown_signal.wait());
+    let server = axum::Server::bind(&socket_addr.into()).serve(app.into_make_service());
+
+    let server_addr = server.local_addr();
+
+    let server = server.with_graceful_shutdown(ws_shutdown_signal.wait());
 
     tracing::info!("Listening on {}", server_addr);
 
-    server.await;
+    server
+        .map(|result| result.context("Failed to run server"))
+        .log_error()
+        .await;
 
     tracing::debug!("Shutting down");
 
