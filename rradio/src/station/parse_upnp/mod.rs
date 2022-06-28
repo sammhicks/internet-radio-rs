@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use rradio_messages::StationIndex;
+
 use anyhow::{Context, Result};
 use rand::{prelude::SliceRandom, Rng};
 use url::Url;
@@ -228,7 +230,7 @@ impl TracksBuilder {
 
 #[derive(Clone)]
 struct Metadata {
-    station_index: Option<String>,
+    station_index: Option<StationIndex>,
     station_title: Option<String>,
     tracks: Vec<Track>,
 }
@@ -254,12 +256,12 @@ impl Metadata {
 
 #[derive(Debug)]
 pub struct Station {
-    index: String,
+    index: StationIndex,
     envelope: Envelope,
 }
 
 impl Station {
-    pub fn parse(path: &std::path::Path, index: String) -> Result<Self> {
+    pub fn from_file(path: &std::path::Path, index: StationIndex) -> Result<Self> {
         tracing::trace!("parsing upnp playlist");
 
         let file = std::fs::read_to_string(path)
@@ -271,8 +273,8 @@ impl Station {
         Ok(Self { index, envelope })
     }
 
-    pub fn index(&self) -> &str {
-        self.index.as_str()
+    pub fn index(&self) -> &StationIndex {
+        &self.index
     }
 
     pub async fn into_playlist(
@@ -317,6 +319,7 @@ impl Station {
     }
 }
 
-pub fn parse(path: &std::path::Path, index: String) -> Result<super::Station> {
-    Station::parse(path, index).map(super::Station::Upnp)
+/// Parse a `UPnP` Station
+pub fn from_file(path: &std::path::Path, index: StationIndex) -> Result<super::Station> {
+    Station::from_file(path, index).map(super::Station::Upnp)
 }

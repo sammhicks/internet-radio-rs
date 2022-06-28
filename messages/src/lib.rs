@@ -1,4 +1,4 @@
-use std::{fmt::Debug, sync::Arc, time::Duration};
+use std::{fmt, sync::Arc, time::Duration};
 
 use serde::{Deserialize, Serialize};
 
@@ -16,7 +16,7 @@ pub const VOLUME_MAX: i32 = 120;
 /// Commands from the user
 #[derive(Debug, Deserialize, Serialize)]
 pub enum Command {
-    SetChannel(String),
+    SetChannel(StationIndex),
     PlayPause,
     SmartPreviousItem,
     PreviousItem,
@@ -47,8 +47,8 @@ impl Default for PipelineState {
     }
 }
 
-impl std::fmt::Display for PipelineState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for PipelineState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad(match self {
             Self::VoidPending => "VoidPending",
             Self::Null => "Null",
@@ -90,6 +90,25 @@ impl Track {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize, Serialize)]
+pub struct StationIndex(String);
+
+impl StationIndex {
+    pub fn new(index: String) -> Self {
+        Self(index)
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl fmt::Display for StationIndex {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub enum StationType {
     UrlList,
@@ -99,8 +118,8 @@ pub enum StationType {
     Usb,
 }
 
-impl std::fmt::Display for StationType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for StationType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad(match self {
             Self::UrlList => "URL List",
             Self::UPnP => "UPnP",
@@ -113,7 +132,7 @@ impl std::fmt::Display for StationType {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Station {
-    pub index: Option<ArcStr>,
+    pub index: Option<StationIndex>,
     pub source_type: StationType,
     pub title: Option<ArcStr>,
     pub tracks: Arc<[Track]>,
@@ -311,7 +330,10 @@ pub enum StationError {
     #[error("Failed to read from stations directory {directory:?}: {err}")]
     StationsDirectoryIoError { directory: ArcStr, err: ArcStr },
     #[error("Station {index} not found in {directory}")]
-    StationNotFound { index: ArcStr, directory: ArcStr },
+    StationNotFound {
+        index: StationIndex,
+        directory: ArcStr,
+    },
     #[error("Bad Station File: {0}")]
     BadStationFile(ArcStr),
 }

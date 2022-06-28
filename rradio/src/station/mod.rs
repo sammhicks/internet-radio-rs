@@ -1,7 +1,7 @@
 //! A radio station in rradio
 use std::{any::Any, fmt, sync::Arc};
 
-use rradio_messages::{ArcStr, StationType};
+use rradio_messages::{ArcStr, StationIndex, StationType};
 pub use rradio_messages::{StationError as Error, Track};
 
 mod parse_m3u;
@@ -79,7 +79,7 @@ impl Default for PlaylistHandle {
 }
 
 pub struct Playlist {
-    pub station_index: Option<String>,
+    pub station_index: Option<StationIndex>,
     pub station_title: Option<String>,
     pub station_type: rradio_messages::StationType,
     pub tracks: Vec<Track>,
@@ -87,22 +87,22 @@ pub struct Playlist {
     pub handle: PlaylistHandle,
 }
 
-/// A station in rradio
+/// A station description
 #[derive(Debug)]
 pub enum Station {
     UrlList {
-        index: String,
+        index: StationIndex,
         title: Option<String>,
         tracks: Vec<Track>,
     },
     #[cfg(feature = "cd")]
     CD {
-        index: String,
+        index: StationIndex,
         device: String,
     },
     #[cfg(feature = "usb")]
     Usb {
-        index: String,
+        index: StationIndex,
         device: String,
         path: std::path::PathBuf,
     },
@@ -112,6 +112,7 @@ pub enum Station {
     },
 }
 
+/// Convert an [`std::io::Error`] into a [`rradio_messages::StationError::StationsDirectoryIoError`]
 fn stations_directory_io_error<T>(
     directory: &ArcStr,
     result: std::io::Result<T>,
@@ -122,13 +123,14 @@ fn stations_directory_io_error<T>(
     })
 }
 
+/// Convert an [`anyhow::Error`] into a [`rradio_messages::StationError::BadStationFile`]
 fn playlist_error<T>(result: anyhow::Result<T>) -> Result<T, Error> {
     result.map_err(|err| rradio_messages::StationError::BadStationFile(format!("{:#}", err).into()))
 }
 
 impl Station {
     /// Load the station with the given index from the given directory, if the index exists
-    pub fn load(config: &crate::config::Config, index: String) -> Result<Self, Error> {
+    pub fn load(config: &crate::config::Config, index: StationIndex) -> Result<Self, Error> {
         let directory = &config.stations_directory;
 
         #[cfg(feature = "cd")]
@@ -153,7 +155,7 @@ impl Station {
             let entry = stations_directory_io_error(directory, entry)?;
             let name = entry.file_name();
 
-            if name.to_string_lossy().starts_with(&index) {
+            if name.to_string_lossy().starts_with(index.as_str()) {
                 let path = entry.path();
                 return match entry
                     .path()
@@ -162,9 +164,9 @@ impl Station {
                     .to_string_lossy()
                     .as_ref()
                 {
-                    "m3u" => playlist_error(parse_m3u::parse(&path, index)),
-                    "pls" => playlist_error(parse_pls::parse(&path, index)),
-                    "upnp" => playlist_error(parse_upnp::parse(&path, index)),
+                    "m3u" => playlist_error(parse_m3u::from_file(&path, index)),
+                    "pls" => playlist_error(parse_pls::from_file(&path, index)),
+                    "upnp" => playlist_error(parse_upnp::from_file(&path, index)),
                     extension => Err(Error::BadStationFile(
                         format!("Unsupported format: \"{}\"", extension).into(),
                     )),
@@ -173,7 +175,7 @@ impl Station {
         }
 
         Err(rradio_messages::StationError::StationNotFound {
-            index: index.into(),
+            index,
             directory: directory.clone(),
         })
     }
@@ -191,13 +193,13 @@ impl Station {
         }
     }
 
-    pub fn index(&self) -> Option<&str> {
+    pub fn index(&self) -> Option<&StationIndex> {
         match self {
-            Station::UrlList { index, .. } => Some(index.as_str()),
+            Station::UrlList { index, .. } => Some(index),
             #[cfg(feature = "cd")]
-            Station::CD { index, .. } => Some(index.as_str()),
+            Station::CD { index, .. } => Some(index),
             #[cfg(feature = "usb")]
-            Station::Usb { index, .. } => Some(index.as_str()),
+            Station::Usb { index, .. } => Some(index),
             Station::Upnp(station) => Some(station.index()),
             Station::Singleton { .. } => None,
         }

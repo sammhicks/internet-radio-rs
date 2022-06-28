@@ -1,16 +1,18 @@
 use anyhow::{Error, Result};
 
+use rradio_messages::{ArcStr, StationIndex};
+
 use super::{Station, Track};
 
 /// Parse a [PLS playlist](https://en.wikipedia.org/wiki/PLS_(file_format))
-pub fn parse(path: &std::path::Path, index: String) -> Result<Station> {
+pub fn from_file(path: &std::path::Path, index: StationIndex) -> Result<Station> {
     let mut reader = std::fs::File::open(path)?;
     let maybe_tracks = pls::parse(&mut reader)
         .map(|entries| {
             entries
                 .into_iter()
                 .map(|entry| Track {
-                    title: entry.title.map(Into::into),
+                    title: entry.title.map(ArcStr::from),
                     album: None,
                     artist: None,
                     url: entry.path.into(),

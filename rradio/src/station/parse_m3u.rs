@@ -1,16 +1,18 @@
 use anyhow::{Context, Result};
 
+use rradio_messages::StationIndex;
+
 use super::{Station, Track};
 
 /// Parse an [M3U playlist](https://en.wikipedia.org/wiki/M3U)
-pub fn parse(path: &std::path::Path, index: String) -> Result<Station> {
+pub fn from_file(path: &std::path::Path, index: StationIndex) -> Result<Station> {
     let playlist_text = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read {}", path.display()))?;
 
-    parse_from_str(&playlist_text, index)
+    from_str(&playlist_text, index)
 }
 
-fn parse_from_str(src: &str, index: String) -> Result<Station> {
+fn from_str(src: &str, index: StationIndex) -> Result<Station> {
     let lines = src.lines().map(str::trim).filter(|line| !line.is_empty());
 
     if src.starts_with("#EXTM3U") {
@@ -91,9 +93,9 @@ fn parse_from_str(src: &str, index: String) -> Result<Station> {
 
 #[cfg(test)]
 mod tests {
-    use rradio_messages::Track;
+    use rradio_messages::{StationIndex, Track};
 
-    use super::{parse_from_str, Station};
+    use super::{from_str, Station};
 
     const INDEX: &str = "42";
 
@@ -116,7 +118,7 @@ mod tests {
             tracks,
         } = station
         {
-            assert_eq!(index, INDEX);
+            assert_eq!(index.as_str(), INDEX);
             assert_eq!(title.as_deref(), test_title);
 
             assert_eq!(tracks.len(), test_tracks.len());
@@ -131,13 +133,17 @@ mod tests {
 
     #[test]
     fn empty_file() {
-        verify_station(parse_from_str("", String::from(INDEX)).unwrap(), None, []);
+        verify_station(
+            from_str("", StationIndex::new(String::from(INDEX))).unwrap(),
+            None,
+            [],
+        );
     }
 
     #[test]
     fn m3u_file() {
         verify_station(
-            parse_from_str("a\nb\n\nc\n", String::from(INDEX)).unwrap(),
+            from_str("a\nb\n\nc\n", StationIndex::new(String::from(INDEX))).unwrap(),
             None,
             [
                 |track| verify_track(None, "a", track),
@@ -150,9 +156,9 @@ mod tests {
     #[test]
     fn extm3u_file() {
         verify_station(
-            parse_from_str(
+            from_str(
                 "#EXTM3U\n#PLAYLIST: P\n#EXTINF:-1, A\na\n#EXTINF:-1, B\n\nb\n\n#EXTINF:-1, C\nc\n",
-                String::from(INDEX),
+                StationIndex::new(String::from(INDEX)),
             )
             .unwrap(),
             Some("P"),
@@ -167,9 +173,9 @@ mod tests {
     #[test]
     fn extm3u_file_extinf_missing() {
         verify_station(
-            parse_from_str(
+            from_str(
                 "#EXTM3U\n#EXTINF:-1, A\na\n\n\nb\n\n#EXTINF:-1, C\nc\n",
-                String::from(INDEX),
+                StationIndex::new(String::from(INDEX)),
             )
             .unwrap(),
             None,

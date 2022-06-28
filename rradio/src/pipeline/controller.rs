@@ -1,7 +1,9 @@
 use std::{collections::HashMap, convert::TryInto, sync::Arc, time::Duration};
 use tokio::sync::{broadcast, mpsc, watch};
 
-use rradio_messages::{ArcStr, Command, Error, LogMessage, PingTimes, PipelineError, TrackTags};
+use rradio_messages::{
+    Command, Error, LogMessage, PingTimes, PipelineError, StationIndex, TrackTags,
+};
 
 use super::playbin::{PipelineState, Playbin};
 use crate::{
@@ -77,7 +79,7 @@ struct Controller {
     playbin: Playbin,
     current_playlist: Option<PlaylistState>,
     published_state: PlayerState,
-    station_resume_info: HashMap<ArcStr, StationResumeInfo>,
+    station_resume_info: HashMap<StationIndex, StationResumeInfo>,
     new_state_tx: watch::Sender<PlayerState>,
     log_message_tx: broadcast::Sender<LogMessage>,
     queued_seek: Option<Duration>,
@@ -209,11 +211,11 @@ impl Controller {
         self.log_message_tx.send(error.into()).ok();
     }
 
-    fn save_resume_info(&mut self, new_station: &str) -> Option<()> {
+    fn save_resume_info(&mut self, new_station: &StationIndex) -> Option<()> {
         let current_station = self.published_state.current_station.as_ref().as_ref()?;
         let current_station_index = current_station.index.as_ref()?.clone();
 
-        if new_station == current_station_index.as_str() {
+        if new_station == &current_station_index {
             return None;
         }
 

@@ -6,7 +6,7 @@ use crossterm::event::{Event, EventStream, KeyCode, KeyEvent};
 use futures::StreamExt;
 use tokio::{sync::mpsc, time};
 
-use rradio_messages::Command;
+use rradio_messages::{Command, StationIndex};
 
 use crate::task::FailableFuture;
 
@@ -107,7 +107,7 @@ pub async fn run(commands_tx: mpsc::UnboundedSender<Command>, config: crate::con
                 KeyCode::Char(c) if c.is_ascii_digit() => {
                     tracing::debug!("ASCII entry: {}", c);
                     if let Some(previous_digit) = previous_digit {
-                        Command::SetChannel([previous_digit, c].iter().collect())
+                        Command::SetChannel(StationIndex::new([previous_digit, c].iter().collect()))
                     } else {
                         current_number_entry = Some(c);
                         continue;
