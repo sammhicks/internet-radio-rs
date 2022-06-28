@@ -13,10 +13,10 @@ fn encode_event_length(
         .to_be_bytes())
 }
 
-fn encode_event(message: &super::BroadcastEvent) -> Result<Vec<u8>> {
+fn encode_event<'a>(message: &super::BroadcastEvent, buffer: &'a mut Vec<u8>) -> Result<&'a [u8]> {
     let mut message_buffer = rmp_serde::to_vec(message).context("Failed to encode event")?;
 
-    let mut buffer = Vec::from(encode_event_length(message_buffer.len())?);
+    buffer.extend_from_slice(&encode_event_length(message_buffer.len())?);
     buffer.append(&mut message_buffer);
 
     Ok(buffer)
@@ -63,7 +63,7 @@ async fn read_command<Stream: tokio::io::AsyncRead + Unpin>(
     rmp_serde::from_slice(buffer.as_ref()).context("Failed to decode msgpack")
 }
 
-fn decode_command(
+fn decode_commands(
     stream: tokio::net::tcp::OwnedReadHalf,
 ) -> impl futures::Stream<Item = Result<Command>> {
     futures::stream::unfold(stream, |mut stream| async move {
@@ -72,7 +72,7 @@ fn decode_command(
 }
 
 pub async fn run(port_channels: super::PortChannels) {
-    super::tcp::run(port_channels, 8002, encode_event, decode_command)
+    super::tcp::run(port_channels, 8002, encode_event, decode_commands)
         .instrument(tracing::info_span!("tcp_msgpack"))
         .await;
 }

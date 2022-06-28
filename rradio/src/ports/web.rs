@@ -13,11 +13,11 @@ use crate::task::FailableFuture;
 async fn handle_websocket(
     port_channels: super::PortChannels,
     wait_handle: crate::task::WaitGroupHandle,
-    ws: axum::extract::ws::WebSocket,
+    websocket: axum::extract::ws::WebSocket,
 ) -> anyhow::Result<()> {
-    let (ws_tx, mut ws_rx) = ws.split();
+    let (websocket_tx, mut websocket_rx) = websocket.split();
 
-    let ws_tx = ws_tx
+    let websocket_tx = websocket_tx
         .sink_map_err(|err| anyhow::Error::new(err).context("Failed to send Websocket message"))
         .with(|event: super::BroadcastEvent| async move {
             rmp_serde::to_vec_named(&event)
@@ -25,19 +25,19 @@ async fn handle_websocket(
                 .map_err(anyhow::Error::new)
         });
 
-    tokio::pin!(ws_tx);
+    tokio::pin!(websocket_tx);
 
-    ws_tx
+    websocket_tx
         .send(rradio_messages::protocol_version_message())
         .await?;
 
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
 
-    let commands = port_channels.commands;
+    let commands = port_channels.commands_tx;
 
     wait_handle.spawn_task(
         async move {
-            while let Some(message) = ws_rx.next().await {
+            while let Some(message) = websocket_rx.next().await {
                 let data = match message? {
                     axum::extract::ws::Message::Text(text) => text.into_bytes(),
                     axum::extract::ws::Message::Binary(binary) => binary,
@@ -66,7 +66,7 @@ async fn handle_websocket(
     );
 
     let events = super::event_stream(
-        port_channels.player_state.clone(),
+        port_channels.player_state_rx.clone(),
         port_channels.log_message_source.subscribe(),
     )
     .take_until(shutdown_rx)
@@ -77,15 +77,15 @@ async fn handle_websocket(
     while let Some(event) = events.next().await {
         match event {
             Event::StateUpdate(diff) => {
-                ws_tx.send(diff.into()).await?;
+                websocket_tx.send(diff.into()).await?;
             }
             Event::LogMessage(log_message) => {
-                ws_tx.send(log_message.into()).await?;
+                websocket_tx.send(log_message.into()).await?;
             }
         }
     }
 
-    ws_tx.close().await?;
+    websocket_tx.close().await?;
 
     drop(wait_handle);
 
@@ -96,7 +96,7 @@ pub async fn run(port_channels: super::PortChannels, web_app_path: String) {
     let wait_group = crate::task::WaitGroup::new();
     let wait_handle = wait_group.clone_handle();
 
-    let commands_tx = port_channels.commands.clone();
+    let commands_tx = port_channels.commands_tx.clone();
     let ws_shutdown_signal = port_channels.shutdown_signal.clone();
 
     let app = axum::Router::new()

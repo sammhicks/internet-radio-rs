@@ -1,10 +1,8 @@
+//! Common code for TCP ports
+
 use anyhow::{Context, Result};
-use futures::{Stream, StreamExt};
-use tokio::{
-    io::AsyncWriteExt,
-    net::tcp,
-    sync::{mpsc, oneshot},
-};
+use futures::{Stream, StreamExt, TryStreamExt};
+use tokio::{io::AsyncWriteExt, net::tcp, sync::oneshot};
 
 use rradio_messages::Command;
 use tracing::Instrument;
@@ -20,53 +18,45 @@ async fn send_messages<Events, Encode>(
 ) -> Result<()>
 where
     Events: Stream<Item = super::Event>,
-    Encode: Fn(&BroadcastEvent) -> Result<Vec<u8>> + Send + Sync,
+    Encode: for<'a> Fn(&BroadcastEvent, &'a mut Vec<u8>) -> Result<&'a [u8]> + Send + Sync,
 {
+    let mut buffer = Vec::new();
+
     stream_tx
-        .write_all(
-            encode_event(&BroadcastEvent::ProtocolVersion(
-                rradio_messages::VERSION.into(),
-            ))?
-            .as_ref(),
-        )
+        .write_all(encode_event(
+            &BroadcastEvent::ProtocolVersion(rradio_messages::VERSION.into()),
+            &mut buffer,
+        )?)
         .await?;
+
+    buffer.clear();
 
     tokio::pin!(events);
 
     while let Some(event) = events.next().await {
+        buffer.clear();
+
         match event {
             Event::StateUpdate(diff) => {
                 stream_tx
-                    .write_all(encode_event(&BroadcastEvent::PlayerStateChanged(diff))?.as_ref())
+                    .write_all(encode_event(
+                        &BroadcastEvent::PlayerStateChanged(diff),
+                        &mut buffer,
+                    )?)
                     .await?;
             }
             Event::LogMessage(log_message) => {
                 stream_tx
-                    .write_all(encode_event(&BroadcastEvent::LogMessage(log_message))?.as_ref())
+                    .write_all(encode_event(
+                        &BroadcastEvent::LogMessage(log_message),
+                        &mut buffer,
+                    )?)
                     .await?;
             }
         }
     }
 
-    Ok(())
-}
-
-async fn recieve_messages<Decode, DecodeStream>(
-    stream_rx: tcp::OwnedReadHalf,
-    decode_command: Decode,
-    commands: mpsc::UnboundedSender<Command>,
-) -> Result<()>
-where
-    Decode: FnOnce(tcp::OwnedReadHalf) -> DecodeStream + Send + Sync + 'static,
-    DecodeStream: Stream<Item = Result<Command>> + Send + Sync + 'static,
-{
-    let decoded_messages = decode_command(stream_rx);
-
-    tokio::pin!(decoded_messages);
-
-    while let Some(next_command) = decoded_messages.next().await.transpose()? {
-        commands.send(next_command)?;
-    }
+    stream_tx.shutdown().await?;
 
     Ok(())
 }
@@ -75,9 +65,13 @@ pub async fn run<Encode, Decode, DecodeStream>(
     port_channels: super::PortChannels,
     port: u16,
     encode_event: Encode,
-    decode_command: Decode,
+    decode_commands: Decode,
 ) where
-    Encode: Fn(&BroadcastEvent) -> Result<Vec<u8>> + Send + Sync + Clone + 'static,
+    Encode: for<'a> Fn(&BroadcastEvent, &'a mut Vec<u8>) -> Result<&'a [u8]>
+        + Send
+        + Sync
+        + Clone
+        + 'static,
     Decode: FnOnce(tcp::OwnedReadHalf) -> DecodeStream + Send + Sync + Clone + 'static,
     DecodeStream: Stream<Item = Result<Command>> + Send + Sync + 'static,
 {
@@ -114,14 +108,18 @@ pub async fn run<Encode, Decode, DecodeStream>(
             let _span = tracing::info_span!("tcp", %remote_addr).entered();
             tracing::info!("Connection");
 
-            let (stream_rx, stream_tx) = connection.into_split();
+            let (connection_rx, connection_tx) = connection.into_split();
             let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
 
             wait_group.spawn_task({
-                let decode_command = decode_command.clone();
-                let commands = port_channels.commands.clone();
+                let commands_rx = (decode_commands.clone())(connection_rx);
+                let commands_tx = port_channels.commands_tx.clone();
                 async move {
-                    recieve_messages(stream_rx, decode_command, commands).await?;
+                    commands_rx
+                        .try_for_each(|command| async {
+                            commands_tx.send(command).context("Failed to send command")
+                        })
+                        .await?;
 
                     tracing::debug!("Disconnection");
 
@@ -133,7 +131,7 @@ pub async fn run<Encode, Decode, DecodeStream>(
 
             wait_group.spawn_task({
                 let events = super::event_stream(
-                    port_channels.player_state.clone(),
+                    port_channels.player_state_rx.clone(),
                     port_channels.log_message_source.subscribe(),
                 )
                 .take_until(shutdown_rx)
@@ -141,7 +139,7 @@ pub async fn run<Encode, Decode, DecodeStream>(
 
                 let encode_event = encode_event.clone();
                 async move {
-                    send_messages(events, encode_event, stream_tx).await?;
+                    send_messages(events, encode_event, connection_tx).await?;
                     tracing::debug!("Closing connection");
                     Ok(())
                 }

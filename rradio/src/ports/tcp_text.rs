@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Display, Formatter};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use rradio_messages::Command;
 use tracing::{info_span, Instrument};
@@ -126,25 +126,32 @@ impl<'a> Display for DisplayDiff<&'a rradio_messages::PlayerStateDiff> {
 }
 
 #[allow(clippy::unnecessary_wraps)]
-fn encode_message(message: &BroadcastEvent) -> Result<Vec<u8>> {
-    Ok(match message {
-        BroadcastEvent::ProtocolVersion(_) => format!(
+fn encode_event<'a>(message: &BroadcastEvent, buffer: &'a mut Vec<u8>) -> Result<&'a [u8]> {
+    use std::io::Write;
+    match message {
+        BroadcastEvent::ProtocolVersion(_) => write!(
+            buffer,
             "{}{}{}{}Version {}",
             crossterm::cursor::Hide,
             crossterm::terminal::SetSize(120, 20),
             crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
             crossterm::cursor::MoveTo(0, 0),
             rradio_messages::VERSION
-        )
-        .into_bytes(),
-        BroadcastEvent::PlayerStateChanged(diff) => DisplayDiff(diff).to_string().into_bytes(),
-        BroadcastEvent::LogMessage(log_message) => {
-            format!("{}{:?}", crossterm::cursor::MoveTo(0, 0), log_message).into_bytes()
-        }
-    })
+        ),
+        BroadcastEvent::PlayerStateChanged(diff) => write!(buffer, "{}", DisplayDiff(diff)),
+        BroadcastEvent::LogMessage(log_message) => write!(
+            buffer,
+            "{}{:?}",
+            crossterm::cursor::MoveTo(0, 0),
+            log_message
+        ),
+    }
+    .context("Failed to encode event")?;
+
+    Ok(buffer)
 }
 
-fn decode_command(
+fn decode_commands(
     stream: tokio::net::tcp::OwnedReadHalf,
 ) -> impl futures::Stream<Item = Result<Command>> {
     futures::stream::unfold(stream, |mut stream| async move {
@@ -162,7 +169,7 @@ fn decode_command(
 }
 
 pub async fn run(port_channels: super::PortChannels) {
-    super::tcp::run(port_channels, 8001, encode_message, decode_command)
+    super::tcp::run(port_channels, 8001, encode_event, decode_commands)
         .instrument(info_span!("tcp_text"))
         .await;
 }

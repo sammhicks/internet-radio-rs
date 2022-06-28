@@ -50,7 +50,7 @@ impl std::ops::Drop for RawMode {
 }
 
 /// Process keyboard input and send parsed commands through channel `commands`
-pub async fn run(commands: mpsc::UnboundedSender<Command>, config: crate::config::Config) {
+pub async fn run(commands_tx: mpsc::UnboundedSender<Command>, config: crate::config::Config) {
     async move {
         let mut raw_mode = RawMode::new()?;
 
@@ -120,7 +120,7 @@ pub async fn run(commands: mpsc::UnboundedSender<Command>, config: crate::config
                 }
             };
 
-            commands.send(command)?;
+            commands_tx.send(command)?;
         }
 
         tracing::debug!("Shutting down");

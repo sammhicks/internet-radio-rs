@@ -671,8 +671,8 @@ pub fn run(
     Ok((
         task,
         PartialPortChannels {
-            commands: commands_tx,
-            player_state: new_state_rx,
+            commands_tx,
+            player_state_rx: new_state_rx,
             log_message_source,
             shutdown_signal: (),
         },

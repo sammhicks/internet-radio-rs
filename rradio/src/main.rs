@@ -61,7 +61,7 @@ fn main() -> Result<()> {
         config.web_config.web_app_path.as_str().to_owned(),
     );
 
-    let keyboard_commands_task = keyboard_commands::run(port_channels.commands.clone(), config);
+    let keyboard_commands_task = keyboard_commands::run(port_channels.commands_tx.clone(), config);
 
     let tcp_msgpack_task = ports::tcp_msgpack::run(port_channels.clone());
     let tcp_text_task = ports::tcp_text::run(port_channels);
