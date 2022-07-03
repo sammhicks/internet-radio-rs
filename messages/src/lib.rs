@@ -90,16 +90,22 @@ impl Track {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize, Serialize)]
-pub struct StationIndex(String);
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
+pub struct StationIndex(Box<str>);
 
 impl StationIndex {
-    pub fn new(index: String) -> Self {
+    pub fn new(index: Box<str>) -> Self {
         Self(index)
     }
 
     pub fn as_str(&self) -> &str {
-        self.0.as_str()
+        &self.0
+    }
+}
+
+impl AsRef<str> for StationIndex {
+    fn as_ref(&self) -> &str {
+        &self.0
     }
 }
 
@@ -135,7 +141,7 @@ pub struct Station {
     pub index: Option<StationIndex>,
     pub source_type: StationType,
     pub title: Option<ArcStr>,
-    pub tracks: Arc<[Track]>,
+    pub tracks: Option<Arc<[Track]>>, // If None, the tracks haven't been loaded yet
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
@@ -245,6 +251,7 @@ impl Default for PingTimes {
     }
 }
 
+/// `PlayerStateDiff` records what fields have changed since the last diff was sent. If a field is `Some(_)`, then it has changed
 #[derive(Debug, Deserialize, Serialize)]
 pub struct PlayerStateDiff {
     pub pipeline_state: Option<PipelineState>,

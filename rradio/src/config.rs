@@ -203,7 +203,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn load(path: impl AsRef<std::path::Path> + Copy) -> Self {
+    pub fn from_file(path: impl AsRef<std::path::Path> + Copy) -> Self {
         std::fs::read_to_string(path)
             .map_err(|err| {
                 tracing::error!(

@@ -277,6 +277,10 @@ impl Station {
         &self.index
     }
 
+    pub fn title(&self) -> Option<&str> {
+        self.envelope.container().station_title.as_deref()
+    }
+
     pub async fn into_playlist(
         self,
         metadata: Option<&super::PlaylistMetadata>,
@@ -321,5 +325,5 @@ impl Station {
 
 /// Parse a `UPnP` Station
 pub fn from_file(path: &std::path::Path, index: StationIndex) -> Result<super::Station> {
-    Station::from_file(path, index).map(super::Station::Upnp)
+    Station::from_file(path, index).map(super::Station::UPnP)
 }

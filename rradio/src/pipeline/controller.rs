@@ -1,8 +1,8 @@
-use std::{collections::HashMap, convert::TryInto, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, convert::TryInto, sync::Arc, time::Duration};
 use tokio::sync::{broadcast, mpsc, watch};
 
 use rradio_messages::{
-    Command, Error, LogMessage, PingTimes, PipelineError, StationIndex, TrackTags,
+    ArcStr, Command, Error, LogMessage, PingTimes, PipelineError, StationIndex, TrackTags,
 };
 
 use super::playbin::{PipelineState, Playbin};
@@ -79,7 +79,7 @@ struct Controller {
     playbin: Playbin,
     current_playlist: Option<PlaylistState>,
     published_state: PlayerState,
-    station_resume_info: HashMap<StationIndex, StationResumeInfo>,
+    station_resume_info: BTreeMap<StationIndex, StationResumeInfo>,
     new_state_tx: watch::Sender<PlayerState>,
     log_message_tx: broadcast::Sender<LogMessage>,
     queued_seek: Option<Duration>,
@@ -255,6 +255,15 @@ impl Controller {
 
         self.clear_playlist();
 
+        self.published_state.current_station = Arc::new(Some(rradio_messages::Station {
+            index: new_station.index().cloned(),
+            title: new_station.title().map(ArcStr::from),
+            source_type: new_station.station_type(),
+            tracks: None,
+        }));
+
+        self.broadcast_state_change();
+
         let playlist = new_station
             .into_playlist(
                 resume_info
@@ -303,10 +312,10 @@ impl Controller {
         });
 
         self.published_state.current_station = Arc::new(Some(rradio_messages::Station {
-            index: playlist.station_index.map(From::from),
-            title: playlist.station_title.map(From::from),
+            index: playlist.station_index,
+            title: playlist.station_title.map(ArcStr::from),
             source_type: playlist.station_type,
-            tracks: playlist_tracks,
+            tracks: Some(playlist_tracks),
         }));
 
         self.published_state.pause_before_playing = None;
@@ -596,7 +605,7 @@ pub fn run(
         playbin,
         current_playlist: None,
         published_state,
-        station_resume_info: HashMap::new(),
+        station_resume_info: BTreeMap::new(),
         new_state_tx,
         log_message_tx,
         queued_seek: None,

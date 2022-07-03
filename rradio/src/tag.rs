@@ -100,27 +100,4 @@ pub fn value_to_string(value: &glib::value::Value) -> Result<String> {
     } else {
         format!("Value of unhandled type {}: {:?}", value_type, value)
     })
-
-    // match value.type_() {
-    // Type::Bool => value
-    //     .get::<bool>()?
-    //     .context("No Bool")
-    //     .map(|b| format!("Bool: {}", b)),
-    // Type::String => value
-    //     .get::<String>()?
-    //     .context("No String")
-    //     .map(|s| format!("String: {}", s)),
-    // Type::U32 => Ok(format!("U32: {}", value.get_some::<u32>()?)),
-    // Type::U64 => Ok(format!("U64: {}", value.get_some::<u64>()?)),
-    // Type::F64 => Ok(format!("F64: {}", value.get_some::<f64>()?)),
-    // t if t == gstreamer::DateTime::static_type() => value
-    //     .get::<gstreamer::DateTime>()?
-    //     .context("No DateTime")
-    //     .map(|dt| format!("DateTime: {}", dt)),
-    // t if t == gstreamer::sample::Sample::static_type() => Ok(format!(
-    //     "Sample: {:?}",
-    //     value.get::<gstreamer::Sample>()?.context("No Sample")?
-    // )),
-    // t => Ok(format!("Value of unhandled type {}: {:?}", t, value)),
-    // }
 }

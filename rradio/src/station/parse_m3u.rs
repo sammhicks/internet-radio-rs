@@ -134,7 +134,7 @@ mod tests {
     #[test]
     fn empty_file() {
         verify_station(
-            from_str("", StationIndex::new(String::from(INDEX))).unwrap(),
+            from_str("", StationIndex::new(INDEX.into())).unwrap(),
             None,
             [],
         );
@@ -143,7 +143,7 @@ mod tests {
     #[test]
     fn m3u_file() {
         verify_station(
-            from_str("a\nb\n\nc\n", StationIndex::new(String::from(INDEX))).unwrap(),
+            from_str("a\nb\n\nc\n", StationIndex::new(INDEX.into())).unwrap(),
             None,
             [
                 |track| verify_track(None, "a", track),
@@ -158,7 +158,7 @@ mod tests {
         verify_station(
             from_str(
                 "#EXTM3U\n#PLAYLIST: P\n#EXTINF:-1, A\na\n#EXTINF:-1, B\n\nb\n\n#EXTINF:-1, C\nc\n",
-                StationIndex::new(String::from(INDEX)),
+                StationIndex::new(INDEX.into()),
             )
             .unwrap(),
             Some("P"),
@@ -175,7 +175,7 @@ mod tests {
         verify_station(
             from_str(
                 "#EXTM3U\n#EXTINF:-1, A\na\n\n\nb\n\n#EXTINF:-1, C\nc\n",
-                StationIndex::new(String::from(INDEX)),
+                StationIndex::new(INDEX.into()),
             )
             .unwrap(),
             None,

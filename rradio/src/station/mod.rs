@@ -106,7 +106,7 @@ pub enum Station {
         device: String,
         path: std::path::PathBuf,
     },
-    Upnp(parse_upnp::Station),
+    UPnP(parse_upnp::Station),
     Singleton {
         track: Track,
     },
@@ -200,8 +200,32 @@ impl Station {
             Station::CD { index, .. } => Some(index),
             #[cfg(feature = "usb")]
             Station::Usb { index, .. } => Some(index),
-            Station::Upnp(station) => Some(station.index()),
+            Station::UPnP(station) => Some(station.index()),
             Station::Singleton { .. } => None,
+        }
+    }
+
+    pub fn title(&self) -> Option<&str> {
+        match self {
+            Station::UrlList { title, .. } => title.as_deref(),
+            #[cfg(feature = "cd")]
+            Station::CD { .. } => None,
+            #[cfg(feature = "usb")]
+            Station::Usb { .. } => None,
+            Station::UPnP(station) => station.title(),
+            Station::Singleton { .. } => None,
+        }
+    }
+
+    pub fn station_type(&self) -> StationType {
+        match self {
+            Station::UrlList { .. } => StationType::UrlList,
+            #[cfg(feature = "cd")]
+            Station::CD { .. } => StationType::CD,
+            #[cfg(feature = "usb")]
+            Station::Usb { .. } => StationType::Usb,
+            Station::UPnP(..) => StationType::UPnP,
+            Station::Singleton { .. } => StationType::UrlList,
         }
     }
 
@@ -248,7 +272,7 @@ impl Station {
                     handle,
                 })
             }
-            Station::Upnp(station) => station
+            Station::UPnP(station) => station
                 .into_playlist(metadata)
                 .await
                 .map_err(|err| rradio_messages::StationError::UPnPError(err.to_string().into())),

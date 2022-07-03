@@ -6,17 +6,16 @@ use axum::{
 use futures::{FutureExt, SinkExt, StreamExt};
 use tokio::sync::oneshot;
 
-use super::Event;
-
 use crate::task::FailableFuture;
 
-async fn handle_websocket(
+async fn handle_websocket_connection(
     port_channels: super::PortChannels,
     wait_handle: crate::task::WaitGroupHandle,
     websocket: axum::extract::ws::WebSocket,
 ) -> anyhow::Result<()> {
     let (websocket_tx, mut websocket_rx) = websocket.split();
 
+    // Convert the websocket sink (i.e. of websocket [axum::extract::ws::Message]) into a sink of [`BroadcastEvent`]
     let websocket_tx = websocket_tx
         .sink_map_err(|err| anyhow::Error::new(err).context("Failed to send Websocket message"))
         .with(|event: super::BroadcastEvent| async move {
@@ -35,6 +34,7 @@ async fn handle_websocket(
 
     let commands = port_channels.commands_tx;
 
+    // Handle incoming websocket messages
     wait_handle.spawn_task(
         async move {
             while let Some(message) = websocket_rx.next().await {
@@ -65,25 +65,15 @@ async fn handle_websocket(
         .log_error(),
     );
 
-    let events = super::event_stream(
+    super::event_stream(
         port_channels.player_state_rx.clone(),
         port_channels.log_message_source.subscribe(),
-    )
-    .take_until(shutdown_rx)
-    .take_until(port_channels.shutdown_signal.clone().wait());
-
-    tokio::pin!(events);
-
-    while let Some(event) = events.next().await {
-        match event {
-            Event::StateUpdate(diff) => {
-                websocket_tx.send(diff.into()).await?;
-            }
-            Event::LogMessage(log_message) => {
-                websocket_tx.send(log_message.into()).await?;
-            }
-        }
-    }
+    ) // Take each event
+    .map(|event| Ok(event.into_broadcast_event())) // Convert each event into a [`BroadcastEvent`]
+    .take_until(shutdown_rx) // Stop when the websocket is closed
+    .take_until(port_channels.shutdown_signal.clone().wait()) // Stop when rradio closes
+    .forward(&mut websocket_tx) // Send each event to the websocket
+    .await?;
 
     websocket_tx.close().await?;
 
@@ -92,7 +82,7 @@ async fn handle_websocket(
     Ok(())
 }
 
-pub async fn run(port_channels: super::PortChannels, web_app_path: String) {
+pub async fn run(port_channels: super::PortChannels, web_app_static_files: String) {
     let wait_group = crate::task::WaitGroup::new();
     let wait_handle = wait_group.clone_handle();
 
@@ -102,7 +92,7 @@ pub async fn run(port_channels: super::PortChannels, web_app_path: String) {
     let app = axum::Router::new()
         .fallback(
             get_service(
-                tower_http::services::ServeDir::new(web_app_path).not_found_service(
+                tower_http::services::ServeDir::new(web_app_static_files).not_found_service(
                     tower::service_fn(|request: axum::http::Request<_>| async move {
                         std::io::Result::Ok(format!("{} not found", request.uri()).into_response())
                     }),
@@ -135,7 +125,7 @@ pub async fn run(port_channels: super::PortChannels, web_app_path: String) {
             "/api",
             get(|ws: axum::extract::WebSocketUpgrade| async move {
                 ws.on_upgrade(move |ws| {
-                    handle_websocket(port_channels.clone(), wait_handle, ws).log_error()
+                    handle_websocket_connection(port_channels.clone(), wait_handle, ws).log_error()
                 })
             }),
         );

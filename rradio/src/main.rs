@@ -1,5 +1,4 @@
 #![warn(clippy::pedantic)]
-#![allow(clippy::used_underscore_binding)]
 
 use anyhow::{Context, Result};
 use tracing_subscriber::prelude::*;
@@ -13,16 +12,7 @@ mod tag;
 mod task;
 
 fn main() -> Result<()> {
-    let (filter, reload_handle) =
-        tracing_subscriber::reload::Layer::new(None::<tracing_subscriber::EnvFilter>);
-
-    tracing_subscriber::registry()
-        .with(filter)
-        .with(
-            tracing_subscriber::fmt::Layer::default()
-                .with_writer(std::sync::Mutex::new(ForceCR(std::io::stdout()))),
-        )
-        .init();
+    let log_filter_reload_handle = setup_logging();
 
     let mut config_path = String::from(option_env!("RRADIO_CONFIG_PATH").unwrap_or("config.toml"));
 
@@ -41,13 +31,13 @@ fn main() -> Result<()> {
         }
     }
 
-    let config = config::Config::load(&config_path);
+    let config = config::Config::from_file(&config_path); // See config::Config::default() for default config
 
-    reload_handle
-        .reload(Some(tracing_subscriber::EnvFilter::new(&config.log_level)))
+    log_filter_reload_handle
+        .reload(Some(tracing_subscriber::EnvFilter::new(&config.log_level))) // Filter logs as specified by config
         .context("Failed to reload logger filter")?;
 
-    tracing::info!("Config: {:?}", config);
+    tracing::debug!("Config: {:?}", config);
 
     let (shutdown_handle, shutdown_signal) = task::ShutdownSignal::new();
 
@@ -58,7 +48,7 @@ fn main() -> Result<()> {
     #[cfg(feature = "web")]
     let web_task = ports::web::run(
         port_channels.clone(),
-        config.web_config.web_app_path.as_str().to_owned(),
+        String::from(config.web_config.web_app_path.as_str()),
     );
 
     let keyboard_commands_task = keyboard_commands::run(port_channels.commands_tx.clone(), config);
@@ -66,24 +56,27 @@ fn main() -> Result<()> {
     let tcp_msgpack_task = ports::tcp_msgpack::run(port_channels.clone());
     let tcp_text_task = ports::tcp_text::run(port_channels);
 
-    let runtime = tokio::runtime::Runtime::new()?;
+    let runtime = tokio::runtime::Runtime::new()?; // Setup the async runtime
 
-    // These tasks don't need special shutdown
+    // Spawn pipeline task outside of shutdown signalling mechanism
     runtime.spawn(pipeline_task);
 
-    runtime.block_on(async move {
+    runtime.block_on(async {
         let wait_group = task::WaitGroup::new();
 
-        // These tasks have a special shutdown procedure
+        // Start other tasks within shutdown signalling mechanism
         wait_group.spawn_task(tcp_text_task);
         wait_group.spawn_task(tcp_msgpack_task);
         #[cfg(feature = "web")]
         wait_group.spawn_task(web_task);
 
+        // Wait for the keyboard task to finish, i.e. when "Esc" is pressed
         keyboard_commands_task.await;
 
+        // Signal that tasks should shut down
         drop(shutdown_handle);
 
+        // Wait (with timeout) for tasks to shut down
         if tokio::time::timeout(std::time::Duration::from_secs(5), wait_group.wait())
             .await
             .is_err()
@@ -95,7 +88,27 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-struct ForceCR<W>(W);
+fn setup_logging() -> tracing_subscriber::reload::Handle<
+    Option<tracing_subscriber::EnvFilter>,
+    tracing_subscriber::Registry,
+> {
+    let (log_filter, reload_handle) =
+        tracing_subscriber::reload::Layer::new(None::<tracing_subscriber::EnvFilter>);
+
+    tracing_subscriber::registry() // Register logging
+        .with(log_filter) // Only output some of the logs
+        .with(
+            tracing_subscriber::fmt::Layer::default() // Write formatted logs ...
+                .with_writer(std::sync::Mutex::new(ForceCR(std::io::stdout()))), // .. to stdout
+        )
+        .init();
+
+    reload_handle
+}
+
+/// `ForceCR` is a wrapper around a [`std::io::Writer`] which explicitly sends a "\r\n" as a newline, even if only a "\n" is written.
+/// This is useful because `stdout` is in "Raw" Mode. See [`keyboard_commands::RawMode`]
+struct ForceCR<W: std::io::Write>(W);
 
 impl<W: std::io::Write> std::io::Write for ForceCR<W> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {

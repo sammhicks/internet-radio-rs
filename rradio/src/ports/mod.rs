@@ -1,18 +1,18 @@
 //! Ports are the access point for external programs to interact with ``RRadio``.
 //! Through ports a client can listen for [Events](rradio_messages::Event) and submit [Commands](rradio_messages::Command).
 
+use std::sync::Arc;
+
+use rradio_messages::{LogMessage, PlayerStateDiff};
+
+use crate::{pipeline::PlayerState, task::ShutdownSignal};
+
 pub mod tcp;
 pub mod tcp_msgpack;
 pub mod tcp_text;
 
 #[cfg(feature = "web")]
 pub mod web;
-
-use std::sync::Arc;
-
-use rradio_messages::{LogMessage, PlayerStateDiff};
-
-use crate::{pipeline::PlayerState, task::ShutdownSignal};
 
 pub type BroadcastEvent = rradio_messages::Event;
 
@@ -91,41 +91,64 @@ enum Event {
     LogMessage(LogMessage),
 }
 
+impl Event {
+    fn into_broadcast_event(self) -> BroadcastEvent {
+        match self {
+            Event::StateUpdate(diff) => BroadcastEvent::PlayerStateChanged(diff),
+            Event::LogMessage(log_message) => BroadcastEvent::LogMessage(log_message),
+        }
+    }
+}
+
 fn event_stream(
     player_state_rx: tokio::sync::watch::Receiver<PlayerState>,
     log_messages_rx: tokio::sync::broadcast::Receiver<LogMessage>,
 ) -> impl futures::Stream<Item = Event> {
     use futures::StreamExt;
 
-    let current_state = player_state_rx.borrow().clone();
-    let initial_value = player_state_to_diff(&current_state);
-    let state_stream = futures::stream::once(async move { Event::StateUpdate(initial_value) })
-        .chain(futures::stream::unfold(
-            (player_state_rx, current_state),
-            |(mut player_state_rx, current_state)| async move {
-                loop {
-                    player_state_rx.changed().await.ok()?;
-                    let new_state = player_state_rx.borrow().clone();
-                    if let Some(diff) = diff_player_state(&current_state, &new_state) {
-                        return Some((Event::StateUpdate(diff), (player_state_rx, new_state)));
+    let state_diff_stream = {
+        let current_state = player_state_rx.borrow().clone();
+        futures::stream::once(futures::future::ready(Event::StateUpdate(
+            player_state_to_diff(&current_state),
+        ))) // Set the current state as an "everything has changed" diff
+        .chain(
+            // Whenever the player state changed, diff the current state with the new state and if the diff isn't empty, send it
+            futures::stream::unfold(
+                (player_state_rx, current_state),
+                |(mut player_state_rx, current_state)| async move {
+                    loop {
+                        player_state_rx.changed().await.ok()?;
+                        let new_state = player_state_rx.borrow().clone();
+                        match diff_player_state(&current_state, &new_state) {
+                            Some(diff) => {
+                                return Some((
+                                    Event::StateUpdate(diff),
+                                    (player_state_rx, new_state),
+                                ))
+                            }
+                            None => continue,
+                        }
                     }
-                }
-            },
-        ));
+                },
+            ),
+        )
+    };
 
-    let log_stream = futures::stream::unfold(log_messages_rx, |mut rx| async {
+    let log_stream = futures::stream::unfold(log_messages_rx, |mut log_messages_rx| async {
         loop {
-            return match rx.recv().await {
-                Ok(message) => Some((Event::LogMessage(message), rx)),
+            return match log_messages_rx.recv().await {
+                Ok(message) => Some((Event::LogMessage(message), log_messages_rx)),
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => None,
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue, // Ignore log message loss
             };
         }
     });
 
-    futures::stream::select(state_stream, log_stream)
+    futures::stream::select(state_diff_stream, log_stream)
 }
 
+/// The channel endpoints which ports use to communicate with the pipeline
+/// The name "partial" is because `shutdown_signal` is initially of type `()` and is replaced with the actual shutdown signal, of type [`ShutdownSignal`]
 #[derive(Clone)]
 pub struct PartialPortChannels<SS> {
     pub commands_tx: tokio::sync::mpsc::UnboundedSender<rradio_messages::Command>,
@@ -134,6 +157,7 @@ pub struct PartialPortChannels<SS> {
     pub shutdown_signal: SS,
 }
 
+/// [`PartialPortChannels`] with a [`ShutdownSignal`] becomes an entire `PortChannels`
 pub type PortChannels = PartialPortChannels<ShutdownSignal>;
 
 impl<SS> PartialPortChannels<SS> {
