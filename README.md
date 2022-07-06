@@ -17,7 +17,7 @@ However, there are a couple of exceptions
     input_timeout = "2s"
     volume_offset = 5
     buffering_duration = "40s"
-    log_level = "info"
+    log_level = "rradio=info"
 
     [Notifications]
     ready = "file:///usr/share/sounds/success.mp3"

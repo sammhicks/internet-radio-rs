@@ -1446,7 +1446,6 @@ dependencies = [
  "anyhow",
  "askama",
  "axum",
- "base64",
  "crossterm",
  "futures",
  "glib",
@@ -1478,9 +1477,10 @@ dependencies = [
 
 [[package]]
 name = "rradio-messages"
-version = "0.24.0"
+version = "0.25.0"
 dependencies = [
  "arcstr",
+ "base64",
  "serde",
  "thiserror",
 ]

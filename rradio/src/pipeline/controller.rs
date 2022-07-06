@@ -51,6 +51,14 @@ impl PlaylistState {
             self.current_track_index = 0;
         }
     }
+
+    fn goto_nth_track(&mut self, index: usize) {
+        if index < self.tracks.len() {
+            self.current_track_index = index;
+        } else {
+            tracing::error!(%index, length = self.tracks.len(), "Cannot change track");
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -167,6 +175,14 @@ impl Controller {
             .as_mut()
             .ok_or(Error::NoPlaylist)?
             .goto_next_track();
+        self.play_current_track().await
+    }
+
+    async fn goto_nth_track(&mut self, index: usize) -> Result<(), Error> {
+        self.current_playlist
+            .as_mut()
+            .ok_or(Error::NoPlaylist)?
+            .goto_nth_track(index);
         self.play_current_track().await
     }
 
@@ -351,6 +367,7 @@ impl Controller {
             Command::SmartPreviousItem => self.smart_goto_previous_track().await,
             Command::PreviousItem => self.goto_previous_track().await,
             Command::NextItem => self.goto_next_track().await,
+            Command::NthItem(index) => self.goto_nth_track(index).await,
             Command::SeekTo(position) => self.seek_to(position),
             Command::SeekBackwards(offset) => self.playbin.position().map_or(Ok(()), |position| {
                 self.seek_to(position.saturating_sub(offset))
@@ -441,7 +458,7 @@ impl Controller {
                         Ok(Tag::Artist(artist)) => new_tags.artist = Some(artist),
                         Ok(Tag::Album(album)) => new_tags.album = Some(album),
                         Ok(Tag::Genre(genre)) => new_tags.genre = Some(genre),
-                        Ok(Tag::Image(image)) => new_tags.image = Some(image.into_inner()),
+                        Ok(Tag::Image(image)) => new_tags.image = Some(image),
                         Ok(Tag::Comment(comment)) => new_tags.comment = Some(comment),
                         Ok(Tag::Unknown { .. }) => {}
                         Err(err) => {

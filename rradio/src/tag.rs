@@ -3,27 +3,7 @@
 use anyhow::{Context, Result};
 use glib::value::SendValue;
 
-use rradio_messages::ArcStr;
-
-/// The image tag of a track.
-/// This wrapper is to avoid dumping to contents of an image to the terminal when debug printing a track tag.
-pub struct Image(ArcStr);
-
-impl Image {
-    fn new(mime_type: &str, image_data: &[u8]) -> Self {
-        Self(format!("data:{};base64,{}", mime_type, base64::encode(image_data)).into())
-    }
-
-    pub fn into_inner(self) -> ArcStr {
-        self.0
-    }
-}
-
-impl std::fmt::Debug for Image {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("<image>")
-    }
-}
+use rradio_messages::{ArcStr, Image};
 
 /// A tag attached to a track
 #[derive(Debug)]

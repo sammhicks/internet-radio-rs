@@ -21,6 +21,7 @@ pub enum Command {
     SmartPreviousItem,
     PreviousItem,
     NextItem,
+    NthItem(usize),
     SeekTo(Duration),
     SeekBackwards(Duration),
     SeekForwards(Duration),
@@ -103,12 +104,6 @@ impl StationIndex {
     }
 }
 
-impl AsRef<str> for StationIndex {
-    fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
-
 impl fmt::Display for StationIndex {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
@@ -144,6 +139,53 @@ pub struct Station {
     pub tracks: Option<Arc<[Track]>>, // If None, the tracks haven't been loaded yet
 }
 
+/// The image tag of a track.
+/// This wrapper is to avoid dumping to contents of an image to the terminal when debug printing a track tag.
+#[derive(Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+pub struct Image(ArcStr);
+
+impl Image {
+    pub fn new(mime_type: &str, image_data: &[u8]) -> Self {
+        Self(format!("data:{};base64,{}", mime_type, base64::encode(image_data)).into())
+    }
+}
+
+impl AsRef<[u8]> for Image {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+impl AsRef<str> for Image {
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
+    }
+}
+
+impl std::ops::Deref for Image {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_ref()
+    }
+}
+
+impl fmt::Debug for Image {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.0.hash(&mut hasher);
+
+        write!(f, "Image {{ hash: {:016X} }}", hasher.finish())
+    }
+}
+
+impl fmt::Display for Image {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct TrackTags {
     pub title: Option<ArcStr>,
@@ -151,7 +193,7 @@ pub struct TrackTags {
     pub artist: Option<ArcStr>,
     pub album: Option<ArcStr>,
     pub genre: Option<ArcStr>,
-    pub image: Option<ArcStr>,
+    pub image: Option<Image>,
     pub comment: Option<ArcStr>,
 }
 

@@ -26,7 +26,6 @@ default = [ "web" ]
 anyhow = "1.0"
 askama = "0.11"
 axum = { version = "0.5", default-features = false, features = [ "http1", "json", "ws" ], optional = true }
-base64 = "0.13"
 crossterm =  { version = "0.23", features = [ "event-stream" ] }
 futures = "0.3"
 glib = "0.15"
