@@ -4,12 +4,10 @@ use anyhow::{Context, Result};
 use futures::{Stream, StreamExt, TryStreamExt};
 use tokio::{io::AsyncWriteExt, net::tcp, sync::oneshot};
 
-use rradio_messages::Command;
+use rradio_messages::{Command, Event};
 use tracing::Instrument;
 
 use crate::task::FailableFuture;
-
-use super::{BroadcastEvent, Event};
 
 async fn send_messages<Events, Encode>(
     events: Events,
@@ -17,16 +15,13 @@ async fn send_messages<Events, Encode>(
     mut stream_tx: tcp::OwnedWriteHalf,
 ) -> Result<()>
 where
-    Events: Stream<Item = super::Event>,
-    Encode: for<'a> Fn(&BroadcastEvent, &'a mut Vec<u8>) -> Result<&'a [u8]> + Send + Sync,
+    Events: Stream<Item = Event>,
+    Encode: for<'a> Fn(&Event, &'a mut Vec<u8>) -> Result<&'a [u8]> + Send + Sync,
 {
     let mut buffer = Vec::new();
 
     stream_tx
-        .write_all(encode_event(
-            &BroadcastEvent::ProtocolVersion(rradio_messages::VERSION.into()),
-            &mut buffer,
-        )?)
+        .write_all(rradio_messages::API_VERSION_HEADER.as_bytes())
         .await?;
 
     buffer.clear();
@@ -36,24 +31,9 @@ where
     while let Some(event) = events.next().await {
         buffer.clear();
 
-        match event {
-            Event::StateUpdate(diff) => {
-                stream_tx
-                    .write_all(encode_event(
-                        &BroadcastEvent::PlayerStateChanged(diff),
-                        &mut buffer,
-                    )?)
-                    .await?;
-            }
-            Event::LogMessage(log_message) => {
-                stream_tx
-                    .write_all(encode_event(
-                        &BroadcastEvent::LogMessage(log_message),
-                        &mut buffer,
-                    )?)
-                    .await?;
-            }
-        }
+        stream_tx
+            .write_all(encode_event(&event, &mut buffer)?)
+            .await?;
     }
 
     stream_tx.shutdown().await?;
@@ -67,11 +47,7 @@ pub async fn run<Encode, Decode, DecodeStream>(
     encode_event: Encode,
     decode_commands: Decode,
 ) where
-    Encode: for<'a> Fn(&BroadcastEvent, &'a mut Vec<u8>) -> Result<&'a [u8]>
-        + Send
-        + Sync
-        + Clone
-        + 'static,
+    Encode: for<'a> Fn(&Event, &'a mut Vec<u8>) -> Result<&'a [u8]> + Send + Sync + Clone + 'static,
     Decode: FnOnce(tcp::OwnedReadHalf) -> DecodeStream + Send + Sync + Clone + 'static,
     DecodeStream: Stream<Item = Result<Command>> + Send + Sync + 'static,
 {

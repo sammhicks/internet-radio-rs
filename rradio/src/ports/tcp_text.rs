@@ -2,10 +2,8 @@ use std::fmt::{Debug, Display, Formatter};
 
 use anyhow::{Context, Result};
 
-use rradio_messages::Command;
+use rradio_messages::{Command, Event};
 use tracing::{info_span, Instrument};
-
-use super::BroadcastEvent;
 
 fn clear_lines(f: &mut Formatter, row: u16, count: u16) -> std::fmt::Result {
     use crossterm::terminal;
@@ -126,20 +124,11 @@ impl<'a> Display for DisplayDiff<&'a rradio_messages::PlayerStateDiff> {
 }
 
 #[allow(clippy::unnecessary_wraps)]
-fn encode_event<'a>(message: &BroadcastEvent, buffer: &'a mut Vec<u8>) -> Result<&'a [u8]> {
+fn encode_event<'a>(message: &Event, buffer: &'a mut Vec<u8>) -> Result<&'a [u8]> {
     use std::io::Write;
     match message {
-        BroadcastEvent::ProtocolVersion(_) => write!(
-            buffer,
-            "{}{}{}{}Version {}",
-            crossterm::cursor::Hide,
-            crossterm::terminal::SetSize(120, 20),
-            crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
-            crossterm::cursor::MoveTo(0, 0),
-            rradio_messages::VERSION
-        ),
-        BroadcastEvent::PlayerStateChanged(diff) => write!(buffer, "{}", DisplayDiff(diff)),
-        BroadcastEvent::LogMessage(log_message) => write!(
+        Event::PlayerStateChanged(diff) => write!(buffer, "{}", DisplayDiff(diff)),
+        Event::LogMessage(log_message) => write!(
             buffer,
             "{}{:?}",
             crossterm::cursor::MoveTo(0, 0),

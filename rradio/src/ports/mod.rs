@@ -8,13 +8,12 @@ use rradio_messages::{LogMessage, PlayerStateDiff};
 use crate::{pipeline::PlayerState, task::ShutdownSignal};
 
 pub mod tcp;
-pub mod tcp_msgpack;
+// pub mod tcp_msgpack;
+pub mod tcp_postcard;
 pub mod tcp_text;
 
 #[cfg(feature = "web")]
 pub mod web;
-
-pub type BroadcastEvent = rradio_messages::Event;
 
 fn player_state_to_diff(state: &PlayerState) -> PlayerStateDiff {
     PlayerStateDiff {
@@ -85,32 +84,17 @@ fn diff_arc_with_clone<T: Clone>(a: &Arc<T>, b: &Arc<T>, any_some: &mut bool) ->
     }
 }
 
-#[allow(clippy::large_enum_variant)]
-enum Event {
-    StateUpdate(PlayerStateDiff),
-    LogMessage(LogMessage),
-}
-
-impl Event {
-    fn into_broadcast_event(self) -> BroadcastEvent {
-        match self {
-            Event::StateUpdate(diff) => BroadcastEvent::PlayerStateChanged(diff),
-            Event::LogMessage(log_message) => BroadcastEvent::LogMessage(log_message),
-        }
-    }
-}
-
 fn event_stream(
     player_state_rx: tokio::sync::watch::Receiver<PlayerState>,
     log_messages_rx: tokio::sync::broadcast::Receiver<LogMessage>,
-) -> impl futures::Stream<Item = Event> {
+) -> impl futures::Stream<Item = rradio_messages::Event> {
     use futures::StreamExt;
 
     let state_diff_stream = {
         let current_state = player_state_rx.borrow().clone();
-        futures::stream::once(futures::future::ready(Event::StateUpdate(
-            player_state_to_diff(&current_state),
-        ))) // Set the current state as an "everything has changed" diff
+        futures::stream::once(futures::future::ready(
+            rradio_messages::Event::PlayerStateChanged(player_state_to_diff(&current_state)),
+        )) // Set the current state as an "everything has changed" diff
         .chain(
             // Whenever the player state changed, diff the current state with the new state and if the diff isn't empty, send it
             futures::stream::unfold(
@@ -122,7 +106,7 @@ fn event_stream(
                         match diff_player_state(&current_state, &new_state) {
                             Some(diff) => {
                                 return Some((
-                                    Event::StateUpdate(diff),
+                                    rradio_messages::Event::PlayerStateChanged(diff),
                                     (player_state_rx, new_state),
                                 ))
                             }
@@ -137,7 +121,7 @@ fn event_stream(
     let log_stream = futures::stream::unfold(log_messages_rx, |mut log_messages_rx| async {
         loop {
             return match log_messages_rx.recv().await {
-                Ok(message) => Some((Event::LogMessage(message), log_messages_rx)),
+                Ok(message) => Some((rradio_messages::Event::LogMessage(message), log_messages_rx)),
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => None,
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue, // Ignore log message loss
             };

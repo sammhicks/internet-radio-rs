@@ -5,9 +5,16 @@ use serde::{Deserialize, Serialize};
 pub use arcstr;
 pub use arcstr::ArcStr;
 
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+mod encoding;
 
-pub type MsgPackBufferLength = u32;
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// When connecting over TCP, RRadio will begin by immediately sending the following header
+/// Clients MUST verify that the header matches the header of the version of `rradio_messages` that they're linked to
+pub const API_VERSION_HEADER: &str =
+    concat!(env!("CARGO_PKG_NAME"), "_", env!("CARGO_PKG_VERSION"), "\n");
+
+/// The port to connect to for sending commands and receiving events
+pub const API_PORT: u16 = 8002;
 
 pub const VOLUME_ZERO_DB: i32 = 100;
 pub const VOLUME_MIN: i32 = 0;
@@ -31,6 +38,18 @@ pub enum Command {
     PlayUrl(String),
     Eject,
     DebugPipeline,
+}
+
+impl Command {
+    /// Clear the buffer and encode the `Command` into it
+    pub fn encode<'a>(&self, buffer: &'a mut Vec<u8>) -> postcard::Result<&'a [u8]> {
+        encoding::encode_value(self, buffer)
+    }
+
+    /// Decode a `Command` from the buffer
+    pub fn decode(buffer: &mut [u8]) -> postcard::Result<Self> {
+        encoding::decode_value(buffer)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
@@ -421,9 +440,47 @@ impl std::convert::From<Error> for LogMessage {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Deserialize, Serialize)]
 pub enum Event {
-    ProtocolVersion(ArcStr),
     PlayerStateChanged(PlayerStateDiff),
     LogMessage(LogMessage),
+}
+
+impl Event {
+    /// Clear the buffer and encode the `Event` into it
+    pub fn encode<'a>(&self, buffer: &'a mut Vec<u8>) -> postcard::Result<&'a [u8]> {
+        encoding::encode_value(self, buffer)
+    }
+
+    /// Decode an `Event` from the buffer. Events are [COBS](https://en.wikipedia.org/wiki/Consistent_Overhead_Byte_Stuffing) encoded,
+    /// and thus do not contain the value `0`, and are thus suffixed with a value of `0`
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// async fn read_next_event<S>(
+    ///     stream: &mut S,
+    ///     buffer: &mut Vec<u8>
+    /// ) -> anyhow::Result<Option<Event>>
+    /// where
+    ///     S: AsyncBufRead,
+    /// {
+    ///     buffer.clear();
+    ///     let read_size = stream
+    ///         .read_until(0, buffer)
+    ///         .await
+    ///         .context("Failed to read from stream")?;
+    ///
+    ///     if read_size == 0 {
+    ///         return Ok(None);
+    ///     }
+    ///
+    ///     let event = Event::decode(buffer).context("Failed to decode Event")?;
+    ///
+    ///     Ok(Some(event))
+    /// }
+    /// ```
+    pub fn decode(buffer: &mut [u8]) -> postcard::Result<Self> {
+        encoding::decode_value(buffer)
+    }
 }
 
 impl std::convert::From<PlayerStateDiff> for Event {
@@ -436,8 +493,4 @@ impl std::convert::From<LogMessage> for Event {
     fn from(message: LogMessage) -> Self {
         Self::LogMessage(message)
     }
-}
-
-pub fn protocol_version_message() -> Event {
-    Event::ProtocolVersion(VERSION.into())
 }

@@ -53,7 +53,7 @@ fn main() -> Result<()> {
 
     let keyboard_commands_task = keyboard_commands::run(port_channels.commands_tx.clone(), config);
 
-    let tcp_msgpack_task = ports::tcp_msgpack::run(port_channels.clone());
+    let tcp_postcard_task = ports::tcp_postcard::run(port_channels.clone());
     let tcp_text_task = ports::tcp_text::run(port_channels);
 
     let runtime = tokio::runtime::Runtime::new()?; // Setup the async runtime
@@ -66,7 +66,7 @@ fn main() -> Result<()> {
 
         // Start other tasks within shutdown signalling mechanism
         wait_group.spawn_task(tcp_text_task);
-        wait_group.spawn_task(tcp_msgpack_task);
+        wait_group.spawn_task(tcp_postcard_task);
         #[cfg(feature = "web")]
         wait_group.spawn_task(web_task);
 
@@ -106,8 +106,8 @@ fn setup_logging() -> tracing_subscriber::reload::Handle<
     reload_handle
 }
 
-/// `ForceCR` is a wrapper around a [`std::io::Writer`] which explicitly sends a "\r\n" as a newline, even if only a "\n" is written.
-/// This is useful because `stdout` is in "Raw" Mode. See [`keyboard_commands::RawMode`]
+/// `ForceCR` is a wrapper around a [`std::io::Write`] which explicitly sends a "\r\n" as a newline, even if only a "\n" is written.
+/// This is useful because `stdout` is in "Raw" Mode.
 struct ForceCR<W: std::io::Write>(W);
 
 impl<W: std::io::Write> std::io::Write for ForceCR<W> {
