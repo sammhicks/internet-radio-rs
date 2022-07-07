@@ -13,7 +13,7 @@ impl<F: Future<Output = anyhow::Result<()>>> Future for LoggingFuture<F> {
     ) -> std::task::Poll<Self::Output> {
         unsafe { self.map_unchecked_mut(|LoggingFuture(err)| err) }
             .poll(cx)
-            .map_err(|err| tracing::error!("{}", err))
+            .map_err(|err| tracing::error!("{:#}", err))
             .map(|_: Result<(), ()>| ())
     }
 }
