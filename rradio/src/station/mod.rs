@@ -91,7 +91,7 @@ pub struct Playlist {
 #[derive(Debug)]
 pub enum Station {
     UrlList {
-        index: StationIndex,
+        index: Option<StationIndex>,
         title: Option<String>,
         tracks: Vec<Track>,
     },
@@ -107,9 +107,6 @@ pub enum Station {
         path: std::path::PathBuf,
     },
     UPnP(parse_upnp::Station),
-    Singleton {
-        track: Track,
-    },
 }
 
 /// Convert an [`std::io::Error`] into a [`rradio_messages::StationError::StationsDirectoryIoError`]
@@ -180,28 +177,14 @@ impl Station {
         })
     }
 
-    /// Create a station consisting of a single url.
-    pub fn singleton(url: ArcStr) -> Self {
-        Self::Singleton {
-            track: Track {
-                title: None,
-                album: None,
-                artist: None,
-                url,
-                is_notification: false,
-            },
-        }
-    }
-
     pub fn index(&self) -> Option<&StationIndex> {
         match self {
-            Station::UrlList { index, .. } => Some(index),
+            Station::UrlList { index, .. } => index.as_ref(),
             #[cfg(feature = "cd")]
             Station::CD { index, .. } => Some(index),
             #[cfg(feature = "usb")]
             Station::Usb { index, .. } => Some(index),
             Station::UPnP(station) => Some(station.index()),
-            Station::Singleton { .. } => None,
         }
     }
 
@@ -213,7 +196,6 @@ impl Station {
             #[cfg(feature = "usb")]
             Station::Usb { .. } => None,
             Station::UPnP(station) => station.title(),
-            Station::Singleton { .. } => None,
         }
     }
 
@@ -225,7 +207,6 @@ impl Station {
             #[cfg(feature = "usb")]
             Station::Usb { .. } => StationType::Usb,
             Station::UPnP(..) => StationType::UPnP,
-            Station::Singleton { .. } => StationType::UrlList,
         }
     }
 
@@ -240,7 +221,7 @@ impl Station {
                 title,
                 tracks,
             } => Ok(Playlist {
-                station_index: Some(index),
+                station_index: index,
                 station_title: title,
                 station_type: StationType::UrlList,
                 tracks,
@@ -276,14 +257,6 @@ impl Station {
                 .into_playlist(metadata)
                 .await
                 .map_err(|err| rradio_messages::StationError::UPnPError(err.to_string().into())),
-            Station::Singleton { track } => Ok(Playlist {
-                station_index: None,
-                station_title: None,
-                station_type: StationType::UrlList,
-                tracks: vec![track],
-                metadata: PlaylistMetadata::default(),
-                handle: PlaylistHandle::default(),
-            }),
         }
     }
 }

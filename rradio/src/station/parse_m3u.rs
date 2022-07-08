@@ -67,7 +67,7 @@ fn from_str(src: &str, index: StationIndex) -> Result<Station> {
         .collect::<Result<_>>()?;
 
         Ok(Station::UrlList {
-            index,
+            index: Some(index),
             title,
             tracks,
         })
@@ -84,7 +84,7 @@ fn from_str(src: &str, index: StationIndex) -> Result<Station> {
             .collect();
 
         Ok(Station::UrlList {
-            index,
+            index: Some(index),
             title: None,
             tracks,
         })
@@ -118,7 +118,10 @@ mod tests {
             tracks,
         } = station
         {
-            assert_eq!(index.as_str(), INDEX);
+            assert_eq!(
+                index.as_ref().map(rradio_messages::StationIndex::as_str),
+                Some(INDEX)
+            );
             assert_eq!(title.as_deref(), test_title);
 
             assert_eq!(tracks.len(), test_tracks.len());

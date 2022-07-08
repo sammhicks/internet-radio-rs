@@ -22,7 +22,7 @@ pub fn from_file(path: &std::path::Path, index: StationIndex) -> Result<Station>
         })
         .map_err(Error::new);
     Ok(Station::UrlList {
-        index,
+        index: Some(index),
         title: None,
         tracks: maybe_tracks?,
     })

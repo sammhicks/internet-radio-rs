@@ -20,6 +20,12 @@ pub const VOLUME_ZERO_DB: i32 = 100;
 pub const VOLUME_MIN: i32 = 0;
 pub const VOLUME_MAX: i32 = 120;
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct SetPlaylistTrack {
+    pub title: String,
+    pub url: String,
+}
+
 /// Commands from the user
 #[derive(Debug, Deserialize, Serialize)]
 pub enum Command {
@@ -35,7 +41,10 @@ pub enum Command {
     VolumeUp,
     VolumeDown,
     SetVolume(i32),
-    PlayUrl(String),
+    SetPlaylist {
+        title: String,
+        tracks: Vec<SetPlaylistTrack>,
+    },
     Eject,
     DebugPipeline,
 }
@@ -106,6 +115,18 @@ impl Track {
             artist: None,
             url,
             is_notification: true,
+        }
+    }
+}
+
+impl From<SetPlaylistTrack> for Track {
+    fn from(SetPlaylistTrack { title, url }: SetPlaylistTrack) -> Self {
+        Self {
+            title: Some(title.into()),
+            album: None,
+            artist: None,
+            url: url.into(),
+            is_notification: false,
         }
     }
 }

@@ -378,7 +378,14 @@ impl Controller {
             Command::VolumeUp => self.change_volume(1),
             Command::VolumeDown => self.change_volume(-1),
             Command::SetVolume(volume) => self.set_volume(volume),
-            Command::PlayUrl(url) => self.play_station(Station::singleton(url.into())).await,
+            Command::SetPlaylist { title, tracks } => {
+                self.play_station(Station::UrlList {
+                    index: None,
+                    title: Some(title),
+                    tracks: tracks.into_iter().map(Track::from).collect(),
+                })
+                .await
+            }
             Command::Eject => {
                 if let Some(rradio_messages::StationType::CD) = self
                     .published_state
