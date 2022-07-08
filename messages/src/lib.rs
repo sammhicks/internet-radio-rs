@@ -144,6 +144,18 @@ impl StationIndex {
     }
 }
 
+impl AsRef<str> for StationIndex {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::borrow::Borrow<str> for StationIndex {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
 impl fmt::Display for StationIndex {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
