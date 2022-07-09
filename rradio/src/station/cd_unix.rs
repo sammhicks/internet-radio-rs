@@ -7,14 +7,14 @@ use rradio_messages::{CdError, EjectError};
 type Result<T> = std::result::Result<T, rradio_messages::CdError>;
 
 trait Parameter {
-    fn into_raw(self) -> libc::c_uint;
+    fn into_raw(self) -> libc::c_ulong;
 }
 
 #[derive(Copy, Clone, Debug)]
 struct NoParameter;
 
 impl Parameter for NoParameter {
-    fn into_raw(self) -> libc::c_uint {
+    fn into_raw(self) -> libc::c_ulong {
         0
     }
 }
@@ -27,8 +27,8 @@ struct CdToc {
 }
 
 impl Parameter for *mut CdToc {
-    fn into_raw(self) -> libc::c_uint {
-        self as libc::c_uint
+    fn into_raw(self) -> libc::c_ulong {
+        self as libc::c_ulong
     }
 }
 
@@ -132,8 +132,8 @@ impl Debug for CdTocEntry {
 }
 
 impl Parameter for *mut CdTocEntry {
-    fn into_raw(self) -> libc::c_uint {
-        self as libc::c_uint
+    fn into_raw(self) -> libc::c_ulong {
+        self as libc::c_ulong
     }
 }
 
@@ -146,14 +146,14 @@ enum LockDoor {
 }
 
 impl Parameter for LockDoor {
-    fn into_raw(self) -> libc::c_uint {
-        self as libc::c_uint
+    fn into_raw(self) -> libc::c_ulong {
+        self as libc::c_ulong
     }
 }
 
 trait Request {
     type Parameter: Parameter;
-    fn into_raw(self) -> libc::c_uint;
+    fn into_raw(self) -> libc::c_ulong;
 }
 
 macro_rules! generate_requests {
@@ -165,7 +165,7 @@ macro_rules! generate_requests {
 
             impl $name {
                 #[allow(dead_code)]
-                const CODE: libc::c_uint = $code;
+                const CODE: libc::c_ulong = $code;
             }
         )*
     };
@@ -189,7 +189,7 @@ macro_rules! requests_with_no_parameter {
         $(
             impl Request for $name {
                 type Parameter = NoParameter;
-                fn into_raw(self) -> libc::c_uint {
+                fn into_raw(self) -> libc::c_ulong {
                     Self::CODE
                 }
             }
@@ -203,7 +203,7 @@ macro_rules! request_parameter {
     ($name:ident, $parameter:ty) => {
         impl Request for $name {
             type Parameter = $parameter;
-            fn into_raw(self) -> libc::c_uint {
+            fn into_raw(self) -> libc::c_ulong {
                 Self::CODE
             }
         }
