@@ -42,21 +42,20 @@ impl<'a> Display for DisplayDiff<&'a rradio_messages::PlayerStateDiff> {
 
         let station_row = state_row + state_row_count;
         let station_row_count = 2;
-        match &self.0.current_station {
-            rradio_messages::OptionDiff::NoChange => (),
-            rradio_messages::OptionDiff::ChangedToNone => {
-                clear_lines(f, station_row, station_row_count)?;
-            }
-            rradio_messages::OptionDiff::ChangedToSome(station) => {
-                Display::fmt(&MoveTo(0, station_row), f)?;
-                display_entry(f, "Station Index", &station.index)?;
-                display_entry(f, "Station Title", &station.title)?;
+        if let Some(current_station) = &self.0.current_station {
+            match current_station {
+                None => clear_lines(f, station_row, station_row_count)?,
+                Some(station) => {
+                    Display::fmt(&MoveTo(0, station_row), f)?;
+                    display_entry(f, "Station Index", &station.index)?;
+                    display_entry(f, "Station Title", &station.title)?;
+                }
             }
         }
 
         let pause_before_playing_row = station_row + station_row_count;
         let pause_before_playing_row_count = 1;
-        if let Some(pause_before_playing) = self.0.pause_before_playing.into_option() {
+        if let Some(pause_before_playing) = self.0.pause_before_playing {
             Display::fmt(&MoveTo(0, pause_before_playing_row), f)?;
             display_entry(f, "Pause Before Playing", pause_before_playing)?;
         }
@@ -70,17 +69,18 @@ impl<'a> Display for DisplayDiff<&'a rradio_messages::PlayerStateDiff> {
 
         let tags_row = current_track_index_row + current_track_index_row_count;
         let tags_row_count = 6;
-        match &self.0.current_track_tags {
-            rradio_messages::OptionDiff::NoChange => (),
-            rradio_messages::OptionDiff::ChangedToNone => clear_lines(f, tags_row, tags_row_count)?,
-            rradio_messages::OptionDiff::ChangedToSome(tags) => {
-                Display::fmt(&MoveTo(0, tags_row), f)?;
-                display_entry(f, "Title", &tags.title)?;
-                display_entry(f, "Organisation", &tags.organisation)?;
-                display_entry(f, "Artist", &tags.artist)?;
-                display_entry(f, "Album", &tags.album)?;
-                display_entry(f, "Genre", &tags.genre)?;
-                display_entry(f, "Comment", &tags.comment)?;
+        if let Some(current_track_tags) = &self.0.current_track_tags {
+            match current_track_tags {
+                None => clear_lines(f, tags_row, tags_row_count)?,
+                Some(tags) => {
+                    Display::fmt(&MoveTo(0, tags_row), f)?;
+                    display_entry(f, "Title", &tags.title)?;
+                    display_entry(f, "Organisation", &tags.organisation)?;
+                    display_entry(f, "Artist", &tags.artist)?;
+                    display_entry(f, "Album", &tags.album)?;
+                    display_entry(f, "Genre", &tags.genre)?;
+                    display_entry(f, "Comment", &tags.comment)?;
+                }
             }
         }
 
@@ -100,14 +100,14 @@ impl<'a> Display for DisplayDiff<&'a rradio_messages::PlayerStateDiff> {
 
         let track_duration_row = buffering_row + buffering_row_count;
         let track_duration_row_count = 1;
-        if let Some(duration) = self.0.track_duration.into_option() {
+        if let Some(duration) = self.0.track_duration {
             Display::fmt(&MoveTo(0, track_duration_row), f)?;
             display_entry(f, "Duration", duration)?;
         }
 
         let track_position_row = track_duration_row + track_duration_row_count;
         let track_position_row_count = 1;
-        if let Some(position) = self.0.track_position.into_option() {
+        if let Some(position) = self.0.track_position {
             Display::fmt(&MoveTo(0, track_position_row), f)?;
             display_entry(f, "Position", position)?;
         }

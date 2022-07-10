@@ -249,56 +249,6 @@ pub struct TrackTags {
     pub comment: Option<ArcStr>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-pub enum OptionDiff<T> {
-    NoChange,
-    ChangedToNone,
-    ChangedToSome(T),
-}
-
-impl<T> OptionDiff<T> {
-    pub fn has_changed(&self) -> bool {
-        !self.has_not_changed()
-    }
-
-    pub fn has_not_changed(&self) -> bool {
-        matches!(self, Self::NoChange)
-    }
-
-    pub fn into_option(self) -> Option<Option<T>> {
-        match self {
-            Self::NoChange => None,
-            Self::ChangedToNone => Some(None),
-            Self::ChangedToSome(t) => Some(Some(t)),
-        }
-    }
-}
-
-impl<T> From<OptionDiff<T>> for Option<Option<T>> {
-    fn from(diff: OptionDiff<T>) -> Self {
-        diff.into_option()
-    }
-}
-
-impl<T> std::convert::From<Option<T>> for OptionDiff<T> {
-    fn from(maybe_t: Option<T>) -> Self {
-        match maybe_t {
-            Some(t) => Self::ChangedToSome(t),
-            None => Self::ChangedToNone,
-        }
-    }
-}
-
-impl<T> std::convert::From<Option<Option<T>>> for OptionDiff<T> {
-    fn from(value: Option<Option<T>>) -> Self {
-        match value {
-            Some(Some(x)) => OptionDiff::ChangedToSome(x),
-            Some(None) => OptionDiff::ChangedToNone,
-            None => OptionDiff::NoChange,
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error, Deserialize, Serialize)]
 pub enum PingError {
     /// Failed to resolve hostname into IP address
@@ -349,14 +299,14 @@ impl Default for PingTimes {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct PlayerStateDiff {
     pub pipeline_state: Option<PipelineState>,
-    pub current_station: OptionDiff<Station>,
-    pub pause_before_playing: OptionDiff<Duration>,
+    pub current_station: Option<Option<Station>>,
+    pub pause_before_playing: Option<Option<Duration>>,
     pub current_track_index: Option<usize>,
-    pub current_track_tags: OptionDiff<TrackTags>,
+    pub current_track_tags: Option<Option<TrackTags>>,
     pub volume: Option<i32>,
     pub buffering: Option<u8>,
-    pub track_duration: OptionDiff<Duration>,
-    pub track_position: OptionDiff<Duration>,
+    pub track_duration: Option<Option<Duration>>,
+    pub track_position: Option<Option<Duration>>,
     pub ping_times: Option<PingTimes>,
 }
 
