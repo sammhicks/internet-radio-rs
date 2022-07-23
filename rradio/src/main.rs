@@ -53,7 +53,8 @@ fn main() -> Result<()> {
 
     let keyboard_commands_task = keyboard_commands::run(port_channels.commands_tx.clone(), config);
 
-    let tcp_postcard_task = ports::tcp_postcard::run(port_channels.clone());
+    let tcp_binary_task = ports::tcp_binary::run(port_channels.clone());
+
     let tcp_text_task = ports::tcp_text::run(port_channels);
 
     let runtime = tokio::runtime::Runtime::new()?; // Setup the async runtime
@@ -66,7 +67,8 @@ fn main() -> Result<()> {
 
         // Start other tasks within shutdown signalling mechanism
         wait_group.spawn_task(tcp_text_task);
-        wait_group.spawn_task(tcp_postcard_task);
+        wait_group.spawn_task(tcp_binary_task);
+
         #[cfg(feature = "web")]
         wait_group.spawn_task(web_task);
 

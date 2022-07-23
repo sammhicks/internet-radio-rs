@@ -49,15 +49,23 @@ pub enum Command {
     DebugPipeline,
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("Failed to encode Command: {0}")]
+pub struct CommandEncodeError(#[source] postcard::Error);
+
+#[derive(Debug, thiserror::Error)]
+#[error("Failed to decode Command: {0}")]
+pub struct CommandDecodeError(#[source] postcard::Error);
+
 impl Command {
     /// Clear the buffer and encode the `Command` into it
-    pub fn encode<'a>(&self, buffer: &'a mut Vec<u8>) -> postcard::Result<&'a [u8]> {
-        encoding::encode_value(self, buffer)
+    pub fn encode<'a>(&self, buffer: &'a mut Vec<u8>) -> Result<&'a [u8], CommandEncodeError> {
+        encoding::encode_value(self, buffer).map_err(CommandEncodeError)
     }
 
     /// Decode a `Command` from the buffer
-    pub fn decode(buffer: &mut [u8]) -> postcard::Result<Self> {
-        encoding::decode_value(buffer)
+    pub fn decode(buffer: &mut [u8]) -> Result<Self, CommandDecodeError> {
+        encoding::decode_value(buffer).map_err(CommandDecodeError)
     }
 }
 
@@ -427,10 +435,18 @@ pub enum Event {
     LogMessage(LogMessage),
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("Failed to encode Event: {0}")]
+pub struct EventEncodeError(#[source] postcard::Error);
+
+#[derive(Debug, thiserror::Error)]
+#[error("Failed to decode Event: {0}")]
+pub struct EventDecodeError(#[source] postcard::Error);
+
 impl Event {
     /// Clear the buffer and encode the `Event` into it
-    pub fn encode<'a>(&self, buffer: &'a mut Vec<u8>) -> postcard::Result<&'a [u8]> {
-        encoding::encode_value(self, buffer)
+    pub fn encode<'a>(&self, buffer: &'a mut Vec<u8>) -> Result<&'a [u8], EventEncodeError> {
+        encoding::encode_value(self, buffer).map_err(EventEncodeError)
     }
 
     /// Decode an `Event` from the buffer. Events are [COBS](https://en.wikipedia.org/wiki/Consistent_Overhead_Byte_Stuffing) encoded,
@@ -461,8 +477,8 @@ impl Event {
     ///     Ok(Some(event))
     /// }
     /// ```
-    pub fn decode(buffer: &mut [u8]) -> postcard::Result<Self> {
-        encoding::decode_value(buffer)
+    pub fn decode(buffer: &mut [u8]) -> Result<Self, EventDecodeError> {
+        encoding::decode_value(buffer).map_err(EventDecodeError)
     }
 }
 

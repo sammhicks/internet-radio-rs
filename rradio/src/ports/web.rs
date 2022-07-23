@@ -3,7 +3,7 @@ use axum::{
     response::IntoResponse,
     routing::{get, get_service, post},
 };
-use futures::{FutureExt, SinkExt, StreamExt};
+use futures::{FutureExt, SinkExt, StreamExt, TryStreamExt};
 use tokio::sync::oneshot;
 
 use rradio_messages::Event;
@@ -89,7 +89,7 @@ async fn handle_websocket_connection(
     wait_handle: crate::task::WaitGroupHandle,
     websocket: axum::extract::ws::WebSocket,
 ) -> anyhow::Result<()> {
-    let (websocket_tx, mut websocket_rx) = websocket.split();
+    let (websocket_tx, websocket_rx) = websocket.split();
 
     // Convert the websocket sink (i.e. of websocket [axum::extract::ws::Message]) into a sink of [`BroadcastEvent`]
     let websocket_tx = websocket_tx
@@ -105,15 +105,19 @@ async fn handle_websocket_connection(
 
     tokio::pin!(websocket_tx);
 
+    let mut websocket_rx = websocket_rx
+        .map_err(|err| anyhow::Error::new(err).context("Failed to recieve websocket message"));
+
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
 
+    let events = port_channels.event_stream();
     let commands = port_channels.commands_tx;
 
     // Handle incoming websocket messages
     wait_handle.spawn_task(
         async move {
-            while let Some(message) = websocket_rx.next().await {
-                let mut data = match message.context("Failed to recieve websocket message")? {
+            while let Some(message) = websocket_rx.next().await.transpose()? {
+                let mut data = match message {
                     axum::extract::ws::Message::Text(text) => {
                         tracing::debug!("Ignoring Text message: {:?}", text);
                         continue;
@@ -145,15 +149,11 @@ async fn handle_websocket_connection(
         .log_error(),
     );
 
-    super::event_stream(
-        port_channels.player_state_rx.clone(),
-        port_channels.log_message_source.subscribe(),
-    ) // Take each event
-    .map(Ok) // Convert each event into a [`BroadcastEvent`]
-    .take_until(shutdown_rx) // Stop when the websocket is closed
-    .take_until(port_channels.shutdown_signal.clone().wait()) // Stop when rradio closes
-    .forward(&mut websocket_tx) // Send each event to the websocket
-    .await?;
+    events
+        .take_until(shutdown_rx) // Stop when the websocket is closed
+        .map(Ok)
+        .forward(&mut websocket_tx) // Send each event to the websocket
+        .await?;
 
     websocket_tx.close().await?;
 
