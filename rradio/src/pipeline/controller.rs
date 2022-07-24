@@ -290,26 +290,30 @@ impl Controller {
 
         tracing::debug!("Station tracks: {:?}", playlist.tracks);
 
-        let prefix_notification = self
-            .config
-            .notifications
-            .playlist_prefix
-            .iter()
-            .cloned()
-            .map(Track::notification);
+        let playlist_tracks = if playlist.tracks.len() > 1 {
+            let prefix_notification = self
+                .config
+                .notifications
+                .playlist_prefix
+                .clone()
+                .into_iter()
+                .map(Track::notification);
 
-        let suffix_notification = self
-            .config
-            .notifications
-            .playlist_suffix
-            .iter()
-            .cloned()
-            .map(Track::notification);
+            let suffix_notification = self
+                .config
+                .notifications
+                .playlist_suffix
+                .clone()
+                .into_iter()
+                .map(Track::notification);
 
-        let playlist_tracks = prefix_notification
-            .chain(playlist.tracks)
-            .chain(suffix_notification)
-            .collect::<Arc<_>>();
+            prefix_notification
+                .chain(playlist.tracks)
+                .chain(suffix_notification)
+                .collect()
+        } else {
+            Arc::<[Track]>::from(playlist.tracks)
+        };
 
         tracing::trace!(
             "Resume Info for {:?}: {:?}",
@@ -513,9 +517,14 @@ impl Controller {
             MessageView::Eos(..) => {
                 tracing::debug!(parent: &tracing::debug_span!("end_of_stream"), "");
 
-                if self.current_playlist.is_some() {
+                if let Some(current_playlist) = &self.current_playlist {
                     if self.published_state.track_duration.is_some() {
-                        self.goto_next_track().await
+                        if current_playlist.tracks.len() > 1 {
+                            self.goto_next_track().await
+                        } else {
+                            self.clear_playlist();
+                            Ok(())
+                        }
                     } else {
                         let current_playlist =
                             self.current_playlist.as_mut().ok_or(Error::NoPlaylist)?;
