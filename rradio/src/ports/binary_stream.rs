@@ -1,13 +1,24 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 
-use rradio_messages::Command;
-use tokio::io::{AsyncBufReadExt, AsyncRead};
+use rradio_messages::{Command, Event};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt};
 
-pub fn encode_event<'a>(
-    message: &rradio_messages::Event,
-    buffer: &'a mut Vec<u8>,
-) -> Result<&'a [u8]> {
-    message.encode(buffer).map_err(anyhow::Error::new)
+pub fn encode_events<S: AsyncWrite + Unpin>(
+    stream: S,
+) -> impl futures::Sink<Event, Error = anyhow::Error> {
+    futures::sink::unfold(
+        (stream, Vec::new()),
+        |(mut stream, mut buffer), event: Event| async move {
+            buffer.clear();
+
+            stream
+                .write_all(event.encode(&mut buffer)?)
+                .await
+                .context("Failed to write event")?;
+
+            Ok((stream, buffer))
+        },
+    )
 }
 
 pub fn decode_commands<S: AsyncRead + Unpin>(

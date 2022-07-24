@@ -3,7 +3,8 @@
 
 use std::sync::Arc;
 
-use futures::StreamExt;
+use anyhow::Context;
+use futures::{Sink, StreamExt};
 use rradio_messages::PlayerStateDiff;
 
 use crate::{pipeline::PlayerState, task::ShutdownSignal};
@@ -81,6 +82,41 @@ fn diff_arc_with_clone<T: Clone>(a: &Arc<T>, b: &Arc<T>, any_some: &mut bool) ->
     } else {
         *any_some = true;
         Some(b.as_ref().clone())
+    }
+}
+
+#[derive(Debug, Clone)]
+struct CommandSink(pub tokio::sync::mpsc::UnboundedSender<rradio_messages::Command>);
+
+impl Sink<rradio_messages::Command> for CommandSink {
+    type Error = anyhow::Error;
+
+    fn poll_ready(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+
+    fn start_send(
+        self: std::pin::Pin<&mut Self>,
+        item: rradio_messages::Command,
+    ) -> Result<(), Self::Error> {
+        self.0.send(item).context("Failed to send command")
+    }
+
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+
+    fn poll_close(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
     }
 }
 

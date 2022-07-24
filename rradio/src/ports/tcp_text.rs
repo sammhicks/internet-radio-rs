@@ -3,6 +3,7 @@ use std::fmt::{Debug, Display, Formatter};
 use anyhow::{Context, Result};
 
 use rradio_messages::{Command, Event};
+use tokio::io::{AsyncWrite, AsyncWriteExt};
 use tracing::{info_span, Instrument};
 
 fn clear_lines(f: &mut Formatter, row: u16, count: u16) -> std::fmt::Result {
@@ -123,21 +124,35 @@ impl<'a> Display for DisplayDiff<&'a rradio_messages::PlayerStateDiff> {
     }
 }
 
-#[allow(clippy::unnecessary_wraps)]
-fn encode_event<'a>(message: &Event, buffer: &'a mut Vec<u8>) -> Result<&'a [u8]> {
+pub fn encode_events<S: AsyncWrite + Unpin>(
+    stream: S,
+) -> impl futures::Sink<Event, Error = anyhow::Error> {
     use std::io::Write;
-    match message {
-        Event::PlayerStateChanged(diff) => write!(buffer, "{}", DisplayDiff(diff)),
-        Event::LogMessage(log_message) => write!(
-            buffer,
-            "{}{:?}",
-            crossterm::cursor::MoveTo(0, 0),
-            log_message
-        ),
-    }
-    .context("Failed to encode event")?;
 
-    Ok(buffer)
+    futures::sink::unfold(
+        (stream, Vec::new()),
+        |(mut stream, mut buffer), event: Event| async move {
+            buffer.clear();
+
+            match event {
+                Event::PlayerStateChanged(diff) => write!(buffer, "{}", DisplayDiff(&diff)),
+                Event::LogMessage(log_message) => write!(
+                    buffer,
+                    "{}{:?}",
+                    crossterm::cursor::MoveTo(0, 0),
+                    log_message
+                ),
+            }
+            .context("Failed to encode event")?;
+
+            stream
+                .write_all(&buffer)
+                .await
+                .context("Failed to write event")?;
+
+            Ok((stream, buffer))
+        },
+    )
 }
 
 fn decode_commands(
@@ -158,7 +173,7 @@ fn decode_commands(
 }
 
 pub async fn run(port_channels: super::PortChannels) {
-    super::tcp::run(port_channels, 8001, encode_event, decode_commands)
+    super::tcp::run(port_channels, 8001, encode_events, decode_commands)
         .instrument(info_span!("tcp_text"))
         .await;
 }

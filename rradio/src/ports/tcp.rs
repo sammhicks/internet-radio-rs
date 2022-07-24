@@ -1,7 +1,7 @@
 //! Common code for TCP ports
 
 use anyhow::{Context, Result};
-use futures::{Stream, StreamExt};
+use futures::{Sink, Stream, StreamExt};
 use tokio::net::tcp;
 
 use rradio_messages::{Command, Event};
@@ -18,14 +18,14 @@ impl super::stream::Splittable for tokio::net::TcpStream {
     }
 }
 
-pub async fn run<EventEncoder, CommandsDecoder, Commands>(
+pub async fn run<EventsEncoder, Events, CommandsDecoder, Commands>(
     port_channels: super::PortChannels,
     port: u16,
-    encode_event: EventEncoder,
+    encode_events: EventsEncoder,
     decode_commands: CommandsDecoder,
 ) where
-    EventEncoder:
-        for<'a> Fn(&Event, &'a mut Vec<u8>) -> Result<&'a [u8]> + Send + Sync + Clone + 'static,
+    EventsEncoder: FnOnce(tcp::OwnedWriteHalf) -> Events + Send + Sync + Clone + 'static,
+    Events: Sink<Event, Error = anyhow::Error> + Send + Sync + 'static,
     CommandsDecoder: FnOnce(tcp::OwnedReadHalf) -> Commands + Send + Sync + Clone + 'static,
     Commands: Stream<Item = Result<Command>> + Send + Sync + 'static,
 {
@@ -66,7 +66,7 @@ pub async fn run<EventEncoder, CommandsDecoder, Commands>(
                 connection,
                 &port_channels,
                 &wait_group,
-                encode_event.clone(),
+                encode_events.clone(),
                 decode_commands.clone(),
             );
         }
