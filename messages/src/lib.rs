@@ -509,10 +509,13 @@ impl Event {
     /// async fn read_next_event<S>(
     ///     stream: &mut S,
     ///     buffer: &mut Vec<u8>
-    /// ) -> anyhow::Result<Option<Event>>
+    /// ) -> anyhow::Result<Option<rradio_messages::Event>>
     /// where
-    ///     S: AsyncBufRead,
+    ///     S: tokio::io::AsyncBufRead + Unpin,
     /// {
+    ///     use anyhow::Context;
+    ///     use tokio::io::AsyncBufReadExt;
+    ///
     ///     buffer.clear();
     ///     let read_size = stream
     ///         .read_until(0, buffer)
@@ -523,7 +526,7 @@ impl Event {
     ///         return Ok(None);
     ///     }
     ///
-    ///     let event = Event::decode(buffer).context("Failed to decode Event")?;
+    ///     let event = rradio_messages::Event::decode(buffer).context("Failed to decode Event")?;
     ///
     ///     Ok(Some(event))
     /// }
@@ -555,8 +558,12 @@ mod event_async {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             for &b in self.0.iter() {
                 match b {
+                    b'\n' => write!(f, "\\n")?,
+                    b'\r' => write!(f, "\\r")?,
+                    b'\t' => write!(f, "\\t")?,
                     b'\\' => write!(f, "\\\\")?,
-                    0x20..=0x7E => write!(f, "{}", b)?,
+                    b'\0' => write!(f, "\\0")?,
+                    0x20..=0x7E => write!(f, "{}", b as char)?,
                     _ => write!(f, "\\x{:02x}", b)?,
                 }
             }
@@ -620,6 +627,28 @@ mod event_async {
     impl From<postcard::Error> for EventStreamEncodeError {
         fn from(err: postcard::Error) -> Self {
             Self::EncodeError(super::EventEncodeError(err))
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        #[test]
+        fn print_incorrect_header() {
+            use std::io::Write;
+            let mut actual = [0; super::super::API_VERSION_HEADER_LENGTH];
+
+            for (b, index) in actual.iter_mut().zip(0..) {
+                *b = index;
+            }
+
+            write!(&mut actual[..], "BAD_HEADER\n\r\t\\\0").unwrap();
+
+            let err = super::BadRRadioHeader::HeaderMismatch {
+                expected: super::super::API_VERSION_HEADER.as_bytes(),
+                actual,
+            };
+
+            println!("{}", err);
         }
     }
 }

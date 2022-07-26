@@ -1,7 +1,7 @@
 use anyhow::Context;
 use futures_util::{SinkExt, StreamExt};
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
     // Get the host from command line arguments, default to localhost
     let host = std::env::args().nth(1);
