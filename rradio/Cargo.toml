@@ -51,7 +51,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = [ "env-filter" ] }
 url = { version = "2.2", features = [ "serde" ] }
 
-rradio-messages = { path = "../messages" }
+rradio-messages = { path = "../messages", features = [ "async" ] }
 
 [target.'cfg(unix)'.dependencies]
 libc = { version = "0.2", optional = true }

@@ -9,7 +9,6 @@ use rradio_messages::PlayerStateDiff;
 
 use crate::{pipeline::PlayerState, task::ShutdownSignal};
 
-mod binary_stream;
 mod stream;
 
 pub mod tcp;

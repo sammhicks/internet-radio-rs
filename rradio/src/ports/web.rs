@@ -99,7 +99,7 @@ async fn handle_websocket_connection(
 
     // Convert the websocket sink (i.e. of websocket [axum::extract::ws::Message]) into a sink of [`BroadcastEvent`]
     let websocket_tx = websocket_tx
-        .sink_map_err(|err| anyhow::Error::new(err).context("Failed to send websocket message"))
+        .sink_map_err(|err| anyhow::Error::msg(err).context("Failed to send websocket message"))
         .with(|event: Event| async move {
             let mut buffer = Vec::new();
             event
@@ -110,7 +110,7 @@ async fn handle_websocket_connection(
         });
 
     let websocket_rx = websocket_rx
-        .map_err(|err| anyhow::Error::new(err).context("Failed to recieve websocket message"));
+        .map_err(|err| anyhow::Error::msg(err).context("Failed to recieve websocket message"));
 
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
 
@@ -121,7 +121,6 @@ async fn handle_websocket_connection(
     wait_handle.spawn_task(
         async move {
             websocket_rx
-                .map_err(anyhow::Error::from)
                 .try_filter_map(|message| async move {
                     anyhow::Ok(match message {
                         axum::extract::ws::Message::Text(text) => {

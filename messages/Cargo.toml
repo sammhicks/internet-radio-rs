@@ -1,14 +1,23 @@
 [package]
 name = "rradio-messages"
-version = "0.30.0"
+version = "0.31.0"
 authors = ["Samuel Hicks <SamMHicks@hotmail.co.uk>"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+async = [ "futures-util", "tokio" ]
+
 [dependencies]
 arcstr = { version = "1.0", default-features = false, features = [ "serde", "std" ] }
 base64 = "0.13"
+futures-util = { version = "0.3", optional = true }
 postcard = { version = "1.0", default-features = false, features = [ "use-std" ] }
 serde = { version = "1.0", features = ["derive", "rc"] }
+tokio = { version = "1.0", features = [ "io-util" ], optional = true }
 thiserror = "1.0"
+
+[dev-dependencies]
+anyhow = "1.0"
+tokio = { version = "1.0", features = [ "rt", "macros", "net", "sync", "signal" ] }

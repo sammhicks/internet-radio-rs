@@ -13,6 +13,8 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const API_VERSION_HEADER: &str =
     concat!(env!("CARGO_PKG_NAME"), "_", env!("CARGO_PKG_VERSION"), "\n");
 
+pub const API_VERSION_HEADER_LENGTH: usize = API_VERSION_HEADER.as_bytes().len();
+
 /// The port to connect to for sending commands and receiving events
 pub const API_PORT: u16 = 8002;
 
@@ -66,6 +68,55 @@ impl Command {
     /// Decode a `Command` from the buffer
     pub fn decode(buffer: &mut [u8]) -> Result<Self, CommandDecodeError> {
         encoding::decode_value(buffer).map_err(CommandDecodeError)
+    }
+}
+
+#[cfg(feature = "async")]
+mod command_async {
+    #[derive(Debug, thiserror::Error)]
+    pub enum CommandStreamDecodeError {
+        #[error("Failed to read Command")]
+        IoError(#[from] std::io::Error),
+        #[error(transparent)]
+        DecodeError(#[from] super::CommandDecodeError),
+    }
+
+    impl From<postcard::Error> for CommandStreamDecodeError {
+        fn from(err: postcard::Error) -> Self {
+            Self::DecodeError(super::CommandDecodeError(err))
+        }
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum CommandStreamEncodeError {
+        #[error("Failed to send Command")]
+        IoError(#[from] std::io::Error),
+        #[error(transparent)]
+        EncodeError(#[from] super::CommandEncodeError),
+    }
+
+    impl From<postcard::Error> for CommandStreamEncodeError {
+        fn from(err: postcard::Error) -> Self {
+            Self::EncodeError(super::CommandEncodeError(err))
+        }
+    }
+}
+
+#[cfg(feature = "async")]
+use command_async::*;
+
+#[cfg(feature = "async")]
+impl Command {
+    pub fn decode_from_stream<S: tokio::io::AsyncBufRead + Unpin>(
+        stream: S,
+    ) -> impl futures_util::Stream<Item = Result<Self, CommandStreamDecodeError>> {
+        encoding::decode_from_stream(stream)
+    }
+
+    pub fn encode_to_stream<S: tokio::io::AsyncWrite + Unpin>(
+        stream: S,
+    ) -> impl futures_util::Sink<Self, Error = CommandStreamEncodeError> {
+        encoding::encode_to_stream(stream)
     }
 }
 
@@ -491,5 +542,107 @@ impl std::convert::From<PlayerStateDiff> for Event {
 impl std::convert::From<LogMessage> for Event {
     fn from(message: LogMessage) -> Self {
         Self::LogMessage(message)
+    }
+}
+
+#[cfg(feature = "async")]
+mod event_async {
+    use std::fmt;
+
+    struct DisplayHeader<'a>(&'a [u8]);
+
+    impl<'a> fmt::Display for DisplayHeader<'a> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            for &b in self.0.iter() {
+                match b {
+                    b'\\' => write!(f, "\\\\")?,
+                    0x20..=0x7E => write!(f, "{}", b)?,
+                    _ => write!(f, "\\x{:02x}", b)?,
+                }
+            }
+
+            Ok(())
+        }
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum BadRRadioHeader {
+        #[error("Failed to read header")]
+        FailedToReadHeader(#[from] std::io::Error),
+        #[error("API version header does not match. Expected: {} Actual: {}", DisplayHeader(expected), DisplayHeader(&actual[..]))]
+        HeaderMismatch {
+            expected: &'static [u8],
+            actual: [u8; super::API_VERSION_HEADER_LENGTH],
+        },
+    }
+
+    pub(crate) async fn verify_rradio_header<S: tokio::io::AsyncRead + Unpin>(
+        mut stream: S,
+    ) -> Result<S, BadRRadioHeader> {
+        use tokio::io::AsyncReadExt;
+
+        let mut buffer = [0_u8; super::API_VERSION_HEADER_LENGTH];
+
+        stream.read_exact(&mut buffer).await?;
+
+        if super::API_VERSION_HEADER.as_bytes() == buffer {
+            Ok(stream)
+        } else {
+            Err(BadRRadioHeader::HeaderMismatch {
+                expected: super::API_VERSION_HEADER.as_bytes(),
+                actual: buffer,
+            })
+        }
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum EventStreamDecodeError {
+        #[error("Failed to read Event")]
+        IoError(#[from] std::io::Error),
+        #[error(transparent)]
+        DecodeError(#[from] super::EventDecodeError),
+    }
+
+    impl From<postcard::Error> for EventStreamDecodeError {
+        fn from(err: postcard::Error) -> Self {
+            Self::DecodeError(super::EventDecodeError(err))
+        }
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum EventStreamEncodeError {
+        #[error("Failed to send Event")]
+        IoError(#[from] std::io::Error),
+        #[error(transparent)]
+        EncodeError(#[from] super::EventEncodeError),
+    }
+
+    impl From<postcard::Error> for EventStreamEncodeError {
+        fn from(err: postcard::Error) -> Self {
+            Self::EncodeError(super::EventEncodeError(err))
+        }
+    }
+}
+
+#[cfg(feature = "async")]
+use event_async::*;
+
+#[cfg(feature = "async")]
+impl Event {
+    pub async fn decode_from_stream<S: tokio::io::AsyncBufRead + Unpin>(
+        stream: S,
+    ) -> Result<
+        impl futures_util::Stream<Item = Result<Self, EventStreamDecodeError>>,
+        BadRRadioHeader,
+    > {
+        verify_rradio_header(stream)
+            .await
+            .map(encoding::decode_from_stream)
+    }
+
+    pub fn encode_to_stream<S: tokio::io::AsyncWrite + Unpin>(
+        stream: S,
+    ) -> impl futures_util::Sink<Self, Error = EventStreamEncodeError> {
+        encoding::encode_to_stream(stream)
     }
 }
