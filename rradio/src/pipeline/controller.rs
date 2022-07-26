@@ -643,18 +643,18 @@ pub fn run(
         #[cfg(feature = "ping")]
         let ping_handle = tokio::spawn(ping_task);
 
-        let commands = futures::stream::unfold(commands_rx, |mut rx| async {
-            let message = Message::Command(rx.recv().await?);
-            Some((message, rx))
+        let commands = futures::stream::unfold(commands_rx, |mut commands_rx| async {
+            let message = Message::Command(commands_rx.recv().await?);
+            Some((message, commands_rx))
         });
 
         let bus_stream = bus.stream().map(Message::FromGStreamer);
 
         #[cfg(feature = "ping")]
         let messages = {
-            let ping_stream = futures::stream::unfold(ping_times_rx, |mut rx| async {
-                let ping_times = rx.recv().await?;
-                Some((Message::PingTimes(ping_times), rx))
+            let ping_stream = futures::stream::unfold(ping_times_rx, |mut commands_rx| async {
+                let ping_times = commands_rx.recv().await?;
+                Some((Message::PingTimes(ping_times), commands_rx))
             });
 
             futures::stream::select_all(vec![

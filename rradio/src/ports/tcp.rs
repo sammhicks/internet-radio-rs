@@ -5,7 +5,6 @@ use futures::{Sink, Stream, StreamExt};
 use tokio::net::tcp;
 
 use rradio_messages::{Command, Event};
-use tracing::Instrument;
 
 use crate::task::FailableFuture;
 
@@ -59,7 +58,7 @@ pub async fn run<EventsEncoder, Events, CommandsDecoder, Commands>(
         tokio::pin!(connections);
 
         while let Some((connection, remote_addr)) = connections.next().await.transpose()? {
-            let _span = tracing::info_span!("tcp", %remote_addr).entered();
+            let _span = tracing::error_span!("connection", %remote_addr).entered();
             tracing::info!("Connection");
 
             super::stream::handle_connection(
@@ -79,7 +78,6 @@ pub async fn run<EventsEncoder, Events, CommandsDecoder, Commands>(
 
         Ok(())
     }
-    .log_error()
-    .instrument(tracing::Span::current())
+    .log_error(tracing::error_span!("tcp"))
     .await;
 }

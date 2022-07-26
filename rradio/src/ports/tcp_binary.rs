@@ -11,6 +11,6 @@ pub async fn run(port_channels: super::PortChannels) {
                 .err_into()
         },
     )
-    .instrument(tracing::info_span!("tcp_binary"))
+    .instrument(tracing::error_span!("tcp_binary"))
     .await;
 }

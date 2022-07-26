@@ -10,7 +10,6 @@ use futures::{FutureExt, SinkExt, StreamExt, TryStreamExt};
 use tokio::sync::oneshot;
 
 use rradio_messages::Event;
-use tracing::{info_span, Instrument};
 
 use crate::task::FailableFuture;
 
@@ -151,8 +150,7 @@ async fn handle_websocket_connection(
 
             Ok(())
         }
-        .log_error()
-        .instrument(tracing::info_span!("forward commands")),
+        .log_error(tracing::error_span!("forward_commands")),
     );
 
     wait_handle.spawn_task(
@@ -167,8 +165,7 @@ async fn handle_websocket_connection(
 
             Ok(())
         }
-        .log_error()
-        .instrument(tracing::info_span!("forward events")),
+        .log_error(tracing::error_span!("forward_events")),
     );
 
     Ok(())
@@ -216,11 +213,10 @@ pub async fn run(port_channels: super::PortChannels, web_app_static_files: Strin
         .route(
             "/api",
             get(
-                |ws: WebSocketUpgrade, ConnectInfo(address): ConnectInfo<SocketAddr>| async move {
-                    ws.on_upgrade(move |ws| {
-                        handle_websocket_connection(port_channels.clone(), wait_handle, ws)
-                            .log_error()
-                            .instrument(info_span!("connection", %address))
+                |ws: WebSocketUpgrade, ConnectInfo(remote_address): ConnectInfo<SocketAddr>| async move {
+                    ws.on_upgrade(move |websocket| {
+                        handle_websocket_connection(port_channels.clone(), wait_handle, websocket)
+                            .log_error(tracing::error_span!("websocket_connection", %remote_address))
                     })
                 },
             ),
@@ -250,7 +246,7 @@ pub async fn run(port_channels: super::PortChannels, web_app_static_files: Strin
 
     server
         .map(|result| result.context("Failed to run server"))
-        .log_error()
+        .log_error(tracing::error_span!("web"))
         .await;
 
     tracing::debug!("Shutting down");

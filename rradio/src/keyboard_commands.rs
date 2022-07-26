@@ -135,6 +135,6 @@ pub async fn run(commands_tx: mpsc::UnboundedSender<Command>, config: crate::con
 
         Ok(())
     }
-    .log_error()
+    .log_error(tracing::error_span!("keyboard_commands"))
     .await;
 }

@@ -6,7 +6,6 @@ use tokio::{
 };
 
 use rradio_messages::{Command, Event};
-use tracing::Instrument;
 
 use crate::task::{FailableFuture, WaitGroup};
 
@@ -44,8 +43,7 @@ pub fn handle_connection<S: Splittable, EventsEncoder, Events, CommandsDecoder, 
 
             Ok(())
         }
-        .log_error()
-        .instrument(tracing::info_span!("forward commands"))
+        .log_error(tracing::error_span!("forward_commands"))
     });
 
     wait_group.spawn_task({
@@ -64,7 +62,6 @@ pub fn handle_connection<S: Splittable, EventsEncoder, Events, CommandsDecoder, 
             tracing::debug!("Closing connection");
             Ok(())
         }
-        .log_error()
-        .instrument(tracing::info_span!("forward events"))
+        .log_error(tracing::error_span!("forward_events"))
     });
 }

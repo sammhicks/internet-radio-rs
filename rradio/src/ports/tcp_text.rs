@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 
 use rradio_messages::{Command, Event};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
-use tracing::{info_span, Instrument};
+use tracing::Instrument;
 
 fn clear_lines(f: &mut Formatter, row: u16, count: u16) -> std::fmt::Result {
     use crossterm::terminal;
@@ -158,22 +158,18 @@ pub fn encode_events<S: AsyncWrite + Unpin>(
 fn decode_commands(
     stream: tokio::net::tcp::OwnedReadHalf,
 ) -> impl futures::Stream<Item = Result<Command>> {
-    futures::stream::unfold(stream, |mut stream| async move {
+    futures::stream::try_unfold(stream, |mut stream| async move {
         use tokio::io::AsyncReadExt;
 
         let mut buffer = [0; 64];
-        loop {
-            match stream.read(&mut buffer).await {
-                Ok(0) => return None,
-                Err(err) => return Some((Err(anyhow::Error::new(err)), stream)),
-                Ok(_) => continue,
-            }
-        }
+        while stream.read(&mut buffer).await? > 0 {}
+
+        Ok(None)
     })
 }
 
 pub async fn run(port_channels: super::PortChannels) {
     super::tcp::run(port_channels, 8001, encode_events, decode_commands)
-        .instrument(info_span!("tcp_text"))
+        .instrument(tracing::error_span!("tcp_text"))
         .await;
 }
