@@ -128,14 +128,14 @@ impl Playbin {
     }
 
     pub fn volume(&self) -> Result<i32, PipelineError> {
-        #[allow(clippy::cast_possible_truncation)]
         let current_volume = self
             .0
             .dynamic_cast_ref::<gstreamer_audio::StreamVolume>()
             .ok_or_else(|| rradio_messages::PipelineError("Playbin has no volume".into()))?
-            .volume(gstreamer_audio::StreamVolumeFormat::Db) as i32;
+            .volume(gstreamer_audio::StreamVolumeFormat::Db);
 
-        let scaled_volume = current_volume + rradio_messages::VOLUME_ZERO_DB;
+        let scaled_volume = unsafe { current_volume.round().to_int_unchecked::<i32>() }
+            + rradio_messages::VOLUME_ZERO_DB;
 
         tracing::debug!("Current Volume: {}", scaled_volume);
 

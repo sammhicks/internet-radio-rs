@@ -352,12 +352,14 @@ impl Controller {
     }
 
     fn change_volume(&mut self, direction: i32) -> Result<(), Error> {
-        let current_volume = self.playbin.volume()?;
+        // First round the current volume to the nearest multiple of the volume offset
+        let current_volume = f64::from(self.playbin.volume()?);
+        let volume_offset = f64::from(self.config.volume_offset);
 
-        #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
-        let rounded_volume = self.config.volume_offset
-            * ((current_volume as f32) / (self.config.volume_offset as f32)).round() as i32;
+        let rounded_volume = volume_offset * (current_volume / volume_offset).round();
+        let rounded_volume = unsafe { rounded_volume.round().to_int_unchecked::<i32>() };
 
+        // Then set the volume to the next increment
         self.set_volume(rounded_volume + direction * self.config.volume_offset)
     }
 
