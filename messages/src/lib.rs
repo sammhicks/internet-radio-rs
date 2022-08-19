@@ -552,9 +552,9 @@ impl std::convert::From<LogMessage> for Event {
 mod event_async {
     use std::fmt;
 
-    struct DisplayHeader<'a>(&'a [u8]);
+    pub struct DisplayApiHeader<'a>(pub &'a [u8]);
 
-    impl<'a> fmt::Display for DisplayHeader<'a> {
+    impl<'a> fmt::Display for DisplayApiHeader<'a> {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             for &b in self.0.iter() {
                 match b {
@@ -576,7 +576,7 @@ mod event_async {
     pub enum BadRRadioHeader {
         #[error("Failed to read header")]
         FailedToReadHeader(#[from] std::io::Error),
-        #[error("API version header does not match. Expected: {} Actual: {}", DisplayHeader(expected), DisplayHeader(&actual[..]))]
+        #[error("API version header does not match. Expected: {} Actual: {}", DisplayApiHeader(expected), DisplayApiHeader(&actual[..]))]
         HeaderMismatch {
             expected: &'static [u8],
             actual: [u8; super::API_VERSION_HEADER_LENGTH],
@@ -654,7 +654,7 @@ mod event_async {
 }
 
 #[cfg(feature = "async")]
-use event_async::*;
+pub use event_async::*;
 
 #[cfg(feature = "async")]
 impl Event {
