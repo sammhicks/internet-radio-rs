@@ -43,7 +43,7 @@ serde = { version = "1.0", features = [ "derive", "rc" ] }
 sys-mount = { version = "1.2", optional = true }
 tempdir = { version = "0.3", optional = true }
 thiserror = "1.0"
-tokio = { version = "1.0", features = [ "io-util", "net", "rt-multi-thread", "sync", "time" ] }
+tokio = { version = "1.20", features = [ "io-util", "net", "rt-multi-thread", "sync", "time" ] }
 toml = "0.5"
 tower = { version = "0.4", optional = true }
 tower-http = { version = "0.3", features = [ "fs" ], optional = true }

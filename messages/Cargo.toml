@@ -15,9 +15,9 @@ base64 = "0.13"
 futures-util = { version = "0.3", features = [ "sink" ], optional = true }
 postcard = { version = "1.0", default-features = false, features = [ "use-std" ] }
 serde = { version = "1.0", features = ["derive", "rc"] }
-tokio = { version = "1.0", features = [ "io-util" ], optional = true }
+tokio = { version = "1.20", features = [ "io-util" ], optional = true }
 thiserror = "1.0"
 
 [dev-dependencies]
 anyhow = "1.0"
-tokio = { version = "1.0", features = [ "rt", "macros", "net", "sync", "signal" ] }
+tokio = { version = "1.20", features = [ "rt", "macros", "net", "sync", "signal" ] }
