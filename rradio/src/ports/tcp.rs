@@ -41,7 +41,7 @@ pub async fn run<EventsEncoder, Events, CommandsDecoder, Commands>(
 
         let listener = tokio::net::TcpListener::bind(socket_addr)
             .await
-            .with_context(|| format!("Failed to listen to {:?}", socket_addr))?;
+            .with_context(|| format!("Failed to listen to {socket_addr:?}"))?;
 
         let local_addr = listener
             .local_addr()

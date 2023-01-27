@@ -121,7 +121,7 @@ impl RootContainerBuilder {
                 .containers
                 .into_iter()
                 .find(|container| container.title == section)
-                .with_context(|| format!("Container {:?} not found in {:?}", section, title))?;
+                .with_context(|| format!("Container {section:?} not found in {title:?}"))?;
 
             self.current_container = container::fetch(
                 &self.client,

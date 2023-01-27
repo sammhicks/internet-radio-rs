@@ -43,7 +43,7 @@ impl PlaylistMetadata {
 impl fmt::Debug for PlaylistMetadata {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("PlaylistMetadata")
-            .field(&(&*self.0).type_id())
+            .field(&(*self.0).type_id())
             .finish()
     }
 }
@@ -66,7 +66,7 @@ impl PlaylistHandle {
 impl fmt::Debug for PlaylistHandle {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("PlaylistHandle")
-            .field(&(&*self.0).type_id())
+            .field(&(*self.0).type_id())
             .field(&self.0)
             .finish()
     }
@@ -122,7 +122,7 @@ fn stations_directory_io_error<T>(
 
 /// Convert an [`anyhow::Error`] into a [`rradio_messages::StationError::BadStationFile`]
 fn playlist_error<T>(result: anyhow::Result<T>) -> Result<T, Error> {
-    result.map_err(|err| rradio_messages::StationError::BadStationFile(format!("{:#}", err).into()))
+    result.map_err(|err| rradio_messages::StationError::BadStationFile(format!("{err:#}").into()))
 }
 
 impl Station {
@@ -165,7 +165,7 @@ impl Station {
                     "pls" => playlist_error(parse_pls::from_file(&path, index)),
                     "upnp" => playlist_error(parse_upnp::from_file(&path, index)),
                     extension => Err(Error::BadStationFile(
-                        format!("Unsupported format: \"{}\"", extension).into(),
+                        format!("Unsupported format: \"{extension}\"").into(),
                     )),
                 };
             }

@@ -55,7 +55,7 @@ pub async fn get_content_directory_control_path(
         .into_iter()
         .find_map(|service| {
             (service.service_type == "urn:schemas-upnp-org:service:ContentDirectory:1")
-                .then(|| service.control_url)
+                .then_some(service.control_url)
         })
         .context("Content Directory Service not found")?;
 

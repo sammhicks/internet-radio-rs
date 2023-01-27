@@ -476,7 +476,7 @@ impl Controller {
                         Ok(Tag::Unknown { .. }) => {}
                         Err(err) => {
                             self.broadcast_error_message(
-                                rradio_messages::TagError(format!("{:#}", err).into()).into(),
+                                rradio_messages::TagError(format!("{err:#}").into()).into(),
                             );
                         }
                     }

@@ -27,7 +27,7 @@ fn main() -> Result<()> {
                 println!("{} v{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
                 return Ok(());
             }
-            _ => return Err(anyhow::Error::msg(format!("Unhandled argument {:?}", arg))),
+            _ => return Err(anyhow::Error::msg(format!("Unhandled argument {arg:?}"))),
         }
     }
 

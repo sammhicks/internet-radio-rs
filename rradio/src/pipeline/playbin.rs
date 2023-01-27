@@ -19,7 +19,7 @@ pub fn gstreamer_state_to_pipeline_state(
         gstreamer::State::Paused => Ok(PipelineState::Paused),
         gstreamer::State::Playing => Ok(PipelineState::Playing),
         _ => Err(rradio_messages::PipelineError(
-            format!("Unknown state {:?}", state).into(),
+            format!("Unknown state {state:?}").into(),
         )),
     }
 }
@@ -90,7 +90,7 @@ impl Playbin {
             PipelineState::Playing => gstreamer::State::Playing,
         };
         self.0.set_state(gstreamer_state).map_err(|_err| {
-            rradio_messages::PipelineError(format!("Failed to set state to {}", state).into())
+            rradio_messages::PipelineError(format!("Failed to set state to {state}").into())
         })?;
         Ok(())
     }
@@ -109,7 +109,7 @@ impl Playbin {
             .try_set_property("uri", &glib::Value::from(url))
             .map_err(|err| {
                 rradio_messages::PipelineError(
-                    format!("Unable to set the playbin url to {:?}: {}", url, err).into(),
+                    format!("Unable to set the playbin url to {url:?}: {err}").into(),
                 )
             })
     }
@@ -143,9 +143,7 @@ impl Playbin {
     }
 
     pub fn set_volume(&self, volume: i32) -> Result<i32, PipelineError> {
-        let volume = volume
-            .max(rradio_messages::VOLUME_MIN)
-            .min(rradio_messages::VOLUME_MAX);
+        let volume = volume.clamp(rradio_messages::VOLUME_MIN, rradio_messages::VOLUME_MAX);
         tracing::debug!("New Volume: {}", volume);
 
         self.0

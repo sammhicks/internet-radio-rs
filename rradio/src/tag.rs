@@ -78,6 +78,6 @@ pub fn value_to_string(value: &glib::value::Value) -> Result<String> {
     } else if value_type.is_a(Type::F64) {
         format!("F64: {}", value.get::<f64>()?)
     } else {
-        format!("Value of unhandled type {}: {:?}", value_type, value)
+        format!("Value of unhandled type {value_type}: {value:?}")
     })
 }

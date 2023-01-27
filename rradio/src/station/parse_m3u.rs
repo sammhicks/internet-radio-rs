@@ -31,15 +31,15 @@ fn from_str(src: &str, index: StationIndex) -> Result<Station> {
             if let Some(extra_info) = line.strip_prefix("#EXTINF:") {
                 let title = match extra_info
                     .split_once(',')
-                    .with_context(|| format!("Badly formatted EXTINF on line {}", line_num))
+                    .with_context(|| format!("Badly formatted EXTINF on line {line_num}"))
                 {
                     Ok((_, title)) => Some(title.trim().into()),
                     Err(err) => return Some(Err(err)),
                 };
 
-                let url = match (&mut lines)
+                let url = match lines
                     .find(|(_, line)| !line.starts_with('#'))
-                    .with_context(|| format!("No url after EXTINF on line {}", line_num))
+                    .with_context(|| format!("No url after EXTINF on line {line_num}"))
                 {
                     Ok((_, url)) => url.trim().into(),
                     Err(err) => return Some(Err(err)),
