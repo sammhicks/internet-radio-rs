@@ -84,7 +84,11 @@ pub async fn run(commands_tx: mpsc::UnboundedSender<Command>, config: crate::con
 
             let key_code = match keyboard_event {
                 // Key event => extract key code
-                Some(Ok(Event::Key(KeyEvent { code, .. }))) => code,
+                Some(Ok(Event::Key(KeyEvent {
+                    code,
+                    kind: crossterm::event::KeyEventKind::Press,
+                    ..
+                }))) => code,
                 // Other event => ignore and write value back to current_number_entry
                 Some(Ok(_)) => {
                     current_number_entry = previous_digit;

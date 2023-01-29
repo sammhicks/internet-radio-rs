@@ -57,32 +57,35 @@ impl WebSocketUpgrade {
 }
 
 #[axum::async_trait]
-impl<B> axum::extract::FromRequest<B> for WebSocketUpgrade
+impl<S, B> axum::extract::FromRequest<S, B> for WebSocketUpgrade
 where
-    B: Send,
+    S: Send + Sync,
+    B: Send + 'static,
 {
     type Rejection = WebSocketUpgradeRejection;
 
-    async fn from_request(
-        req: &mut axum::extract::RequestParts<B>,
-    ) -> Result<Self, Self::Rejection> {
-        let upgrade = axum::extract::WebSocketUpgrade::from_request(req)
-            .await
-            .map_err(WebSocketUpgradeRejection::BadRequest)?;
-
+    async fn from_request(req: axum::http::Request<B>, state: &S) -> Result<Self, Self::Rejection> {
         let protocol = req
             .headers()
             .get(axum::http::header::SEC_WEBSOCKET_PROTOCOL)
-            .ok_or(WebSocketUpgradeRejection::NoProtocol)?;
+            .ok_or(WebSocketUpgradeRejection::NoProtocol)?
+            .clone();
 
-        let protocol_str = protocol
-            .to_str()
-            .map_err(|_| WebSocketUpgradeRejection::BadProtocol(protocol.clone()))?;
+        let protocol_str = String::from(
+            protocol
+                .to_str()
+                .map_err(|_| WebSocketUpgradeRejection::BadProtocol(protocol.clone()))?,
+        );
 
         if protocol_str == websocket_protocol() {
-            Ok(Self(upgrade.protocols([websocket_protocol()])))
+            Ok(Self(
+                axum::extract::WebSocketUpgrade::from_request(req, state)
+                    .await
+                    .map_err(WebSocketUpgradeRejection::BadRequest)?
+                    .protocols([websocket_protocol()]),
+            ))
         } else {
-            return Err(WebSocketUpgradeRejection::BadProtocol(protocol.clone()));
+            return Err(WebSocketUpgradeRejection::BadProtocol(protocol));
         }
     }
 }
@@ -179,7 +182,7 @@ pub async fn run(port_channels: super::PortChannels, web_app_static_files: Strin
     let ws_shutdown_signal = port_channels.shutdown_signal.clone();
 
     let app = axum::Router::new()
-        .fallback(
+        .fallback_service(
             get_service(
                 tower_http::services::ServeDir::new(web_app_static_files).not_found_service(
                     tower::service_fn(|request: axum::http::Request<_>| async move {
@@ -213,7 +216,7 @@ pub async fn run(port_channels: super::PortChannels, web_app_static_files: Strin
         .route(
             "/api",
             get(
-                |ws: WebSocketUpgrade, ConnectInfo(remote_address): ConnectInfo<SocketAddr>| async move {
+                |ConnectInfo(remote_address): ConnectInfo<SocketAddr>, ws: WebSocketUpgrade| async move {
                     ws.on_upgrade(move |websocket| {
                         handle_websocket_connection(port_channels.clone(), wait_handle, websocket)
                             .log_error(tracing::error_span!("websocket_connection", %remote_address))

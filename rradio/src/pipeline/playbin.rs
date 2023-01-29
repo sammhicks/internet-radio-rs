@@ -30,12 +30,11 @@ impl Playbin {
     pub fn new(config: &crate::config::Config) -> Result<Self, anyhow::Error> {
         use anyhow::Context;
 
-        let playbin_element = gstreamer::ElementFactory::make("playbin", None)
+        let playbin_element = gstreamer::ElementFactory::make("playbin")
+            .build()
             .context("Failed to create a playbin")?;
 
-        let flags = playbin_element
-            .try_property_value("flags")
-            .context("Failed to get the playbin flags")?;
+        let flags: glib::Value = playbin_element.property("flags");
         let flags_class =
             glib::FlagsClass::new(flags.type_()).context("Failed to create a flags class")?;
         let flags = flags_class
@@ -45,9 +44,7 @@ impl Playbin {
             .unset_by_nick("video")
             .build()
             .context("Failed to set flags")?;
-        playbin_element
-            .try_set_property_from_value("flags", &flags)
-            .context("Failed to set playbin flags")?;
+        playbin_element.set_property_from_value("flags", &flags);
 
         if let Some(buffering_duration) = config.buffering_duration {
             let duration_nanos: i64 = buffering_duration
@@ -55,9 +52,7 @@ impl Playbin {
                 .try_into()
                 .context("Bad buffer duration")?;
 
-            playbin_element
-                .try_set_property("buffer-duration", &duration_nanos)
-                .context("Failed to set buffer duration")?;
+            playbin_element.set_property("buffer-duration", &duration_nanos);
         }
 
         let playbin = Self(playbin_element);
@@ -116,13 +111,8 @@ impl Playbin {
 
     pub fn set_url(&self, url: &str) -> Result<(), PipelineError> {
         self.set_pipeline_state(PipelineState::Null)?;
-        self.0
-            .try_set_property("uri", &glib::Value::from(url))
-            .map_err(|err| {
-                rradio_messages::PipelineError(
-                    format!("Unable to set the playbin url to {url:?}: {err}").into(),
-                )
-            })
+        self.0.set_property("uri", &url);
+        Ok(())
     }
 
     pub fn play_url(&self, url: &str) -> Result<(), PipelineError> {
@@ -149,6 +139,8 @@ impl Playbin {
     }
 
     pub fn set_is_muted(&self, is_muted: bool) -> Result<(), PipelineError> {
+        tracing::debug!(is_muted, "Setting mute");
+
         self.stream_volume()?.set_mute(is_muted);
 
         Ok(())

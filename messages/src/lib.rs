@@ -259,7 +259,15 @@ pub struct Image(ArcStr);
 
 impl Image {
     pub fn new(mime_type: &str, image_data: &[u8]) -> Self {
-        Self(format!("data:{};base64,{}", mime_type, base64::encode(image_data)).into())
+        use base64::Engine;
+        Self(
+            format!(
+                "data:{};base64,{}",
+                mime_type,
+                base64::engine::general_purpose::URL_SAFE.encode(image_data)
+            )
+            .into(),
+        )
     }
 }
 
