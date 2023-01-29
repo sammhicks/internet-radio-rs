@@ -151,6 +151,8 @@ impl Playbin {
 
         let is_muted = !stream_volume.is_muted();
 
+        tracing::debug!(is_muted, "Setting mute");
+
         stream_volume.set_mute(is_muted);
 
         Ok(is_muted)
