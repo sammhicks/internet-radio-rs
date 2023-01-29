@@ -97,10 +97,21 @@ impl Playbin {
 
     pub fn play_pause(&self) -> Result<(), PipelineError> {
         match self.pipeline_state()? {
-            PipelineState::Paused => self.set_pipeline_state(PipelineState::Playing),
-            PipelineState::Playing => self.set_pipeline_state(PipelineState::Paused),
-            _ => Ok(()),
+            PipelineState::Paused => {
+                self.set_pipeline_state(PipelineState::Playing)?;
+                self.set_is_muted(false)?;
+            }
+            PipelineState::Playing => {
+                if self.duration().is_some() {
+                    self.set_pipeline_state(PipelineState::Paused)?;
+                } else {
+                    self.toggle_is_muted()?;
+                }
+            }
+            _ => (),
         }
+
+        Ok(())
     }
 
     pub fn set_url(&self, url: &str) -> Result<(), PipelineError> {
@@ -127,11 +138,35 @@ impl Playbin {
         playbin_ptr == message_src_ptr
     }
 
+    fn stream_volume(&self) -> Result<&gstreamer_audio::StreamVolume, PipelineError> {
+        self.0
+            .dynamic_cast_ref::<gstreamer_audio::StreamVolume>()
+            .ok_or_else(|| rradio_messages::PipelineError("Playbin has no volume".into()))
+    }
+
+    pub fn is_muted(&self) -> Result<bool, PipelineError> {
+        Ok(self.stream_volume()?.is_muted())
+    }
+
+    pub fn set_is_muted(&self, is_muted: bool) -> Result<(), PipelineError> {
+        self.stream_volume()?.set_mute(is_muted);
+
+        Ok(())
+    }
+
+    pub fn toggle_is_muted(&self) -> Result<bool, PipelineError> {
+        let stream_volume = self.stream_volume()?;
+
+        let is_muted = !stream_volume.is_muted();
+
+        stream_volume.set_mute(is_muted);
+
+        Ok(is_muted)
+    }
+
     pub fn volume(&self) -> Result<i32, PipelineError> {
         let current_volume = self
-            .0
-            .dynamic_cast_ref::<gstreamer_audio::StreamVolume>()
-            .ok_or_else(|| rradio_messages::PipelineError("Playbin has no volume".into()))?
+            .stream_volume()?
             .volume(gstreamer_audio::StreamVolumeFormat::Db);
 
         let scaled_volume = unsafe { current_volume.round().to_int_unchecked::<i32>() }
@@ -146,13 +181,10 @@ impl Playbin {
         let volume = volume.clamp(rradio_messages::VOLUME_MIN, rradio_messages::VOLUME_MAX);
         tracing::debug!("New Volume: {}", volume);
 
-        self.0
-            .dynamic_cast_ref::<gstreamer_audio::StreamVolume>()
-            .ok_or_else(|| rradio_messages::PipelineError("Playbin has no volume".into()))?
-            .set_volume(
-                gstreamer_audio::StreamVolumeFormat::Db,
-                f64::from(volume - rradio_messages::VOLUME_ZERO_DB),
-            );
+        self.stream_volume()?.set_volume(
+            gstreamer_audio::StreamVolumeFormat::Db,
+            f64::from(volume - rradio_messages::VOLUME_ZERO_DB),
+        );
 
         Ok(volume)
     }

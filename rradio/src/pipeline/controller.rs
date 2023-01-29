@@ -68,6 +68,7 @@ pub struct PlayerState {
     pub pause_before_playing: Option<Duration>,
     pub current_track_index: usize,
     pub current_track_tags: Arc<Option<TrackTags>>,
+    pub is_muted: bool,
     pub volume: i32,
     pub buffering: u8,
     pub track_duration: Option<Duration>,
@@ -114,7 +115,10 @@ impl Controller {
 
     fn play_pause(&mut self) -> Result<(), Error> {
         if self.current_playlist.is_some() {
-            self.playbin.play_pause().map_err(Error::from)
+            self.playbin.play_pause()?;
+            self.published_state.is_muted = self.playbin.is_muted()?;
+
+            Ok(())
         } else {
             Ok(())
         }
@@ -200,6 +204,8 @@ impl Controller {
         self.published_state.current_track_index = 0;
         self.published_state.current_track_tags = Arc::new(None);
 
+        self.set_is_muted(false).ok();
+
         self.broadcast_state_change();
 
         self.playbin.set_pipeline_state(PipelineState::Null).ok();
@@ -278,6 +284,8 @@ impl Controller {
             tracks: None,
         }));
 
+        self.set_is_muted(false).ok();
+
         self.broadcast_state_change();
 
         let playlist = new_station
@@ -345,6 +353,12 @@ impl Controller {
         self.play_current_track().await
     }
 
+    fn set_is_muted(&mut self, is_muted: bool) -> Result<(), Error> {
+        self.playbin.set_is_muted(is_muted)?;
+        self.published_state.is_muted = is_muted;
+        Ok(())
+    }
+
     fn set_volume(&mut self, volume: i32) -> Result<(), Error> {
         self.published_state.volume = self.playbin.set_volume(volume)?;
         self.broadcast_state_change();
@@ -381,6 +395,16 @@ impl Controller {
             Command::SeekForwards(offset) => self.playbin.position().map_or(Ok(()), |position| {
                 self.seek_to(position.saturating_add(offset))
             }),
+            Command::SetIsMuted(is_muted) => {
+                self.set_is_muted(is_muted)?;
+                self.broadcast_state_change();
+                Ok(())
+            }
+            Command::ToggleIsMuted => {
+                self.published_state.is_muted = self.playbin.toggle_is_muted()?;
+                self.broadcast_state_change();
+                Ok(())
+            }
             Command::VolumeUp => self.change_volume(1),
             Command::VolumeDown => self.change_volume(-1),
             Command::SetVolume(volume) => self.set_volume(volume),
@@ -618,6 +642,7 @@ pub fn run(
         pause_before_playing: None,
         current_track_index: 0,
         current_track_tags: Arc::new(None),
+        is_muted: playbin.is_muted().unwrap_or_default(),
         volume: playbin.volume().unwrap_or_default(),
         buffering: 0,
         track_duration: None,
