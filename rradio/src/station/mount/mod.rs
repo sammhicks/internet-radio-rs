@@ -19,7 +19,7 @@ type Result<T> = std::result::Result<T, rradio_messages::MountError>;
 
 struct Handle {
     _mount: sys_mount::UnmountDrop<sys_mount::Mount>,
-    mounted_directory: tempdir::TempDir,
+    mounted_directory: tempfile::TempDir,
 }
 
 #[cfg(all(feature = "usb", unix))]

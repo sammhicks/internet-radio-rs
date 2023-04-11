@@ -186,16 +186,11 @@ pub async fn run(port_channels: super::PortChannels, web_app_static_files: Strin
             get_service(
                 tower_http::services::ServeDir::new(web_app_static_files).not_found_service(
                     tower::service_fn(|request: axum::http::Request<_>| async move {
-                        std::io::Result::Ok(format!("{} not found", request.uri()).into_response())
+                        Ok(format!("{} not found", request.uri()).into_response())
                     }),
                 ),
             )
-            .handle_error(|err: std::io::Error| async move {
-                (
-                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                    err.to_string(),
-                )
-            }),
+            ,
         )
         .route(
             "/command",

@@ -18,9 +18,6 @@ pub fn gstreamer_state_to_pipeline_state(
         gstreamer::State::Ready => Ok(PipelineState::Ready),
         gstreamer::State::Paused => Ok(PipelineState::Paused),
         gstreamer::State::Playing => Ok(PipelineState::Playing),
-        _ => Err(rradio_messages::PipelineError(
-            format!("Unknown state {state:?}").into(),
-        )),
     }
 }
 

@@ -1,3 +1,5 @@
+#![warn(clippy::pedantic)]
+
 use std::{fmt, sync::Arc, time::Duration};
 
 use serde::{Deserialize, Serialize};
@@ -105,7 +107,7 @@ mod command_async {
 }
 
 #[cfg(feature = "async")]
-use command_async::*;
+pub use command_async::*;
 
 #[cfg(feature = "async")]
 impl Command {

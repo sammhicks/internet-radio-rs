@@ -1,6 +1,6 @@
 [package]
 name = "rradio"
-version = "0.48.1"
+version = "0.48.2"
 authors = [ "Samuel Hicks <SamMHicks@hotmail.co.uk>" ]
 edition = "2018"
 description = "An internet radio with configurable two digit entry of stations"
@@ -14,39 +14,39 @@ categories = [ "audio", "internet" ]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-cd = [ "libc" ]
-mount = [ "sys-mount", "tempdir" ]
-ping = [ "pnet", "pnet_macros_support" ]
+cd = ["libc"]
+mount = ["sys-mount", "tempfile"]
+ping = ["pnet", "pnet_macros_support"]
 production-server = []
-usb = [ "mount" ]
-web = [ "axum", "tower", "tower-http" ]
-default = [ "web" ]
+usb = ["mount"]
+web = ["axum", "tower", "tower-http"]
+default = ["web"]
 
 [dependencies]
-anyhow = "1.0.68"
-askama = "0.11.1"
-axum = { version = "0.6.4", default-features = false, features = [ "http1", "json", "ws" ], optional = true }
-crossterm =  { version = "0.26.0", features = [ "event-stream" ] }
-futures = "0.3.25"
-glib = "0.16.7"
-gstreamer = "0.19.7"
-gstreamer-audio = "0.19.4"
-gstreamer-sys = "0.19.4"
+anyhow = "1.0.70"
+askama = "0.12.0"
+axum = { version = "0.6.14", default-features = false, features = [ "http1", "json", "ws" ], optional = true }
+crossterm =  { version = "0.26.1", features = [ "event-stream" ] }
+futures = "0.3.28"
+glib = "0.17.5"
+gstreamer = "0.20.3"
+gstreamer-audio = "0.20.4"
+gstreamer-sys = "0.20.0"
 humantime-serde = "1.1.1"
-pnet = { version = "0.31.0", features = [ "std" ], optional = true }
-pnet_macros_support = { version = "0.31.0", optional = true }
+pnet = { version = "0.33.0", features = [ "std" ], optional = true }
+pnet_macros_support = { version = "0.33.0", optional = true }
 pls = "0.2.2"
-quick-xml = { version = "0.27.1", features = [ "serialize" ] }
+quick-xml = { version = "0.28.1", features = [ "serialize" ] }
 rand = "0.8.5"
-reqwest = { version = "0.11.14", default-features = false }
+reqwest = { version = "0.11.16", default-features = false }
 serde = { version = "1.0", features = [ "derive", "rc" ] }
 sys-mount = { version = "2.0", optional = true }
-tempdir = { version = "0.3", optional = true }
+tempfile = { version = "3.5.0", optional = true }
 thiserror = "1.0"
-tokio = { version = "1.24", features = [ "io-util", "net", "rt-multi-thread", "sync", "time" ] }
+tokio = { version = "1.27", features = [ "io-util", "net", "rt-multi-thread", "sync", "time" ] }
 toml = "0.7"
 tower = { version = "0.4", optional = true }
-tower-http = { version = "0.3", features = [ "fs" ], optional = true }
+tower-http = { version = "0.4", features = [ "fs" ], optional = true }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = [ "env-filter" ] }
 url = { version = "2.3", features = [ "serde" ] }
