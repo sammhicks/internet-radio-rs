@@ -31,7 +31,6 @@ pub struct PermissionsError(#[from] std::io::Error);
 
 struct IcmpTransportChannelIterator<'a>(pnet::transport::IcmpTransportChannelIterator<'a>);
 
-#[cfg(unix)]
 impl<'a> IcmpTransportChannelIterator<'a> {
     fn clear(&mut self) -> Result<(), PingError> {
         while self
@@ -61,25 +60,6 @@ impl<'a> IcmpTransportChannelIterator<'a> {
     }
 }
 
-#[cfg(not(unix))]
-impl<'a> IcmpTransportChannelIterator<'a> {
-    #[allow(clippy::unnecessary_wraps, clippy::unused_self)]
-    fn clear(&self) -> Result<(), PingError> {
-        Ok(())
-    }
-
-    fn next(
-        &mut self,
-        _timeout: std::time::Duration,
-    ) -> Result<(IcmpPacket<'_>, IpAddr), PingError> {
-        self.0.next().map_err(|io_err| {
-            let err = PingError::FailedToRecieveICMP;
-            tracing::error!("{}: {}", err, io_err);
-            err
-        })
-    }
-}
-
 impl Pinger {
     pub fn new() -> Result<Self, PermissionsError> {
         const BUFFER_SIZE: usize = 64;
@@ -94,7 +74,8 @@ impl Pinger {
     pub fn ping(&mut self, address: Ipv4Addr) -> Result<Duration, PingError> {
         tracing::debug!("Pinging {}", address);
 
-        let mut packet_iter = IcmpTransportChannelIterator(icmp_packet_iter(&mut self.receiver));
+        let mut packet_iter: IcmpTransportChannelIterator =
+            IcmpTransportChannelIterator(icmp_packet_iter(&mut self.receiver));
 
         packet_iter.clear()?;
 

@@ -14,12 +14,12 @@ categories = [ "audio", "internet" ]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-cd = ["libc"]
-mount = ["sys-mount", "tempfile"]
-ping = ["pnet", "pnet_macros_support"]
+cd = ["dep:libc"]
+mount = ["dep:sys-mount", "dep:tempfile"]
+ping = ["dep:pnet", "dep:pnet_macros_support"]
 production-server = []
 usb = ["mount"]
-web = ["axum", "tower", "tower-http"]
+web = ["dep:axum", "dep:tower", "dep:tower-http"]
 default = ["web"]
 
 [dependencies]
@@ -33,6 +33,7 @@ gstreamer = "0.20.3"
 gstreamer-audio = "0.20.4"
 gstreamer-sys = "0.20.0"
 humantime-serde = "1.1.1"
+libc = { version = "0.2", optional = true }
 pnet = { version = "0.33.0", features = [ "std" ], optional = true }
 pnet_macros_support = { version = "0.33.0", optional = true }
 pls = "0.2.2"
@@ -53,5 +54,3 @@ url = { version = "2.3", features = [ "serde" ] }
 
 rradio-messages = { path = "../messages", features = [ "async" ] }
 
-[target.'cfg(unix)'.dependencies]
-libc = { version = "0.2", optional = true }

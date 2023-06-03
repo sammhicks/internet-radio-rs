@@ -85,7 +85,6 @@ pub mod ping {
         }
     }
 
-    #[cfg(unix)]
     fn default_gateway() -> Ipv4Addr {
         let path = "/proc/net/route";
         std::fs::read_to_string(path)
@@ -108,11 +107,6 @@ pub mod ping {
                 })
             })
             .unwrap_or(Ipv4Addr::new(192, 168, 0, 1))
-    }
-
-    #[cfg(not(unix))]
-    fn default_gateway() -> Ipv4Addr {
-        Ipv4Addr::LOCALHOST
     }
 }
 

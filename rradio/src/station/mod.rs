@@ -8,22 +8,14 @@ mod parse_m3u;
 mod parse_pls;
 mod parse_upnp;
 
-#[cfg(all(feature = "cd", not(unix)))]
-compile_error!("CD only supported on unix");
-
-#[cfg(all(feature = "cd", unix))]
-mod cd_unix;
-#[cfg(all(feature = "cd", unix))]
-use cd_unix as cd;
-
-#[cfg(all(feature = "cd", unix))]
-pub use cd::eject as eject_cd;
-
-#[cfg(all(feature = "mount", not(unix)))]
-compile_error!("Mounting only supported on unix");
-
-#[cfg(all(feature = "mount", unix))]
+#[cfg(feature = "mount")]
 mod mount;
+
+#[cfg(feature = "cd")]
+mod cd;
+
+#[cfg(feature = "cd")]
+pub use cd::eject as eject_cd;
 
 #[derive(Debug, PartialEq)]
 pub struct Credentials {

@@ -1,0 +1,6 @@
+FROM ghcr.io/cross-rs/armv7-unknown-linux-gnueabihf:edge
+
+ARG CROSS_DEB_ARCH
+
+RUN dpkg --add-architecture $CROSS_DEB_ARCH
+RUN apt update && TZ=Europe/London DEBIAN_FRONTEND=noninteractive apt install --assume-yes libgstreamer1.0-dev:$CROSS_DEB_ARCH libgstreamer-plugins-base1.0-dev:$CROSS_DEB_ARCH gstreamer1.0-plugins-base:$CROSS_DEB_ARCH gstreamer1.0-plugins-good:$CROSS_DEB_ARCH gstreamer1.0-plugins-bad:$CROSS_DEB_ARCH gstreamer1.0-plugins-ugly:$CROSS_DEB_ARCH gstreamer1.0-libav:$CROSS_DEB_ARCH libgstrtspserver-1.0-dev:$CROSS_DEB_ARCH libges-1.0-dev:$CROSS_DEB_ARCH libssl-dev:$CROSS_DEB_ARCH

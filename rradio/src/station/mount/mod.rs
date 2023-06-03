@@ -6,14 +6,8 @@ mod directory_search;
 
 use directory_search::SelectedDirectories;
 
-#[cfg(all(feature = "usb", not(unix)))]
-compile_error!("usb feature only supported on unix");
-
-#[cfg(all(unix, feature = "usb"))]
-mod unix;
-
-#[cfg(all(unix, feature = "usb"))]
-use unix::mount;
+#[cfg(feature = "usb")]
+mod usb;
 
 type Result<T> = std::result::Result<T, rradio_messages::MountError>;
 
@@ -22,13 +16,13 @@ struct Handle {
     mounted_directory: tempfile::TempDir,
 }
 
-#[cfg(all(feature = "usb", unix))]
+#[cfg(feature = "usb")]
 pub fn usb(
     device: &str,
     path: &Path,
     metadata: Option<&super::PlaylistMetadata>,
 ) -> Result<(Vec<Track>, super::PlaylistMetadata, super::PlaylistHandle)> {
-    let handle = mount(device, "vfat", None)?;
+    let handle = usb::mount(device, "vfat", None)?;
 
     let mut directory = std::path::PathBuf::from(handle.mounted_directory.path());
     directory.push(path);
