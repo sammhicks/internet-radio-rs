@@ -39,6 +39,7 @@ struct DidlRoot {
 
 #[derive(Debug, serde::Deserialize)]
 pub struct Reference {
+    #[serde(rename = "@id")]
     pub id: String,
     pub title: String,
 }
