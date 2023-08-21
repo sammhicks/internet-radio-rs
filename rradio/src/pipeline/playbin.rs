@@ -31,7 +31,7 @@ impl Playbin {
 
         let flags: glib::Value = playbin_element.property("flags");
         let flags_class =
-            glib::FlagsClass::new(flags.type_()).context("Failed to create a flags class")?;
+            glib::FlagsClass::with_type(flags.type_()).context("Failed to create a flags class")?;
         let flags = flags_class
             .builder_with_value(flags)
             .unwrap()
