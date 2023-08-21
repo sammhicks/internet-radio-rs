@@ -1,3 +1,5 @@
+#![allow(clippy::upper_case_acronyms)]
+
 use std::fmt::Debug;
 
 use super::Track;
@@ -45,6 +47,7 @@ impl Default for LbaMsf {
     }
 }
 
+#[allow(non_camel_case_types)]
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 struct cdrom_msf0 {
@@ -290,7 +293,7 @@ pub fn tracks(device: &str) -> Result<Vec<Track>> {
         1 => return Err(CdError::NoCd),             // CDS_NO_DISC
         2 => return Err(CdError::CdTrayIsOpen),     // CDS_TRAY_OPEN
         3 => return Err(CdError::CdTrayIsNotReady), // CDS_DRIVE_NOT_READY
-        4 => tracing::debug!("CD drive OK"),            // CDS_DISC_OK
+        4 => tracing::debug!("CD drive OK"),        // CDS_DISC_OK
         n => return Err(CdError::UnknownDriveStatus(n as isize)),
     }
 
@@ -299,12 +302,12 @@ pub fn tracks(device: &str) -> Result<Vec<Track>> {
         1 => return Err(CdError::NoCd),             // CDS_NO_DISC
         2 => return Err(CdError::CdTrayIsOpen),     // CDS_TRAY_OPEN
         3 => return Err(CdError::CdTrayIsNotReady), // CDS_DRIVE_NOT_READY
-        100 => tracing::debug!("Audio CD"),             // CDS_AUDIO
+        100 => tracing::debug!("Audio CD"),         // CDS_AUDIO
         101 => return Err(CdError::CdIsData1),      // CDS_DATA_1
         102 => return Err(CdError::CdIsData2),      // CDS_DATA_2
         103 => return Err(CdError::CdIsXA21),       // CDS_XA_2_1
         104 => return Err(CdError::CdIsXA22),       // CDS_XA_2_2
-        105 => tracing::debug!("Mixed CD"),             // CDS_MIXED
+        105 => tracing::debug!("Mixed CD"),         // CDS_MIXED
         n => return Err(CdError::UnknownDriveStatus(n as isize)),
     }
 

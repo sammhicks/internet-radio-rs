@@ -10,7 +10,7 @@ pub use arcstr::ArcStr;
 mod encoding;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-/// When connecting over TCP, RRadio will begin by immediately sending the following header
+/// When connecting over TCP, `RRadio` will begin by immediately sending the following header
 /// Clients MUST verify that the header matches the header of the version of `rradio_messages` that they're linked to
 pub const API_VERSION_HEADER: &str =
     concat!(env!("CARGO_PKG_NAME"), "_", env!("CARGO_PKG_VERSION"), "\n");
@@ -65,11 +65,19 @@ pub struct CommandDecodeError(#[source] postcard::Error);
 
 impl Command {
     /// Clear the buffer and encode the `Command` into it
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if the command cannot be encoded.
     pub fn encode<'a>(&self, buffer: &'a mut Vec<u8>) -> Result<&'a [u8], CommandEncodeError> {
         encoding::encode_value(self, buffer).map_err(CommandEncodeError)
     }
 
     /// Decode a `Command` from the buffer
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if the command cannot be decoded.
     pub fn decode(buffer: &mut [u8]) -> Result<Self, CommandDecodeError> {
         encoding::decode_value(buffer).map_err(CommandDecodeError)
     }
@@ -161,6 +169,7 @@ pub struct Track {
 }
 
 impl Track {
+    #[must_use]
     pub fn url(url: ArcStr) -> Self {
         Self {
             title: None,
@@ -171,6 +180,7 @@ impl Track {
         }
     }
 
+    #[must_use]
     pub fn notification(url: ArcStr) -> Self {
         Self {
             title: None,
@@ -198,10 +208,12 @@ impl From<SetPlaylistTrack> for Track {
 pub struct StationIndex(Box<str>);
 
 impl StationIndex {
+    #[must_use]
     pub fn new(index: Box<str>) -> Self {
         Self(index)
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -260,6 +272,7 @@ pub struct Station {
 pub struct Image(ArcStr);
 
 impl Image {
+    #[must_use]
     pub fn new(mime_type: &str, image_data: &[u8]) -> Self {
         use base64::Engine;
         Self(
@@ -509,12 +522,20 @@ pub struct EventDecodeError(#[source] postcard::Error);
 
 impl Event {
     /// Clear the buffer and encode the `Event` into it
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if the event cannot be encoded.
     pub fn encode<'a>(&self, buffer: &'a mut Vec<u8>) -> Result<&'a [u8], EventEncodeError> {
         encoding::encode_value(self, buffer).map_err(EventEncodeError)
     }
 
     /// Decode an `Event` from the buffer. Events are [COBS](https://en.wikipedia.org/wiki/Consistent_Overhead_Byte_Stuffing) encoded,
     /// and thus do not contain the value `0`, and are thus suffixed with a value of `0`
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if the event cannot be decoded.
     ///
     /// # Example
     ///
@@ -577,7 +598,7 @@ mod event_async {
                     b'\\' => write!(f, "\\\\")?,
                     b'\0' => write!(f, "\\0")?,
                     0x20..=0x7E => write!(f, "{}", b as char)?,
-                    _ => write!(f, "\\x{:02x}", b)?,
+                    _ => write!(f, "\\x{b:02x}")?,
                 }
             }
 
@@ -661,7 +682,7 @@ mod event_async {
                 actual,
             };
 
-            println!("{}", err);
+            println!("{err}");
         }
     }
 }
@@ -671,6 +692,11 @@ pub use event_async::*;
 
 #[cfg(feature = "async")]
 impl Event {
+    /// Decode an event stream from a buffered reader
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there's an IO error or if the `RRadio` header does not match the expected version
     pub async fn decode_from_stream<S: tokio::io::AsyncBufRead + Unpin>(
         stream: S,
     ) -> Result<

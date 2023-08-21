@@ -9,15 +9,13 @@ use gstreamer_audio::prelude::StreamVolumeExt;
 
 pub use rradio_messages::{PipelineError, PipelineState};
 
-pub fn gstreamer_state_to_pipeline_state(
-    state: gstreamer::State,
-) -> Result<PipelineState, PipelineError> {
+pub fn gstreamer_state_to_pipeline_state(state: gstreamer::State) -> PipelineState {
     match state {
-        gstreamer::State::VoidPending => Ok(PipelineState::VoidPending),
-        gstreamer::State::Null => Ok(PipelineState::Null),
-        gstreamer::State::Ready => Ok(PipelineState::Ready),
-        gstreamer::State::Paused => Ok(PipelineState::Paused),
-        gstreamer::State::Playing => Ok(PipelineState::Playing),
+        gstreamer::State::VoidPending => PipelineState::VoidPending,
+        gstreamer::State::Null => PipelineState::Null,
+        gstreamer::State::Ready => PipelineState::Ready,
+        gstreamer::State::Paused => PipelineState::Paused,
+        gstreamer::State::Playing => PipelineState::Playing,
     }
 }
 
@@ -49,7 +47,7 @@ impl Playbin {
                 .try_into()
                 .context("Bad buffer duration")?;
 
-            playbin_element.set_property("buffer-duration", &duration_nanos);
+            playbin_element.set_property("buffer-duration", duration_nanos);
         }
 
         let playbin = Self(playbin_element);
@@ -67,7 +65,7 @@ impl Playbin {
     pub fn pipeline_state(&self) -> Result<PipelineState, PipelineError> {
         let (success, state, _) = self.0.state(gstreamer::ClockTime::default());
         if success.is_ok() {
-            gstreamer_state_to_pipeline_state(state)
+            Ok(gstreamer_state_to_pipeline_state(state))
         } else {
             Err(rradio_messages::PipelineError("Failed to get state".into()))
         }
@@ -108,7 +106,7 @@ impl Playbin {
 
     pub fn set_url(&self, url: &str) -> Result<(), PipelineError> {
         self.set_pipeline_state(PipelineState::Null)?;
-        self.0.set_property("uri", &url);
+        self.0.set_property("uri", url);
         Ok(())
     }
 

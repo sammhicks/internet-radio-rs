@@ -522,7 +522,7 @@ impl Controller {
                     let new_state = state_change.current();
 
                     self.published_state.pipeline_state =
-                        super::playbin::gstreamer_state_to_pipeline_state(new_state)?;
+                        super::playbin::gstreamer_state_to_pipeline_state(new_state);
 
                     self.broadcast_state_change();
 
