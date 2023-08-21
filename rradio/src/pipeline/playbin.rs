@@ -85,17 +85,17 @@ impl Playbin {
         Ok(())
     }
 
-    pub fn play_pause(&self) -> Result<(), PipelineError> {
+    pub fn play_pause(&self, mute_on_pause_if_infinite_stream: bool) -> Result<(), PipelineError> {
         match self.pipeline_state()? {
             PipelineState::Paused => {
                 self.set_pipeline_state(PipelineState::Playing)?;
                 self.set_is_muted(false)?;
             }
             PipelineState::Playing => {
-                if self.duration().is_some() {
-                    self.set_pipeline_state(PipelineState::Paused)?;
-                } else {
+                if mute_on_pause_if_infinite_stream && self.duration().is_none() {
                     self.toggle_is_muted()?;
+                } else {
+                    self.set_pipeline_state(PipelineState::Paused)?;
                 }
             }
             _ => (),
@@ -129,8 +129,9 @@ impl Playbin {
             .ok_or_else(|| rradio_messages::PipelineError("Playbin has no volume".into()))
     }
 
-    pub fn is_muted(&self) -> Result<bool, PipelineError> {
-        Ok(self.stream_volume()?.is_muted())
+    pub fn is_muted(&self) -> bool {
+        self.stream_volume()
+            .map_or(false, gstreamer_audio::prelude::StreamVolumeExt::is_muted)
     }
 
     pub fn set_is_muted(&self, is_muted: bool) -> Result<(), PipelineError> {

@@ -92,7 +92,14 @@ impl<'a> Display for DisplayDiff<&'a rradio_messages::PlayerStateDiff> {
             display_entry(f, "Volume", volume)?;
         }
 
-        let buffering_row = volume_row + volume_row_count;
+        let is_muted_row = volume_row + volume_row_count;
+        let is_muted_row_count = 1;
+        if let Some(is_muted) = self.0.is_muted {
+            Display::fmt(&MoveTo(0, is_muted_row), f)?;
+            display_entry(f, "Muted", is_muted)?;
+        }
+
+        let buffering_row = is_muted_row + is_muted_row_count;
         let buffering_row_count = 1;
         if let Some(buffering) = self.0.buffering {
             Display::fmt(&MoveTo(0, buffering_row), f)?;

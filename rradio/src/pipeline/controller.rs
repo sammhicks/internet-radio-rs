@@ -115,8 +115,8 @@ impl Controller {
 
     fn play_pause(&mut self) -> Result<(), Error> {
         if self.current_playlist.is_some() {
-            self.playbin.play_pause()?;
-            self.published_state.is_muted = self.playbin.is_muted()?;
+            self.playbin
+                .play_pause(self.config.mute_on_pause_if_infinite_stream)?;
 
             Ok(())
         } else {
@@ -224,6 +224,7 @@ impl Controller {
     fn broadcast_state_change(&mut self) {
         self.published_state.track_duration = self.playbin.duration();
         self.published_state.track_position = self.playbin.position();
+        self.published_state.is_muted = self.playbin.is_muted();
 
         self.new_state_tx.send(self.published_state.clone()).ok();
     }
@@ -642,7 +643,7 @@ pub fn run(
         pause_before_playing: None,
         current_track_index: 0,
         current_track_tags: Arc::new(None),
-        is_muted: playbin.is_muted().unwrap_or_default(),
+        is_muted: playbin.is_muted(),
         volume: playbin.volume().unwrap_or_default(),
         buffering: 0,
         track_duration: None,

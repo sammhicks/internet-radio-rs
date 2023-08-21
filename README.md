@@ -16,6 +16,7 @@ However, there are a couple of exceptions
     stations_directory = "stations"
     input_timeout = "2s"
     volume_offset = 5
+    mute_on_pause_if_infinite_stream = false
     buffering_duration = "40s"
     log_level = "rradio=info"
 
@@ -52,6 +53,9 @@ Options:
 + volume_offset
   + Default: `5`
   + The default volume change when incrementing and decrementing the volume
++ mute_on_pause_if_infinite_stream
+  + Default: `false`
+  + If true, then infinite streams are muted instead of being paused
 + buffering_duration
   + Default: `"2s"`
   + The gstreaming buffer duration
