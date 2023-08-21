@@ -1,7 +1,7 @@
 //! A radio station in rradio
 use std::{any::Any, fmt, sync::Arc};
 
-use rradio_messages::{ArcStr, StationIndex, StationType};
+use rradio_messages::{arcstr, ArcStr, StationIndex, StationType};
 pub use rradio_messages::{StationError as Error, Track};
 
 mod parse_m3u;
@@ -108,7 +108,7 @@ fn stations_directory_io_error<T>(
 ) -> Result<T, Error> {
     result.map_err(|err| Error::StationsDirectoryIoError {
         directory: directory.clone(),
-        err: err.to_string().into(),
+        err: arcstr::format!("{err}"),
     })
 }
 
@@ -245,10 +245,9 @@ impl Station {
                     handle,
                 })
             }
-            Station::UPnP(station) => station
-                .into_playlist(metadata)
-                .await
-                .map_err(|err| rradio_messages::StationError::UPnPError(err.to_string().into())),
+            Station::UPnP(station) => station.into_playlist(metadata).await.map_err(|err| {
+                rradio_messages::StationError::UPnPError(arcstr::format!("{err:#}"))
+            }),
         }
     }
 }

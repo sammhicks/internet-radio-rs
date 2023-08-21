@@ -1,6 +1,6 @@
 use std::{any::Any, path::Path};
 
-use rradio_messages::Track;
+use rradio_messages::{arcstr, Track};
 
 mod directory_search;
 
@@ -55,6 +55,6 @@ fn random_music_directory(
     selected_directories: Option<&SelectedDirectories>,
 ) -> Result<(Vec<Track>, SelectedDirectories)> {
     directory_search::random_music_directory(directory_path, selected_directories)
-        .map_err(|err| rradio_messages::MountError::ErrorFindingTracks(err.to_string().into()))?
+        .map_err(|err| rradio_messages::MountError::ErrorFindingTracks(arcstr::format!("{err}")))?
         .ok_or(rradio_messages::MountError::TracksNotFound)
 }

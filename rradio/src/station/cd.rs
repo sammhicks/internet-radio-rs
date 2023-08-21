@@ -4,7 +4,7 @@ use std::fmt::Debug;
 
 use super::Track;
 
-use rradio_messages::{CdError, EjectError};
+use rradio_messages::{arcstr, CdError, EjectError};
 
 type Result<T> = std::result::Result<T, rradio_messages::CdError>;
 
@@ -281,12 +281,12 @@ where
 
 #[allow(clippy::needless_pass_by_value)]
 fn ioctl_error(err: std::io::Error) -> CdError {
-    CdError::IoCtlError(err.to_string().into())
+    CdError::IoCtlError(arcstr::format!("{err}"))
 }
 
 pub fn tracks(device: &str) -> Result<Vec<Track>> {
     let mut device = std::fs::File::open(device)
-        .map_err(|err| CdError::FailedToOpenDevice(err.to_string().into()))?;
+        .map_err(|err| CdError::FailedToOpenDevice(arcstr::format!("{err}")))?;
 
     match device.ioctl(CDROM_DRIVE_STATUS).map_err(ioctl_error)? {
         0 => return Err(CdError::NoCdInfo),         // CDS_NO_INFO

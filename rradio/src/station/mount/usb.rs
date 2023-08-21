@@ -3,7 +3,7 @@ use sys_mount::Unmount;
 use super::super::Credentials;
 use super::Handle;
 
-use rradio_messages::MountError;
+use rradio_messages::{arcstr, MountError};
 
 type Result<T> = std::result::Result<T, rradio_messages::MountError>;
 
@@ -29,7 +29,7 @@ pub(super) fn mount(
     let mounted_directory = tempfile::Builder::new()
         .prefix("rradio")
         .tempdir()
-        .map_err(|err| MountError::CouldNotCreateTemporaryDirectory(err.to_string().into()))?;
+        .map_err(|err| MountError::CouldNotCreateTemporaryDirectory(arcstr::format!("{err}")))?;
 
     let mount = sys_mount::Mount::builder()
         .fstype(file_system_type)
@@ -47,7 +47,7 @@ pub(super) fn mount(
             } else {
                 MountError::CouldNotMountDevice {
                     device: device.into(),
-                    err: err.to_string().into(),
+                    err: arcstr::format!("{err}"),
                 }
             }
         })?
