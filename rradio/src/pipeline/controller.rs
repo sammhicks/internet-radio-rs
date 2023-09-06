@@ -1,4 +1,9 @@
-use std::{collections::BTreeMap, convert::TryInto, sync::Arc, time::Duration};
+use std::{
+    collections::BTreeMap,
+    convert::TryInto,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tokio::sync::{broadcast, mpsc, watch};
 
 use rradio_messages::{
@@ -92,6 +97,7 @@ struct Controller {
     new_state_tx: watch::Sender<PlayerState>,
     log_message_tx: broadcast::Sender<LogMessage>,
     queued_seek: Option<Duration>,
+    pause_time: Option<Instant>,
     #[cfg(feature = "ping")]
     ping_requests_tx: tokio::sync::mpsc::UnboundedSender<Option<ArcStr>>,
 }
@@ -113,10 +119,46 @@ impl Controller {
         }
     }
 
-    fn play_pause(&mut self) -> Result<(), Error> {
+    async fn play_pause(&mut self) -> Result<(), Error> {
         if self.current_playlist.is_some() {
-            self.playbin
-                .play_pause(self.config.mute_on_pause_if_infinite_stream)?;
+            match self.playbin.pipeline_state()? {
+                PipelineState::Paused => {
+                    let paused_has_elapsed = self
+                        .pause_time
+                        .map(|pause_time| pause_time.elapsed())
+                        .zip(self.config.maximum_pause_if_infinite_stream)
+                        .filter(|_| {
+                            // First check that the stream is of infinite length. If not, skip the duration check.
+                            self.playbin.duration().is_none()
+                        })
+                        .is_some_and(|(pause_time, maximum_pause_time)| {
+                            tracing::trace!(
+                                pause_time = pause_time.as_secs_f32(),
+                                maximum_pause_time = maximum_pause_time.as_secs_f32(),
+                                "Resuming after pausing"
+                            );
+                            pause_time > maximum_pause_time
+                        });
+
+                    if paused_has_elapsed {
+                        self.play_current_track().await?;
+                    } else {
+                        self.playbin.set_pipeline_state(PipelineState::Playing)?;
+                        self.playbin.set_is_muted(false)?;
+                    }
+                }
+                PipelineState::Playing => {
+                    if self.config.mute_on_pause_if_infinite_stream
+                        && self.playbin.duration().is_none()
+                    {
+                        self.playbin.toggle_is_muted()?;
+                    } else {
+                        self.pause_time = Some(Instant::now());
+                        self.playbin.set_pipeline_state(PipelineState::Paused)?;
+                    }
+                }
+                _ => (),
+            }
 
             Ok(())
         } else {
@@ -384,7 +426,7 @@ impl Controller {
             Command::SetChannel(index) => {
                 self.play_station(Station::load(&self.config, index)?).await
             }
-            Command::PlayPause => self.play_pause(),
+            Command::PlayPause => self.play_pause().await,
             Command::SmartPreviousItem => self.smart_goto_previous_track().await,
             Command::PreviousItem => self.goto_previous_track().await,
             Command::NextItem => self.goto_next_track().await,
@@ -670,6 +712,7 @@ pub fn run(
         new_state_tx,
         log_message_tx,
         queued_seek: None,
+        pause_time: None,
         #[cfg(feature = "ping")]
         ping_requests_tx,
     };

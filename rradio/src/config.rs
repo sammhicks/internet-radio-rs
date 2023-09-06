@@ -159,6 +159,10 @@ pub struct Config {
     /// If true, then mute infinite streams instead of pausing infinite streams
     pub mute_on_pause_if_infinite_stream: bool,
 
+    /// The maximum time to pause if the stream is of infinite length
+    #[serde(with = "humantime_serde")]
+    pub maximum_pause_if_infinite_stream: Option<Duration>,
+
     #[serde(with = "humantime_serde")]
     pub buffering_duration: Option<Duration>,
 
@@ -230,6 +234,7 @@ impl Default for Config {
             initial_volume: 70,
             volume_offset: 5,
             mute_on_pause_if_infinite_stream: false,
+            maximum_pause_if_infinite_stream: None,
             buffering_duration: None,
             pause_before_playing_increment: Duration::from_secs(1),
             max_pause_before_playing: Duration::from_secs(5),

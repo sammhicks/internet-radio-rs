@@ -17,6 +17,7 @@ However, there are a couple of exceptions
     input_timeout = "2s"
     volume_offset = 5
     mute_on_pause_if_infinite_stream = false
+    maximum_pause_if_infinite_stream = None
     buffering_duration = "40s"
     log_level = "rradio=info"
 
@@ -56,6 +57,9 @@ Options:
 + mute_on_pause_if_infinite_stream
   + Default: `false`
   + If true, then infinite streams are muted instead of being paused
++ maximum_pause_if_infinite_stream
+  + Default: `None`
+  + If set, then if an infinite stream is paused for longer than this value, the stream is restarted rather than being resumed
 + buffering_duration
   + Default: `"2s"`
   + The gstreaming buffer duration

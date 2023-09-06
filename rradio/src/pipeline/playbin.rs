@@ -85,25 +85,6 @@ impl Playbin {
         Ok(())
     }
 
-    pub fn play_pause(&self, mute_on_pause_if_infinite_stream: bool) -> Result<(), PipelineError> {
-        match self.pipeline_state()? {
-            PipelineState::Paused => {
-                self.set_pipeline_state(PipelineState::Playing)?;
-                self.set_is_muted(false)?;
-            }
-            PipelineState::Playing => {
-                if mute_on_pause_if_infinite_stream && self.duration().is_none() {
-                    self.toggle_is_muted()?;
-                } else {
-                    self.set_pipeline_state(PipelineState::Paused)?;
-                }
-            }
-            _ => (),
-        }
-
-        Ok(())
-    }
-
     pub fn set_url(&self, url: &str) -> Result<(), PipelineError> {
         self.set_pipeline_state(PipelineState::Null)?;
         self.0.set_property("uri", url);

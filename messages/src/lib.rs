@@ -590,7 +590,7 @@ mod event_async {
 
     impl<'a> fmt::Display for DisplayApiHeader<'a> {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            for &b in self.0.iter() {
+            for &b in self.0 {
                 match b {
                     b'\n' => write!(f, "\\n")?,
                     b'\r' => write!(f, "\\r")?,

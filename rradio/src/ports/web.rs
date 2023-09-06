@@ -90,6 +90,7 @@ where
     }
 }
 
+#[allow(clippy::unused_async)]
 async fn handle_websocket_connection(
     port_channels: super::PortChannels,
     wait_handle: crate::task::WaitGroupHandle,
