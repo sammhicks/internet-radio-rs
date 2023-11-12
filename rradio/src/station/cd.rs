@@ -281,12 +281,17 @@ where
 
 #[allow(clippy::needless_pass_by_value)]
 fn ioctl_error(err: std::io::Error) -> CdError {
-    CdError::IoCtlError(arcstr::format!("{err}"))
+    CdError::IoCtlError {
+        code: err.raw_os_error(),
+        message: arcstr::format!("{err}"),
+    }
 }
 
 pub fn tracks(device: &str) -> Result<Vec<Track>> {
-    let mut device = std::fs::File::open(device)
-        .map_err(|err| CdError::FailedToOpenDevice(arcstr::format!("{err}")))?;
+    let mut device = std::fs::File::open(device).map_err(|err| CdError::FailedToOpenDevice {
+        code: err.raw_os_error(),
+        message: arcstr::format!("{err}"),
+    })?;
 
     match device.ioctl(CDROM_DRIVE_STATUS).map_err(ioctl_error)? {
         0 => return Err(CdError::NoCdInfo),         // CDS_NO_INFO

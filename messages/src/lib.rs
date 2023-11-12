@@ -403,10 +403,10 @@ pub struct PipelineError(pub ArcStr);
 pub enum CdError {
     #[error("CD support is not enabled")]
     CdNotEnabled,
-    #[error("Failed to open CD device: {0}")]
-    FailedToOpenDevice(ArcStr),
-    #[error("ioctl Error: {0}")]
-    IoCtlError(ArcStr),
+    #[error("Failed to open CD device: {message}")]
+    FailedToOpenDevice { code: Option<i32>, message: ArcStr },
+    #[error("ioctl Error: {message}")]
+    IoCtlError { code: Option<i32>, message: ArcStr },
     #[error("No CD info")]
     NoCdInfo,
     #[error("No CD")]

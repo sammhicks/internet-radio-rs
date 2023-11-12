@@ -1524,7 +1524,7 @@ dependencies = [
 
 [[package]]
 name = "rradio"
-version = "0.50.0"
+version = "0.50.1"
 dependencies = [
  "anyhow",
  "askama",
@@ -1559,7 +1559,7 @@ dependencies = [
 
 [[package]]
 name = "rradio-messages"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "anyhow",
  "arcstr",
