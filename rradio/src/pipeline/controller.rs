@@ -7,7 +7,7 @@ use std::{
 use tokio::sync::{broadcast, mpsc, watch};
 
 use rradio_messages::{
-    ArcStr, Command, Error, LogMessage, PingTimes, PipelineError, StationIndex, TrackTags,
+    ArcStr, Command, Error, LogMessage, PingTimes, PipelineError, StationIndex, TrackTags, Warning,
 };
 
 use super::playbin::{PipelineState, Playbin};
@@ -98,6 +98,7 @@ struct Controller {
     log_message_tx: broadcast::Sender<LogMessage>,
     queued_seek: Option<Duration>,
     pause_time: Option<Instant>,
+    ignore_n_gstreamer_errors: u8,
     #[cfg(feature = "ping")]
     ping_requests_tx: tokio::sync::mpsc::UnboundedSender<Option<ArcStr>>,
 }
@@ -169,6 +170,8 @@ impl Controller {
     async fn play_current_track(&mut self) -> Result<(), Error> {
         #[cfg(feature = "ping")]
         self.clear_ping();
+
+        self.ignore_n_gstreamer_errors = self.config.ignore_n_gstreamer_errors;
 
         let current_playlist = self.current_playlist.as_ref().ok_or(Error::NoPlaylist)?;
 
@@ -271,7 +274,12 @@ impl Controller {
         self.new_state_tx.send(self.published_state.clone()).ok();
     }
 
-    fn broadcast_error_message(&mut self, error: Error) {
+    fn broadcast_warning(&mut self, warning: Warning) {
+        tracing::warn!("{}", warning);
+        self.log_message_tx.send(warning.into()).ok();
+    }
+
+    fn broadcast_error(&mut self, error: Error) {
         tracing::error!("{}", error);
         self.log_message_tx.send(error.into()).ok();
     }
@@ -478,7 +486,7 @@ impl Controller {
                     if let Err(err) =
                         crate::station::eject_cd(self.config.cd_config.device.as_str()).await
                     {
-                        self.broadcast_error_message(err.into());
+                        self.broadcast_error(err.into());
                     }
                 }
 
@@ -542,7 +550,7 @@ impl Controller {
                         Ok(Tag::Comment(comment)) => new_tags.comment = Some(comment),
                         Ok(Tag::Unknown { .. }) => {}
                         Err(err) => {
-                            self.broadcast_error_message(
+                            self.broadcast_error(
                                 rradio_messages::TagError(format!("{err:#}").into()).into(),
                             );
                         }
@@ -633,12 +641,25 @@ impl Controller {
                     err.error(),
                     err.debug()
                 );
-                let error = Error::PipelineError(PipelineError(message.into()));
-                if self.config.play_error_sound_on_gstreamer_error {
-                    Err(error)
-                } else {
-                    self.broadcast_error_message(error);
-                    Ok(())
+                let pipeline_error = PipelineError(message.into());
+
+                match self.ignore_n_gstreamer_errors.checked_sub(1) {
+                    Some(ignore_n_gstreamer_errors) => {
+                        self.ignore_n_gstreamer_errors = ignore_n_gstreamer_errors;
+
+                        self.broadcast_warning(Warning::IgnoringPipelineError(pipeline_error));
+
+                        Ok(())
+                    }
+                    None => {
+                        let error = Error::PipelineError(pipeline_error);
+                        if self.config.play_error_sound_on_gstreamer_error {
+                            Err(error)
+                        } else {
+                            self.broadcast_error(error);
+                            Ok(())
+                        }
+                    }
                 }
             }
             _ => Ok(()),
@@ -699,6 +720,8 @@ pub fn run(
 
     let log_message_source = LogMessageSource(log_message_tx.clone());
 
+    let ignore_n_gstreamer_errors = config.ignore_n_gstreamer_errors;
+
     #[cfg(feature = "ping")]
     let (ping_task, ping_requests_tx, ping_times_rx) =
         super::ping::run(config.ping_config.clone())?;
@@ -713,6 +736,7 @@ pub fn run(
         log_message_tx,
         queued_seek: None,
         pause_time: None,
+        ignore_n_gstreamer_errors,
         #[cfg(feature = "ping")]
         ping_requests_tx,
     };
@@ -766,7 +790,7 @@ pub fn run(
                             Ok(())
                         }
                     } {
-                        controller.broadcast_error_message(err);
+                        controller.broadcast_error(err);
                         controller.play_error();
                     }
                 }

@@ -494,14 +494,27 @@ pub enum Error {
     TagError(#[from] TagError),
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
+pub enum Warning {
+    #[error("Ignoring: {0}")]
+    IgnoringPipelineError(#[from] PipelineError),
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum LogMessage {
     Error(Error),
+    Warning(Warning),
 }
 
 impl std::convert::From<Error> for LogMessage {
     fn from(error: Error) -> Self {
         Self::Error(error)
+    }
+}
+
+impl std::convert::From<Warning> for LogMessage {
+    fn from(warning: Warning) -> Self {
+        Self::Warning(warning)
     }
 }
 

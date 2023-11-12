@@ -92,6 +92,9 @@ Options:
 + play_error_sound_on_gstreamer_error
   + Default: true
   + If gstreamer raises an error, play the "Error" sound and then reset the playlist and stop playing
++ ignore_n_gstreamer_errors
+  + Default: 0,
+  + Ignore `n` gstreamer errors before handling them
 + CD
   + Only if `cd` feature is enabled
   + Values:

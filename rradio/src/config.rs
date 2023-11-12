@@ -186,6 +186,9 @@ pub struct Config {
     /// Play the error sound if gstreamer reports an error
     pub play_error_sound_on_gstreamer_error: bool,
 
+    /// Ignore `n` gstreamer errors before handling them
+    pub ignore_n_gstreamer_errors: u8,
+
     #[cfg(feature = "cd")]
     #[serde(rename = "CD")]
     pub cd_config: cd::Config,
@@ -242,6 +245,7 @@ impl Default for Config {
             log_level: arcstr::literal!("info"),
             notifications: Notifications::default(),
             play_error_sound_on_gstreamer_error: true,
+            ignore_n_gstreamer_errors: 0,
             #[cfg(feature = "cd")]
             cd_config: cd::Config::default(),
             #[cfg(feature = "usb")]

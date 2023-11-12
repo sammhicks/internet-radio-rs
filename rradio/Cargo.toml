@@ -1,6 +1,6 @@
 [package]
 name = "rradio"
-version = "0.50.1"
+version = "0.51.0"
 authors = ["Samuel Hicks <SamMHicks@hotmail.co.uk>"]
 edition = "2018"
 description = "An internet radio with configurable two digit entry of stations"
