@@ -156,13 +156,6 @@ pub struct Config {
     /// The change in volume when the user increments or decrements the volume
     pub volume_offset: i32,
 
-    /// If true, then mute infinite streams instead of pausing infinite streams
-    pub mute_on_pause_if_infinite_stream: bool,
-
-    /// The maximum time to pause if the stream is of infinite length
-    #[serde(with = "humantime_serde")]
-    pub maximum_pause_if_infinite_stream: Option<Duration>,
-
     #[serde(with = "humantime_serde")]
     pub buffering_duration: Option<Duration>,
 
@@ -182,12 +175,6 @@ pub struct Config {
     /// Notification sounds
     #[serde(rename = "Notifications")]
     pub notifications: Notifications,
-
-    /// Play the error sound if gstreamer reports an error
-    pub play_error_sound_on_gstreamer_error: bool,
-
-    /// Ignore `n` gstreamer errors before handling them
-    pub ignore_n_gstreamer_errors: u8,
 
     #[cfg(feature = "cd")]
     #[serde(rename = "CD")]
@@ -236,16 +223,12 @@ impl Default for Config {
             input_timeout: Duration::from_millis(2000),
             initial_volume: 70,
             volume_offset: 5,
-            mute_on_pause_if_infinite_stream: false,
-            maximum_pause_if_infinite_stream: None,
             buffering_duration: None,
             pause_before_playing_increment: Duration::from_secs(1),
             max_pause_before_playing: Duration::from_secs(5),
             smart_goto_previous_track_duration: Duration::from_secs(2),
             log_level: arcstr::literal!("info"),
             notifications: Notifications::default(),
-            play_error_sound_on_gstreamer_error: true,
-            ignore_n_gstreamer_errors: 0,
             #[cfg(feature = "cd")]
             cd_config: cd::Config::default(),
             #[cfg(feature = "usb")]

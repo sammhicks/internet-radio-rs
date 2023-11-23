@@ -134,7 +134,6 @@ impl Command {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub enum PipelineState {
-    VoidPending,
     Null,
     Ready,
     Paused,
@@ -143,14 +142,13 @@ pub enum PipelineState {
 
 impl Default for PipelineState {
     fn default() -> Self {
-        Self::VoidPending
+        Self::Null
     }
 }
 
 impl fmt::Display for PipelineState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad(match self {
-            Self::VoidPending => "VoidPending",
             Self::Null => "Null",
             Self::Ready => "Ready",
             Self::Paused => "Paused",
@@ -396,8 +394,20 @@ pub struct PlayerStateDiff {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
-#[error("Pipeline Error: {0}")]
-pub struct PipelineError(pub ArcStr);
+
+pub enum PipelineError {
+    #[error("{0}")]
+    Simple(ArcStr),
+    #[error(
+        "Pipeline Error: {error:?}; code - {code}; message - {error_message:?}; debug - {debug_message:?}"
+    )]
+    Structured {
+        error: ArcStr,
+        code: i64,
+        error_message: ArcStr,
+        debug_message: Option<ArcStr>,
+    },
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
 pub enum CdError {
@@ -495,26 +505,14 @@ pub enum Error {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
-pub enum Warning {
-    #[error("Ignoring: {0}")]
-    IgnoringPipelineError(#[from] PipelineError),
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum LogMessage {
+    #[error("Error: {0}")]
     Error(Error),
-    Warning(Warning),
 }
 
 impl std::convert::From<Error> for LogMessage {
     fn from(error: Error) -> Self {
         Self::Error(error)
-    }
-}
-
-impl std::convert::From<Warning> for LogMessage {
-    fn from(warning: Warning) -> Self {
-        Self::Warning(warning)
     }
 }
 

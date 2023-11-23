@@ -143,12 +143,9 @@ pub fn encode_events<S: AsyncWrite + Unpin>(
 
             match event {
                 Event::PlayerStateChanged(diff) => write!(buffer, "{}", DisplayDiff(&diff)),
-                Event::LogMessage(log_message) => write!(
-                    buffer,
-                    "{}{:?}",
-                    crossterm::cursor::MoveTo(0, 0),
-                    log_message
-                ),
+                Event::LogMessage(log_message) => {
+                    write!(buffer, "{}{}", crossterm::cursor::MoveTo(0, 0), log_message)
+                }
             }
             .context("Failed to encode event")?;
 

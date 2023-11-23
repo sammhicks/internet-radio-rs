@@ -9,14 +9,18 @@ use gstreamer_audio::prelude::StreamVolumeExt;
 
 pub use rradio_messages::{PipelineError, PipelineState};
 
-pub fn gstreamer_state_to_pipeline_state(state: gstreamer::State) -> PipelineState {
-    match state {
-        gstreamer::State::VoidPending => PipelineState::VoidPending,
+pub fn gstreamer_state_to_pipeline_state(
+    state: gstreamer::State,
+) -> Result<PipelineState, PipelineError> {
+    Ok(match state {
+        gstreamer::State::VoidPending => {
+            return Err(PipelineError::Simple("current state cannot be void".into()))
+        }
         gstreamer::State::Null => PipelineState::Null,
         gstreamer::State::Ready => PipelineState::Ready,
         gstreamer::State::Paused => PipelineState::Paused,
         gstreamer::State::Playing => PipelineState::Playing,
-    }
+    })
 }
 
 pub struct Playbin(gstreamer::Element);
@@ -64,23 +68,23 @@ impl Playbin {
 
     pub fn pipeline_state(&self) -> Result<PipelineState, PipelineError> {
         let (success, state, _) = self.0.state(gstreamer::ClockTime::default());
-        if success.is_ok() {
-            Ok(gstreamer_state_to_pipeline_state(state))
-        } else {
-            Err(rradio_messages::PipelineError("Failed to get state".into()))
-        }
+
+        success.map_err(|gstreamer::StateChangeError| {
+            rradio_messages::PipelineError::Simple("Pipeline has failed to change its state".into())
+        })?;
+
+        gstreamer_state_to_pipeline_state(state)
     }
 
     pub fn set_pipeline_state(&self, state: PipelineState) -> Result<(), PipelineError> {
         let gstreamer_state = match state {
-            PipelineState::VoidPending => gstreamer::State::VoidPending,
             PipelineState::Null => gstreamer::State::Null,
             PipelineState::Ready => gstreamer::State::Ready,
             PipelineState::Paused => gstreamer::State::Paused,
             PipelineState::Playing => gstreamer::State::Playing,
         };
         self.0.set_state(gstreamer_state).map_err(|_err| {
-            rradio_messages::PipelineError(format!("Failed to set state to {state}").into())
+            rradio_messages::PipelineError::Simple(format!("Failed to set state to {state}").into())
         })?;
         Ok(())
     }
@@ -96,18 +100,16 @@ impl Playbin {
         self.set_pipeline_state(PipelineState::Playing)
     }
 
-    pub fn is_src_of(&self, message: gstreamer_sys::GstMessage) -> bool {
-        use glib::translate::ToGlibPtr;
-        use gstreamer_sys::GstElement;
-        let playbin_ptr: *const GstElement = self.0.to_glib_none().0;
-        let message_src_ptr = message.src as *const GstElement;
-        playbin_ptr == message_src_ptr
+    pub fn is_src_of(&self, message: &gstreamer::MessageRef) -> bool {
+        message
+            .src()
+            .is_some_and(|message_src| message_src == &self.0)
     }
 
     fn stream_volume(&self) -> Result<&gstreamer_audio::StreamVolume, PipelineError> {
         self.0
             .dynamic_cast_ref::<gstreamer_audio::StreamVolume>()
-            .ok_or_else(|| rradio_messages::PipelineError("Playbin has no volume".into()))
+            .ok_or_else(|| rradio_messages::PipelineError::Simple("Playbin has no volume".into()))
     }
 
     pub fn is_muted(&self) -> bool {
@@ -182,7 +184,7 @@ impl Playbin {
                 ),
             )
             .map_err(|err| {
-                PipelineError(
+                PipelineError::Simple(
                     format!(
                         "Failed to seek to {:.2}: {}",
                         position.as_secs_f32(),

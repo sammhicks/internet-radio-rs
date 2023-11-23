@@ -16,8 +16,6 @@ However, there are a couple of exceptions
     stations_directory = "stations"
     input_timeout = "2s"
     volume_offset = 5
-    mute_on_pause_if_infinite_stream = false
-    maximum_pause_if_infinite_stream = None
     buffering_duration = "40s"
     log_level = "rradio=info"
 
@@ -54,12 +52,6 @@ Options:
 + volume_offset
   + Default: `5`
   + The default volume change when incrementing and decrementing the volume
-+ mute_on_pause_if_infinite_stream
-  + Default: `false`
-  + If true, then infinite streams are muted instead of being paused
-+ maximum_pause_if_infinite_stream
-  + Default: `None`
-  + If set, then if an infinite stream is paused for longer than this value, the stream is restarted rather than being resumed
 + buffering_duration
   + Default: `"2s"`
   + The gstreaming buffer duration
@@ -89,12 +81,6 @@ Options:
     + `playlist_prefix` - Played before the station tracks
     + `playlist_suffix` - Played after the station tracks
     + `error` - Played when an error occurs
-+ play_error_sound_on_gstreamer_error
-  + Default: true
-  + If gstreamer raises an error, play the "Error" sound and then reset the playlist and stop playing
-+ ignore_n_gstreamer_errors
-  + Default: 0,
-  + Ignore `n` gstreamer errors before handling them
 + CD
   + Only if `cd` feature is enabled
   + Values:

@@ -1,13 +1,8 @@
-use std::{
-    collections::BTreeMap,
-    convert::TryInto,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{collections::BTreeMap, convert::TryInto, sync::Arc, time::Duration};
 use tokio::sync::{broadcast, mpsc, watch};
 
 use rradio_messages::{
-    ArcStr, Command, Error, LogMessage, PingTimes, PipelineError, StationIndex, TrackTags, Warning,
+    ArcStr, Command, Error, LogMessage, PingTimes, PipelineError, StationIndex, TrackTags,
 };
 
 use super::playbin::{PipelineState, Playbin};
@@ -97,8 +92,6 @@ struct Controller {
     new_state_tx: watch::Sender<PlayerState>,
     log_message_tx: broadcast::Sender<LogMessage>,
     queued_seek: Option<Duration>,
-    pause_time: Option<Instant>,
-    ignore_n_gstreamer_errors: u8,
     #[cfg(feature = "ping")]
     ping_requests_tx: tokio::sync::mpsc::UnboundedSender<Option<ArcStr>>,
 }
@@ -120,49 +113,29 @@ impl Controller {
         }
     }
 
-    async fn play_pause(&mut self) -> Result<(), Error> {
+    fn play_pause(&mut self) -> Result<(), Error> {
         if self.current_playlist.is_some() {
             match self.playbin.pipeline_state()? {
-                PipelineState::Paused => {
-                    let paused_has_elapsed = self
-                        .pause_time
-                        .map(|pause_time| pause_time.elapsed())
-                        .zip(self.config.maximum_pause_if_infinite_stream)
-                        .filter(|_| {
-                            // First check that the stream is of infinite length. If not, skip the duration check.
-                            self.playbin.duration().is_none()
-                        })
-                        .is_some_and(|(pause_time, maximum_pause_time)| {
-                            tracing::trace!(
-                                pause_time = pause_time.as_secs_f32(),
-                                maximum_pause_time = maximum_pause_time.as_secs_f32(),
-                                "Resuming after pausing"
-                            );
-                            pause_time > maximum_pause_time
-                        });
-
-                    if paused_has_elapsed {
-                        self.play_current_track().await?;
-                    } else {
-                        self.playbin.set_pipeline_state(PipelineState::Playing)?;
-                        self.playbin.set_is_muted(false)?;
-                    }
+                PipelineState::Null | PipelineState::Ready | PipelineState::Paused => {
+                    tracing::debug!("playing pipeline");
+                    self.playbin.set_pipeline_state(PipelineState::Playing)?;
+                    self.playbin.set_is_muted(false)?;
                 }
                 PipelineState::Playing => {
-                    if self.config.mute_on_pause_if_infinite_stream
-                        && self.playbin.duration().is_none()
-                    {
-                        self.playbin.toggle_is_muted()?;
-                    } else {
-                        self.pause_time = Some(Instant::now());
-                        self.playbin.set_pipeline_state(PipelineState::Paused)?;
-                    }
+                    self.playbin
+                        .set_pipeline_state(if self.playbin.duration().is_some() {
+                            tracing::debug!("pausing pipeline");
+                            PipelineState::Paused
+                        } else {
+                            tracing::debug!("stopping pipeline");
+                            PipelineState::Null
+                        })?;
                 }
-                _ => (),
             }
 
             Ok(())
         } else {
+            tracing::debug!("no current playlist, ignoring play/pause");
             Ok(())
         }
     }
@@ -170,8 +143,6 @@ impl Controller {
     async fn play_current_track(&mut self) -> Result<(), Error> {
         #[cfg(feature = "ping")]
         self.clear_ping();
-
-        self.ignore_n_gstreamer_errors = self.config.ignore_n_gstreamer_errors;
 
         let current_playlist = self.current_playlist.as_ref().ok_or(Error::NoPlaylist)?;
 
@@ -272,11 +243,6 @@ impl Controller {
         self.published_state.is_muted = self.playbin.is_muted();
 
         self.new_state_tx.send(self.published_state.clone()).ok();
-    }
-
-    fn broadcast_warning(&mut self, warning: Warning) {
-        tracing::warn!("{}", warning);
-        self.log_message_tx.send(warning.into()).ok();
     }
 
     fn broadcast_error(&mut self, error: Error) {
@@ -434,7 +400,7 @@ impl Controller {
             Command::SetChannel(index) => {
                 self.play_station(Station::load(&self.config, index)?).await
             }
-            Command::PlayPause => self.play_pause().await,
+            Command::PlayPause => self.play_pause(),
             Command::SmartPreviousItem => self.smart_goto_previous_track().await,
             Command::PreviousItem => self.goto_previous_track().await,
             Command::NextItem => self.goto_next_track().await,
@@ -519,7 +485,7 @@ impl Controller {
                 );
 
                 self.published_state.buffering = b.percent().try_into().map_err(|_err| {
-                    PipelineError(format!("Bad buffering value: {}", b.percent()).into())
+                    PipelineError::Simple(format!("Bad buffering value: {}", b.percent()).into())
                 })?;
 
                 self.broadcast_state_change();
@@ -569,11 +535,11 @@ impl Controller {
                 Ok(())
             }
             MessageView::StateChanged(state_change) => {
-                if self.playbin.is_src_of(unsafe { *state_change.as_ptr() }) {
+                if self.playbin.is_src_of(state_change) {
                     let new_state = state_change.current();
 
                     self.published_state.pipeline_state =
-                        super::playbin::gstreamer_state_to_pipeline_state(new_state);
+                        super::playbin::gstreamer_state_to_pipeline_state(new_state)?;
 
                     self.broadcast_state_change();
 
@@ -614,7 +580,7 @@ impl Controller {
                         self.published_state.pause_before_playing = Some(pause_before_playing);
 
                         if pause_before_playing > self.config.max_pause_before_playing {
-                            Err(rradio_messages::PipelineError(
+                            Err(rradio_messages::PipelineError::Simple(
                                 "Max pause_before_playing timeout exceeded".into(),
                             )
                             .into())
@@ -629,38 +595,53 @@ impl Controller {
                 }
             }
             MessageView::Error(err) => {
-                let glib_err = err.error();
-                let prefix = if glib_err.is::<gstreamer::ResourceError>() {
-                    "Resource not found: "
-                } else {
-                    ""
-                };
-                let message = format!(
-                    "GStreamer Error: {}{} ({:?})",
-                    prefix,
-                    err.error(),
-                    err.debug()
-                );
-                let pipeline_error = PipelineError(message.into());
-
-                match self.ignore_n_gstreamer_errors.checked_sub(1) {
-                    Some(ignore_n_gstreamer_errors) => {
-                        self.ignore_n_gstreamer_errors = ignore_n_gstreamer_errors;
-
-                        self.broadcast_warning(Warning::IgnoringPipelineError(pipeline_error));
-
-                        Ok(())
+                fn convert_domain(glib_error: &glib::Error) -> String {
+                    macro_rules! convert_domain {
+                        ($($domain:ty,)*) => {
+                            $(
+                                if let Some(domain) = glib_error.kind::<$domain>() {
+                                    return format!("{}::{:?}", stringify!($domain), domain);
+                                }
+                            )*
+                        };
                     }
-                    None => {
-                        let error = Error::PipelineError(pipeline_error);
-                        if self.config.play_error_sound_on_gstreamer_error {
-                            Err(error)
-                        } else {
-                            self.broadcast_error(error);
-                            Ok(())
-                        }
-                    }
+
+                    convert_domain!(
+                        glib::ConvertError,
+                        glib::FileError,
+                        glib::KeyFileError,
+                        glib::MarkupError,
+                        gstreamer::CoreError,
+                        gstreamer::LibraryError,
+                        gstreamer::ParseError,
+                        gstreamer::PluginError,
+                        gstreamer::ResourceError,
+                        gstreamer::StreamError,
+                        gstreamer::URIError,
+                    );
+
+                    let domain = glib_error.domain();
+                    domain.as_str().as_str().into()
                 }
+
+                let glib_error = err.error();
+
+                let error = convert_domain(&glib_error);
+                let code = unsafe { i64::from((*glib_error.as_ptr()).code) };
+                let error_message = glib_error.message();
+                let debug_message = err.debug();
+                let debug_message = debug_message.as_ref().map(glib::GString::as_str);
+
+                let pipeline_error = PipelineError::Structured {
+                    error: error.as_str().into(),
+                    code,
+                    error_message: error_message.into(),
+                    debug_message: debug_message.map(Into::into),
+                };
+
+                tracing::error!(error, code, error_message, debug_message, "gstreamer error");
+
+                Err(Error::PipelineError(pipeline_error))
             }
             _ => Ok(()),
         }
@@ -720,8 +701,6 @@ pub fn run(
 
     let log_message_source = LogMessageSource(log_message_tx.clone());
 
-    let ignore_n_gstreamer_errors = config.ignore_n_gstreamer_errors;
-
     #[cfg(feature = "ping")]
     let (ping_task, ping_requests_tx, ping_times_rx) =
         super::ping::run(config.ping_config.clone())?;
@@ -735,8 +714,6 @@ pub fn run(
         new_state_tx,
         log_message_tx,
         queued_seek: None,
-        pause_time: None,
-        ignore_n_gstreamer_errors,
         #[cfg(feature = "ping")]
         ping_requests_tx,
     };
