@@ -34,7 +34,7 @@ impl<'a> Display for DisplayDiff<&'a rradio_messages::PlayerStateDiff> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use crossterm::cursor::MoveTo;
 
-        let state_row = 1;
+        let state_row = 0;
         let state_row_count = 1;
         if let Some(state) = self.0.pipeline_state {
             Display::fmt(&MoveTo(0, state_row), f)?;
@@ -45,11 +45,18 @@ impl<'a> Display for DisplayDiff<&'a rradio_messages::PlayerStateDiff> {
         let station_row_count = 2;
         if let Some(current_station) = &self.0.current_station {
             match current_station {
-                None => clear_lines(f, station_row, station_row_count)?,
-                Some(station) => {
+                rradio_messages::CurrentStation::NoStation => {
+                    clear_lines(f, station_row, station_row_count)?;
+                }
+                rradio_messages::CurrentStation::FailedToPlayStation { error } => {
+                    clear_lines(f, station_row, station_row_count)?;
+                    display_entry(f, "Failed to play station", error)?;
+                }
+                rradio_messages::CurrentStation::LoadingStation { index, title, .. }
+                | rradio_messages::CurrentStation::PlayingStation { index, title, .. } => {
                     Display::fmt(&MoveTo(0, station_row), f)?;
-                    display_entry(f, "Station Index", &station.index)?;
-                    display_entry(f, "Station Title", &station.title)?;
+                    display_entry(f, "Station Index", index)?;
+                    display_entry(f, "Station Title", title)?;
                 }
             }
         }
@@ -143,9 +150,6 @@ pub fn encode_events<S: AsyncWrite + Unpin>(
 
             match event {
                 Event::PlayerStateChanged(diff) => write!(buffer, "{}", DisplayDiff(&diff)),
-                Event::LogMessage(log_message) => {
-                    write!(buffer, "{}{}", crossterm::cursor::MoveTo(0, 0), log_message)
-                }
             }
             .context("Failed to encode event")?;
 

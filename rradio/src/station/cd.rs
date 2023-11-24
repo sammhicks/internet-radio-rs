@@ -4,7 +4,7 @@ use std::fmt::Debug;
 
 use super::Track;
 
-use rradio_messages::{arcstr, CdError, EjectError};
+use rradio_messages::{arcstr, CdError};
 
 type Result<T> = std::result::Result<T, rradio_messages::CdError>;
 
@@ -358,6 +358,14 @@ fn cd_track(device: &mut std::fs::File, track_index: u8, track_count: u8) -> Res
             is_notification: false,
         }))
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum EjectError {
+    #[error("Failed to open CD device")]
+    FailedToOpenDevice,
+    #[error("Failed to eject CD")]
+    FailedToEjectDevice,
 }
 
 pub async fn eject<P: AsRef<std::path::Path> + Copy>(

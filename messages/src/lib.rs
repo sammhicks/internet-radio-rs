@@ -235,11 +235,75 @@ impl fmt::Display for StationIndex {
     }
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
+pub enum CdError {
+    #[error("CD support is not enabled")]
+    CdNotEnabled,
+    #[error("Failed to open CD device: {message}")]
+    FailedToOpenDevice { code: Option<i32>, message: ArcStr },
+    #[error("ioctl Error: {message}")]
+    IoCtlError { code: Option<i32>, message: ArcStr },
+    #[error("No CD info")]
+    NoCdInfo,
+    #[error("No CD")]
+    NoCd,
+    #[error("CD tray is open")]
+    CdTrayIsOpen,
+    #[error("CD tray is not ready")]
+    CdTrayIsNotReady,
+    #[error("CD is CDS_DATA_1")]
+    CdIsData1,
+    #[error("CD is CDS_DATA_2")]
+    CdIsData2,
+    #[error("CD is CDS_XA_2_1")]
+    CdIsXA21,
+    #[error("CD is CDS_XA_2_2")]
+    CdIsXA22,
+    #[error("Unknown Drive Status: {0}")]
+    UnknownDriveStatus(isize),
+    #[error("Unknown Disc Status: {0}")]
+    UnknownDiscStatus(isize),
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
+pub enum MountError {
+    #[error("USB support is not enabled")]
+    UsbNotEnabled,
+    #[error("Not found")]
+    NotFound,
+    #[error("Failed to create temporary directory: {0}")]
+    CouldNotCreateTemporaryDirectory(ArcStr),
+    #[error("Failed to mount {device}: {err}")]
+    CouldNotMountDevice { device: ArcStr, err: ArcStr },
+    #[error("Error finding tracks: {0}")]
+    ErrorFindingTracks(ArcStr),
+    #[error("Tracks not found")]
+    TracksNotFound,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
+pub enum StationError {
+    #[error("CD Error: {0}")]
+    CdError(#[from] CdError),
+    #[error("Mount Error: {0}")]
+    MountError(#[from] MountError),
+    #[error("UPnP Error: {0}")]
+    UPnPError(ArcStr),
+    #[error("Failed to read from stations directory {directory:?}: {err}")]
+    StationsDirectoryIoError { directory: ArcStr, err: ArcStr },
+    #[error("Station {index} not found in {directory}")]
+    StationNotFound {
+        index: StationIndex,
+        directory: ArcStr,
+    },
+    #[error("Bad Station File: {0}")]
+    BadStationFile(ArcStr),
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub enum StationType {
     UrlList,
     UPnP,
-    Samba,
     CD,
     Usb,
 }
@@ -249,19 +313,30 @@ impl fmt::Display for StationType {
         f.pad(match self {
             Self::UrlList => "URL List",
             Self::UPnP => "UPnP",
-            Self::Samba => "Samba Server",
             Self::CD => "CD",
             Self::Usb => "USB",
         })
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct Station {
-    pub index: Option<StationIndex>,
-    pub source_type: StationType,
-    pub title: Option<ArcStr>,
-    pub tracks: Option<Arc<[Track]>>, // If None, the tracks haven't been loaded yet
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub enum CurrentStation {
+    #[default]
+    NoStation,
+    FailedToPlayStation {
+        error: StationError,
+    },
+    LoadingStation {
+        index: Option<StationIndex>,
+        source_type: StationType,
+        title: Option<ArcStr>,
+    },
+    PlayingStation {
+        index: Option<StationIndex>,
+        source_type: StationType,
+        title: Option<ArcStr>,
+        tracks: Arc<[Track]>,
+    },
 }
 
 /// The image tag of a track.
@@ -377,11 +452,17 @@ impl Default for PingTimes {
     }
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct LatestError {
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+    pub error: ArcStr,
+}
+
 /// `PlayerStateDiff` records what fields have changed since the last diff was sent. If a field is `Some(_)`, then it has changed
 #[derive(Debug, Deserialize, Serialize)]
 pub struct PlayerStateDiff {
     pub pipeline_state: Option<PipelineState>,
-    pub current_station: Option<Option<Station>>,
+    pub current_station: Option<CurrentStation>,
     pub pause_before_playing: Option<Option<Duration>>,
     pub current_track_index: Option<usize>,
     pub current_track_tags: Option<Option<TrackTags>>,
@@ -391,136 +472,13 @@ pub struct PlayerStateDiff {
     pub track_duration: Option<Option<Duration>>,
     pub track_position: Option<Option<Duration>>,
     pub ping_times: Option<PingTimes>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
-
-pub enum PipelineError {
-    #[error("{0}")]
-    Simple(ArcStr),
-    #[error(
-        "Pipeline Error: {error:?}; code - {code}; message - {error_message:?}; debug - {debug_message:?}"
-    )]
-    Structured {
-        error: ArcStr,
-        code: i64,
-        error_message: ArcStr,
-        debug_message: Option<ArcStr>,
-    },
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
-pub enum CdError {
-    #[error("CD support is not enabled")]
-    CdNotEnabled,
-    #[error("Failed to open CD device: {message}")]
-    FailedToOpenDevice { code: Option<i32>, message: ArcStr },
-    #[error("ioctl Error: {message}")]
-    IoCtlError { code: Option<i32>, message: ArcStr },
-    #[error("No CD info")]
-    NoCdInfo,
-    #[error("No CD")]
-    NoCd,
-    #[error("CD tray is open")]
-    CdTrayIsOpen,
-    #[error("CD tray is not ready")]
-    CdTrayIsNotReady,
-    #[error("CD is CDS_DATA_1")]
-    CdIsData1,
-    #[error("CD is CDS_DATA_2")]
-    CdIsData2,
-    #[error("CD is CDS_XA_2_1")]
-    CdIsXA21,
-    #[error("CD is CDS_XA_2_2")]
-    CdIsXA22,
-    #[error("Unknown Drive Status: {0}")]
-    UnknownDriveStatus(isize),
-    #[error("Unknown Disc Status: {0}")]
-    UnknownDiscStatus(isize),
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
-pub enum EjectError {
-    #[error("Failed to open CD device")]
-    FailedToOpenDevice,
-    #[error("Failed to eject CD")]
-    FailedToEjectDevice,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
-pub enum MountError {
-    #[error("USB support is not enabled")]
-    UsbNotEnabled,
-    #[error("Samba support is not enabled")]
-    SambaNotEnabled,
-    #[error("Not found")]
-    NotFound,
-    #[error("Failed to create temporary directory: {0}")]
-    CouldNotCreateTemporaryDirectory(ArcStr),
-    #[error("Failed to mount {device}: {err}")]
-    CouldNotMountDevice { device: ArcStr, err: ArcStr },
-    #[error("Error finding tracks: {0}")]
-    ErrorFindingTracks(ArcStr),
-    #[error("Tracks not found")]
-    TracksNotFound,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
-pub enum StationError {
-    #[error("CD Error: {0}")]
-    CdError(#[from] CdError),
-    #[error("Mount Error: {0}")]
-    MountError(#[from] MountError),
-    #[error("UPnP Error: {0}")]
-    UPnPError(ArcStr),
-    #[error("Failed to read from stations directory {directory:?}: {err}")]
-    StationsDirectoryIoError { directory: ArcStr, err: ArcStr },
-    #[error("Station {index} not found in {directory}")]
-    StationNotFound {
-        index: StationIndex,
-        directory: ArcStr,
-    },
-    #[error("Bad Station File: {0}")]
-    BadStationFile(ArcStr),
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
-#[error("Tag Error: {0}")]
-pub struct TagError(pub ArcStr);
-
-#[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
-pub enum Error {
-    #[error("No Playlist")]
-    NoPlaylist,
-    #[error("Invalid track index: {0}")]
-    InvalidTrackIndex(usize),
-    #[error(transparent)]
-    PipelineError(#[from] PipelineError),
-    #[error("Station Error: {0}")]
-    StationError(#[from] StationError),
-    #[error(transparent)]
-    EjectError(#[from] EjectError),
-    #[error(transparent)]
-    TagError(#[from] TagError),
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
-pub enum LogMessage {
-    #[error("Error: {0}")]
-    Error(Error),
-}
-
-impl std::convert::From<Error> for LogMessage {
-    fn from(error: Error) -> Self {
-        Self::Error(error)
-    }
+    pub latest_error: Option<Option<LatestError>>,
 }
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Deserialize, Serialize)]
 pub enum Event {
     PlayerStateChanged(PlayerStateDiff),
-    LogMessage(LogMessage),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -584,12 +542,6 @@ impl Event {
 impl std::convert::From<PlayerStateDiff> for Event {
     fn from(diff: PlayerStateDiff) -> Self {
         Self::PlayerStateChanged(diff)
-    }
-}
-
-impl std::convert::From<LogMessage> for Event {
-    fn from(message: LogMessage) -> Self {
-        Self::LogMessage(message)
     }
 }
 

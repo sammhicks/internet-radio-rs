@@ -262,7 +262,7 @@ pub struct Station {
 
 impl Station {
     pub fn from_file(path: &std::path::Path, index: StationIndex) -> Result<Self> {
-        tracing::trace!("parsing upnp playlist");
+        tracing::trace!("Parsing upnp playlist");
 
         let file = std::fs::read_to_string(path)
             .with_context(|| format!(r#"Failed to read "{}""#, path.display()))?;

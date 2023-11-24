@@ -21,16 +21,17 @@ pub mod web;
 fn player_state_to_diff(state: &PlayerState) -> PlayerStateDiff {
     PlayerStateDiff {
         pipeline_state: Some(state.pipeline_state),
-        current_station: state.current_station.as_ref().clone().into(),
-        pause_before_playing: state.pause_before_playing.into(),
+        current_station: Some(state.current_station.as_ref().clone()),
+        pause_before_playing: Some(state.pause_before_playing),
         current_track_index: Some(state.current_track_index),
-        current_track_tags: state.current_track_tags.as_ref().clone().into(),
+        current_track_tags: Some(state.current_track_tags.as_ref().clone()),
         is_muted: Some(state.is_muted),
         volume: Some(state.volume),
         buffering: Some(state.buffering),
-        track_duration: state.track_duration.into(),
-        track_position: state.track_position.into(),
-        ping_times: state.ping_times.clone().into(),
+        track_duration: Some(state.track_duration),
+        track_position: Some(state.track_position),
+        ping_times: Some(state.ping_times.clone()),
+        latest_error: Some(state.latest_error.as_ref().clone()),
     }
 }
 
@@ -60,6 +61,7 @@ fn diff_player_state(a: &PlayerState, b: &PlayerState) -> Option<PlayerStateDiff
         track_duration: diff_value(&a.track_duration, &b.track_duration, &mut any_some),
         track_position: diff_value(&a.track_position, &b.track_position, &mut any_some),
         ping_times: diff_value(&a.ping_times, &b.ping_times, &mut any_some),
+        latest_error: diff_arc_with_clone(&a.latest_error, &b.latest_error, &mut any_some),
     };
     if any_some {
         Some(diff)
@@ -127,7 +129,6 @@ impl Sink<rradio_messages::Command> for CommandSink {
 pub struct PartialPortChannels<SS> {
     pub commands_tx: tokio::sync::mpsc::UnboundedSender<rradio_messages::Command>,
     pub player_state_rx: tokio::sync::watch::Receiver<PlayerState>,
-    pub log_message_source: crate::pipeline::LogMessageSource,
     pub shutdown_signal: SS,
 }
 
@@ -139,7 +140,6 @@ impl PartialPortChannels<()> {
         PortChannels {
             commands_tx: self.commands_tx,
             player_state_rx: self.player_state_rx,
-            log_message_source: self.log_message_source,
             shutdown_signal,
         }
     }
@@ -168,51 +168,31 @@ impl PartialPortChannels<ShutdownSignal> {
             }
         }
 
-        let state_diff_stream = {
-            let player_state_rx = self.player_state_rx.clone();
-            let current_state = player_state_rx.borrow().clone();
-            futures::stream::once(futures::future::ready(
-                rradio_messages::Event::PlayerStateChanged(player_state_to_diff(&current_state)),
-            )) // Set the current state as an "everything has changed" diff
-            .chain(
-                // Whenever the player state changed, diff the current state with the new state and if the diff isn't empty, send it
-                futures::stream::unfold(
-                    (player_state_rx, current_state),
-                    |(mut player_state_rx, current_state)| async move {
-                        loop {
-                            player_state_rx.changed().await.ok()?;
-                            let new_state = player_state_rx.borrow().clone();
-                            match diff_player_state(&current_state, &new_state) {
-                                Some(diff) => {
-                                    return Some((
-                                        rradio_messages::Event::PlayerStateChanged(diff),
-                                        (player_state_rx, new_state),
-                                    ))
-                                }
-                                None => continue,
+        let player_state_rx = self.player_state_rx.clone();
+        let current_state = player_state_rx.borrow().clone();
+        futures::stream::once(futures::future::ready(
+            rradio_messages::Event::PlayerStateChanged(player_state_to_diff(&current_state)),
+        )) // Set the current state as an "everything has changed" diff
+        .chain(
+            // Whenever the player state changed, diff the current state with the new state and if the diff isn't empty, send it
+            futures::stream::unfold(
+                (player_state_rx, current_state),
+                |(mut player_state_rx, current_state)| async move {
+                    loop {
+                        player_state_rx.changed().await.ok()?;
+                        let new_state = player_state_rx.borrow().clone();
+                        match diff_player_state(&current_state, &new_state) {
+                            Some(diff) => {
+                                return Some((
+                                    rradio_messages::Event::PlayerStateChanged(diff),
+                                    (player_state_rx, new_state),
+                                ))
                             }
+                            None => continue,
                         }
-                    },
-                ),
-            )
-        };
-
-        let log_stream = futures::stream::unfold(
-            self.log_message_source.subscribe(),
-            |mut log_messages_rx| async {
-                loop {
-                    return match log_messages_rx.recv().await {
-                        Ok(message) => {
-                            Some((rradio_messages::Event::LogMessage(message), log_messages_rx))
-                        }
-                        Err(tokio::sync::broadcast::error::RecvError::Closed) => None,
-                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue, // Ignore log message loss
-                    };
-                }
-            },
-        );
-
-        OrderedStreamSelect(state_diff_stream, log_stream)
-            .take_until(self.shutdown_signal.clone().wait())
+                    }
+                },
+            ),
+        )
     }
 }
