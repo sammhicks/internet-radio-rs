@@ -319,6 +319,7 @@ impl fmt::Display for StationType {
     }
 }
 
+/// The station which rradio is currently playing, or the reason why it's not currently playing a station
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub enum CurrentStation {
     #[default]
@@ -326,16 +327,12 @@ pub enum CurrentStation {
     FailedToPlayStation {
         error: StationError,
     },
-    LoadingStation {
-        index: Option<StationIndex>,
-        source_type: StationType,
-        title: Option<ArcStr>,
-    },
     PlayingStation {
         index: Option<StationIndex>,
         source_type: StationType,
         title: Option<ArcStr>,
-        tracks: Arc<[Track]>,
+        // None means that the tracks are still loading
+        tracks: Option<Arc<[Track]>>,
     },
 }
 

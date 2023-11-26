@@ -52,8 +52,7 @@ impl<'a> Display for DisplayDiff<&'a rradio_messages::PlayerStateDiff> {
                     clear_lines(f, station_row, station_row_count)?;
                     display_entry(f, "Failed to play station", error)?;
                 }
-                rradio_messages::CurrentStation::LoadingStation { index, title, .. }
-                | rradio_messages::CurrentStation::PlayingStation { index, title, .. } => {
+                rradio_messages::CurrentStation::PlayingStation { index, title, .. } => {
                     Display::fmt(&MoveTo(0, station_row), f)?;
                     display_entry(f, "Station Index", index)?;
                     display_entry(f, "Station Title", title)?;

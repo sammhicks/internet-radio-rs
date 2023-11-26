@@ -351,10 +351,11 @@ impl Controller {
         self.clear_playlist();
 
         self.published_state.current_station =
-            Arc::new(rradio_messages::CurrentStation::LoadingStation {
+            Arc::new(rradio_messages::CurrentStation::PlayingStation {
                 index: new_station.index().cloned(),
                 title: new_station.title().map(ArcStr::from),
                 source_type: new_station.station_type(),
+                tracks: None,
             });
 
         self.set_is_muted(false).ok();
@@ -417,7 +418,7 @@ impl Controller {
                 index: playlist.station_index,
                 title: playlist.station_title.map(ArcStr::from),
                 source_type: playlist.station_type,
-                tracks: playlist_tracks,
+                tracks: Some(playlist_tracks),
             });
 
         self.published_state.pause_before_playing = None;
@@ -500,11 +501,7 @@ impl Controller {
                 Ok(())
             }
             Command::Eject => {
-                if let CurrentStation::LoadingStation {
-                    source_type: rradio_messages::StationType::CD,
-                    ..
-                }
-                | CurrentStation::PlayingStation {
+                if let CurrentStation::PlayingStation {
                     source_type: rradio_messages::StationType::CD,
                     ..
                 } = self.published_state.current_station.as_ref()
