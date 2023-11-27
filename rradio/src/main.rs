@@ -100,7 +100,7 @@ fn setup_logging() -> tracing_subscriber::reload::Handle<
         .with(log_filter) // Only output some of the logs
         .with(
             tracing_subscriber::fmt::Layer::default() // Write formatted logs ...
-                .with_writer(std::sync::Mutex::new(ForceCR(std::io::stdout()))), // .. to stdout
+                .with_writer(std::sync::Mutex::new(ForceCR(std::io::stderr()))), // .. to stderr
         )
         .init();
 
