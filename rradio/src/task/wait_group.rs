@@ -22,7 +22,7 @@ impl LogDroppedTask {
 impl Drop for LogDroppedTask {
     fn drop(&mut self) {
         if let Some(TaskIsActive) = self.is_active.take() {
-            tracing::warn!(target = "rradio", "Task has been aborted");
+            tracing::warn!("Task has been aborted");
         }
     }
 }

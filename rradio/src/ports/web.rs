@@ -10,6 +10,7 @@ use futures::{SinkExt, StreamExt, TryStreamExt};
 use tokio::sync::oneshot;
 
 use rradio_messages::Event;
+use tower::{Service, ServiceExt};
 
 use crate::task::FailableFuture;
 
@@ -57,14 +58,13 @@ impl WebSocketUpgrade {
 }
 
 #[axum::async_trait]
-impl<S, B> axum::extract::FromRequest<S, B> for WebSocketUpgrade
-where
-    S: Send + Sync,
-    B: Send + 'static,
-{
+impl<S: Send + Sync> axum::extract::FromRequest<S> for WebSocketUpgrade {
     type Rejection = WebSocketUpgradeRejection;
 
-    async fn from_request(req: axum::http::Request<B>, state: &S) -> Result<Self, Self::Rejection> {
+    async fn from_request(
+        req: axum::http::Request<axum::body::Body>,
+        state: &S,
+    ) -> Result<Self, Self::Rejection> {
         let protocol = req
             .headers()
             .get(axum::http::header::SEC_WEBSOCKET_PROTOCOL)
@@ -229,21 +229,57 @@ pub async fn run(
     } else {
         8000
     };
-    let socket_addr = (addr, port);
+    let server_addr = std::net::SocketAddr::from((addr, port));
 
-    let server = axum::Server::bind(&socket_addr.into())
-        .serve(app.into_make_service_with_connect_info::<SocketAddr>());
+    let listener = tokio::net::TcpListener::bind(server_addr)
+        .await
+        .with_context(|| format!("Failed to listen to {server_addr:?}"))?;
 
-    let server_addr = server.local_addr();
+    tracing::info!(%server_addr, "Listening");
 
-    let server = server.with_graceful_shutdown(shutdown_signal.wait());
+    let connections = futures::stream::try_unfold(listener, |listener| async move {
+        anyhow::Ok(Some((
+            listener
+                .accept()
+                .await
+                .context("Failed to accept connection")?,
+            listener,
+        )))
+    })
+    .take_until(shutdown_signal.wait());
 
-    tracing::info!("Listening on {}", server_addr);
+    tokio::pin!(connections);
 
-    server.await.context("Failed to run server")?;
+    let mut make_service = app.into_make_service_with_connect_info::<SocketAddr>();
+
+    while let Some((socket, remote_address)) = connections.try_next().await? {
+        let service = make_service
+            .call(remote_address)
+            .await
+            .unwrap_or_else(|err| match err {});
+
+        wait_group.spawn_task(
+            tracing::error_span!("connection", %remote_address),
+            async move {
+                hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new())
+                    .serve_connection_with_upgrades(
+                        hyper_util::rt::TokioIo::new(socket),
+                        hyper::service::service_fn(
+                            move |request: axum::extract::Request<hyper::body::Incoming>| {
+                                service.clone().oneshot(request)
+                            },
+                        ),
+                    )
+                    .await
+                    .map_err(|err| anyhow::anyhow!("Failed to serve connection: {err}"))
+            },
+        );
+    }
 
     tracing::debug!("Shutting down");
 
+    // drop service to drop wait_handle above
+    drop(make_service);
     wait_group.wait().await;
 
     tracing::debug!("Shut down");

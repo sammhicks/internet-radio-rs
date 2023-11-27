@@ -1,7 +1,7 @@
 //! Common code for TCP ports
 
 use anyhow::{Context, Result};
-use futures::{Sink, Stream, StreamExt};
+use futures::{Sink, Stream, StreamExt, TryStreamExt};
 use tokio::net::tcp;
 
 use rradio_messages::{Command, Event};
@@ -35,7 +35,7 @@ where
             std::net::Ipv4Addr::LOCALHOST
         };
 
-        let socket_addr = (addr, port);
+        let socket_addr = std::net::SocketAddr::from((addr, port));
 
         let wait_group = crate::task::WaitGroup::new();
 
@@ -43,21 +43,16 @@ where
             .await
             .with_context(|| format!("Failed to listen to {socket_addr:?}"))?;
 
-        let local_addr = listener
-            .local_addr()
-            .context("Failed to get local address")?;
+        tracing::info!(%socket_addr, "Listening");
 
-        tracing::info!("Listening on {:?}", local_addr);
-
-        let connections = futures::stream::unfold(listener, |listener| async {
-            let value = listener.accept().await;
-            Some((value, listener))
+        let connections = futures::stream::try_unfold(listener, |listener| async {
+            anyhow::Ok(Some((listener.accept().await?, listener)))
         })
         .take_until(port_channels.shutdown_signal.clone().wait());
 
         tokio::pin!(connections);
 
-        while let Some((connection, remote_addr)) = connections.next().await.transpose()? {
+        while let Some((connection, remote_addr)) = connections.try_next().await? {
             let _span = tracing::error_span!("connection", %remote_addr).entered();
             tracing::debug!("Connection");
 
