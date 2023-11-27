@@ -5,8 +5,7 @@ use futures::{Sink, Stream, StreamExt};
 use tokio::net::tcp;
 
 use rradio_messages::{Command, Event};
-
-use crate::task::FailableFuture;
+use tracing::Instrument;
 
 impl super::stream::Splittable for tokio::net::TcpStream {
     type OwnedReadHalf = tcp::OwnedReadHalf;
@@ -22,7 +21,8 @@ pub async fn run<EventsEncoder, Events, CommandsDecoder, Commands>(
     port: u16,
     encode_events: EventsEncoder,
     decode_commands: CommandsDecoder,
-) where
+) -> anyhow::Result<()>
+where
     EventsEncoder: FnOnce(tcp::OwnedWriteHalf) -> Events + Send + Sync + Clone + 'static,
     Events: Sink<Event, Error = anyhow::Error> + Send + Sync + 'static,
     CommandsDecoder: FnOnce(tcp::OwnedReadHalf) -> Commands + Send + Sync + Clone + 'static,
@@ -59,7 +59,7 @@ pub async fn run<EventsEncoder, Events, CommandsDecoder, Commands>(
 
         while let Some((connection, remote_addr)) = connections.next().await.transpose()? {
             let _span = tracing::error_span!("connection", %remote_addr).entered();
-            tracing::info!("Connection");
+            tracing::debug!("Connection");
 
             super::stream::handle_connection(
                 connection,
@@ -78,6 +78,6 @@ pub async fn run<EventsEncoder, Events, CommandsDecoder, Commands>(
 
         Ok(())
     }
-    .log_error(tracing::error_span!("tcp"))
-    .await;
+    .instrument(tracing::error_span!("tcp"))
+    .await
 }

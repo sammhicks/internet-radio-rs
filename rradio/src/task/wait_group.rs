@@ -5,17 +5,47 @@ use std::sync::Arc;
 
 use tokio::sync::oneshot;
 
+use super::FailableFuture;
+
+struct TaskIsActive;
+
+struct LogDroppedTask {
+    is_active: Option<TaskIsActive>,
+}
+
+impl LogDroppedTask {
+    fn shutdown(mut self) {
+        self.is_active.take();
+    }
+}
+
+impl Drop for LogDroppedTask {
+    fn drop(&mut self) {
+        if let Some(TaskIsActive) = self.is_active.take() {
+            tracing::warn!(target = "rradio", "Task has been aborted");
+        }
+    }
+}
+
 /// A handle which is dropped when the corresponding task is terminated
 #[derive(Clone)]
 pub struct Handle(Arc<oneshot::Sender<()>>);
 
 impl Handle {
     /// Spawn a new task using the same wait group as this handle
-    pub fn spawn_task<F: Future<Output = ()> + Send + 'static>(&self, f: F) {
+    pub fn spawn_task(
+        &self,
+        span: tracing::Span,
+        task: impl Future<Output = anyhow::Result<()>> + Send + 'static,
+    ) {
         let handle = self.clone();
-        tokio::spawn(async move {
-            f.await;
+        tokio::task::spawn(async move {
+            let log_dropped_task = LogDroppedTask {
+                is_active: Some(TaskIsActive),
+            };
+            task.log_error(span).await;
             drop(handle);
+            log_dropped_task.shutdown();
         });
     }
 }
@@ -41,8 +71,12 @@ impl WaitGroup {
     }
 
     /// Spawn a task which the group will wait for
-    pub fn spawn_task<F: Future<Output = ()> + Send + 'static>(&self, f: F) {
-        self.handle.spawn_task(f);
+    pub fn spawn_task(
+        &self,
+        span: tracing::Span,
+        task: impl Future<Output = anyhow::Result<()>> + Send + 'static,
+    ) {
+        self.handle.spawn_task(span, task);
     }
 
     /// Wait for all spawned tasks to terminate

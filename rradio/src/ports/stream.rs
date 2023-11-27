@@ -7,7 +7,7 @@ use tokio::{
 
 use rradio_messages::{Command, Event};
 
-use crate::task::{FailableFuture, WaitGroup};
+use crate::task::WaitGroup;
 
 pub trait Splittable {
     type OwnedReadHalf: AsyncRead + Unpin + Send + 'static;
@@ -29,9 +29,9 @@ pub fn handle_connection<S: Splittable, EventsEncoder, Events, CommandsDecoder, 
     Commands: Stream<Item = Result<Command>> + Send + Sync + 'static,
 {
     let (connection_rx, mut connection_tx) = connection.into_split();
-    let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
-    wait_group.spawn_task({
+    wait_group.spawn_task(tracing::error_span!("forward_commands"), {
         let commands_tx = port_channels.commands_tx.clone();
         let commands_rx = (decode_commands)(connection_rx);
         async move {
@@ -39,14 +39,13 @@ pub fn handle_connection<S: Splittable, EventsEncoder, Events, CommandsDecoder, 
 
             tracing::debug!("Disconnection");
 
-            drop(shutdown_tx);
+            let _ = shutdown_tx.send(());
 
             Ok(())
         }
-        .log_error(tracing::error_span!("forward_commands"))
     });
 
-    wait_group.spawn_task({
+    wait_group.spawn_task(tracing::error_span!("forward_events"), {
         let events = port_channels.event_stream().take_until(shutdown_rx);
 
         async move {
@@ -62,6 +61,5 @@ pub fn handle_connection<S: Splittable, EventsEncoder, Events, CommandsDecoder, 
             tracing::debug!("Closing connection");
             Ok(())
         }
-        .log_error(tracing::error_span!("forward_events"))
     });
 }

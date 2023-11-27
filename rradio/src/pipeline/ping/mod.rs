@@ -147,7 +147,7 @@ impl Pinger {
 
         let scheme = track_url.scheme();
         if let "file" | "cdda" = scheme {
-            tracing::info!("Ignoring {}", scheme);
+            tracing::debug!("Ignoring {}", scheme);
             return Err(PingInterruption::SuspendUntilNewTrack);
         }
 
@@ -290,8 +290,6 @@ pub fn run(
     let (track_url_tx, track_url_rx) = mpsc::unbounded_channel::<Option<ArcStr>>();
 
     let (ping_time_tx, ping_time_rx) = mpsc::unbounded_channel();
-
-    tracing::info!("Gateway address: {:?}", config.gateway_address);
 
     let task = Pinger {
         gateway_address: config.gateway_address,

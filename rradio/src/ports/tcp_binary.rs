@@ -1,7 +1,6 @@
 use futures::{SinkExt, TryStreamExt};
-use tracing::Instrument;
 
-pub async fn run(port_channels: super::PortChannels) {
+pub async fn run(port_channels: super::PortChannels) -> anyhow::Result<()> {
     super::tcp::run(
         port_channels,
         rradio_messages::API_PORT,
@@ -11,6 +10,5 @@ pub async fn run(port_channels: super::PortChannels) {
                 .err_into()
         },
     )
-    .instrument(tracing::error_span!("tcp_binary"))
-    .await;
+    .await
 }

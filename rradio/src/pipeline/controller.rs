@@ -10,6 +10,7 @@ use crate::{
     config::Config,
     ports::PartialPortChannels,
     station::{PlaylistMetadata, Station, Track},
+    stream_select::StreamSelect,
     tag::Tag,
 };
 
@@ -118,7 +119,7 @@ struct Controller {
 impl Controller {
     #[cfg(feature = "ping")]
     fn clear_ping(&mut self) {
-        tracing::info!("Clearing ping");
+        tracing::debug!("Clearing ping");
         if self.ping_requests_tx.send(None).is_err() {
             tracing::error!("Failed to clear ping requests");
         }
@@ -525,7 +526,7 @@ impl Controller {
 
                 #[cfg(not(feature = "cd"))]
                 {
-                    tracing::info!("Ignoring Eject");
+                    tracing::warn!("Ignoring Eject");
 
                     Ok(())
                 }
@@ -713,37 +714,38 @@ impl Controller {
 
                 self.broadcast_error(format!("gstreamer error: error={error:?} code={code:?} error_message={error_message:?} debug_message={debug_message:?}"));
 
-                if let Some(stream_error) = glib_error.kind::<gstreamer::StreamError>() {
-                    tracing::debug!(?stream_error, "Caught Stream Error, playing next track");
-                    self.playbin.set_pipeline_state(PipelineState::Null)?;
+                {
+                    let (error, kind): (Box<dyn std::fmt::Debug>, &'static str) =
+                        if let Some(stream_error) = glib_error.kind::<gstreamer::StreamError>() {
+                            (Box::from(stream_error), "Stream Error")
+                        } else if let Some(resource_error) =
+                            glib_error.kind::<gstreamer::ResourceError>()
+                        {
+                            (Box::from(resource_error), "ResourceError")
+                        } else {
+                            return Err(PipelineError);
+                        };
 
-                    tracing::debug!("Draining message queue...");
-
-                    {
-                        let _ = tracing::trace_span!("Draining message queue").enter();
-
-                        // Drain the message queue until the pipeline state is Null, thus draining potential other error messages
-                        while let Ok(message) = gstreamer_messages.recv().await {
-                            tracing::trace!(message = ?message.view(), "Ignoring Message");
-
-                            if let rradio_messages::PipelineState::Null =
-                                self.playbin.pipeline_state()?
-                            {
-                                tracing::trace!("Pipeline state is now Null");
-
-                                break;
-                            }
-                        }
-                    }
-
-                    tracing::debug!("Finished draining message queue");
-
-                    self.goto_next_track().await?;
-
-                    Ok(())
-                } else {
-                    Err(PipelineError)
+                    tracing::debug!(?error, "Caught {kind}, playing next track");
                 }
+
+                self.playbin.set_pipeline_state(PipelineState::Null)?;
+                tracing::debug!("Draining message queue...");
+
+                {
+                    let _ = tracing::trace_span!("Draining message queue").enter();
+
+                    // Drain the message queue, thus draining potential other error messages
+                    while gstreamer_messages.try_recv().is_ok() {
+                        tracing::trace!(message = ?message.view(), "Ignoring Message");
+                    }
+                }
+
+                tracing::debug!("Finished draining message queue");
+
+                self.goto_next_track().await?;
+
+                Ok(())
             }
             _ => Ok(()),
         }
@@ -818,7 +820,7 @@ pub fn run(
         use futures::StreamExt;
 
         #[cfg(feature = "ping")]
-        let ping_handle = tokio::spawn(ping_task);
+        let ping_handle = tokio::task::spawn(ping_task);
 
         let commands = futures::stream::unfold(commands_rx, |mut commands_rx| async {
             let message = Message::Command(commands_rx.recv().await?);
@@ -836,15 +838,11 @@ pub fn run(
                 Some((Message::PingTimes(ping_times), commands_rx))
             });
 
-            futures::stream::select_all(vec![
-                commands.boxed(),
-                bus_stream.boxed(),
-                ping_stream.boxed(),
-            ])
+            StreamSelect((commands, bus_stream, ping_stream))
         };
 
         #[cfg(not(feature = "ping"))]
-        let messages = futures::stream::select(commands, bus_stream);
+        let messages = StreamSelect((commands, bus_stream));
 
         tokio::pin!(messages);
 

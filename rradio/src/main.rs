@@ -8,6 +8,7 @@ mod keyboard_commands;
 mod pipeline;
 mod ports;
 mod station;
+mod stream_select;
 mod tag;
 mod task;
 
@@ -37,8 +38,6 @@ fn main() -> Result<()> {
         .reload(Some(tracing_subscriber::EnvFilter::new(&config.log_level))) // Filter logs as specified by config
         .context("Failed to reload logger filter")?;
 
-    tracing::debug!("Config: {:?}", config);
-
     let (shutdown_handle, shutdown_signal) = task::ShutdownSignal::new();
 
     let (pipeline_task, port_channels) = pipeline::run(config.clone())?;
@@ -59,20 +58,20 @@ fn main() -> Result<()> {
 
     let runtime = tokio::runtime::Runtime::new()?; // Setup the async runtime
 
-    // Spawn pipeline task outside of shutdown signalling mechanism
+    // Spawn pipeline task outside of shutdown signalling mechanism as it doesn't need to do a graceful shutdown
     runtime.spawn(pipeline_task);
 
     runtime.block_on(async {
         let wait_group = task::WaitGroup::new();
 
         // Start other tasks within shutdown signalling mechanism
-        wait_group.spawn_task(tcp_text_task);
-        wait_group.spawn_task(tcp_binary_task);
+        wait_group.spawn_task(tracing::error_span!("tcp_text"), tcp_text_task);
+        wait_group.spawn_task(tracing::error_span!("tcp_binary"), tcp_binary_task);
 
         #[cfg(feature = "web")]
-        wait_group.spawn_task(web_task);
+        wait_group.spawn_task(tracing::error_span!("web"), web_task);
 
-        // Wait for the keyboard task to finish, i.e. when "Esc" is pressed
+        // Wait for the keyboard task to finish, i.e. when "Q" is pressed
         keyboard_commands_task.await;
 
         // Signal that tasks should shut down
@@ -83,7 +82,7 @@ fn main() -> Result<()> {
             .await
             .is_err()
         {
-            tracing::error!("Not all tasks shutdown within time limit");
+            tracing::warn!("Not all tasks shutdown within time limit");
         }
     });
 

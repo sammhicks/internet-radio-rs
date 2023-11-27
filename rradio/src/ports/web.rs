@@ -6,7 +6,7 @@ use axum::{
     response::IntoResponse,
     routing::{get, get_service, post},
 };
-use futures::{FutureExt, SinkExt, StreamExt, TryStreamExt};
+use futures::{SinkExt, StreamExt, TryStreamExt};
 use tokio::sync::oneshot;
 
 use rradio_messages::Event;
@@ -96,7 +96,7 @@ async fn handle_websocket_connection(
     wait_handle: crate::task::WaitGroupHandle,
     websocket: axum::extract::ws::WebSocket,
 ) -> anyhow::Result<()> {
-    tracing::debug!("Connected");
+    tracing::debug!("Connection");
 
     let (websocket_tx, websocket_rx) = websocket.split();
 
@@ -121,66 +121,63 @@ async fn handle_websocket_connection(
     let commands_tx = port_channels.commands_tx;
 
     // Handle incoming websocket messages
-    wait_handle.spawn_task(
-        async move {
-            websocket_rx
-                .try_filter_map(|message| async move {
-                    anyhow::Ok(match message {
-                        axum::extract::ws::Message::Text(text) => {
-                            tracing::debug!("Ignoring text message: {:?}", text);
-                            None
-                        }
-                        axum::extract::ws::Message::Binary(mut buffer) => {
-                            Some(rradio_messages::Command::decode(&mut buffer)?)
-                        }
-                        axum::extract::ws::Message::Ping(_) => {
-                            tracing::debug!("Ignoring ping messages");
-                            None
-                        }
-                        axum::extract::ws::Message::Pong(_) => {
-                            tracing::debug!("Ignoring pong messages");
-                            None
-                        }
-                        axum::extract::ws::Message::Close(_) => {
-                            tracing::debug!("Close message received");
-                            None
-                        }
-                    })
+    wait_handle.spawn_task(tracing::error_span!("forward_commands"), async move {
+        websocket_rx
+            .try_filter_map(|message| async move {
+                anyhow::Ok(match message {
+                    axum::extract::ws::Message::Text(text) => {
+                        tracing::debug!("Ignoring text message: {:?}", text);
+                        None
+                    }
+                    axum::extract::ws::Message::Binary(mut buffer) => {
+                        Some(rradio_messages::Command::decode(&mut buffer)?)
+                    }
+                    axum::extract::ws::Message::Ping(_) => {
+                        tracing::debug!("Ignoring ping messages");
+                        None
+                    }
+                    axum::extract::ws::Message::Pong(_) => {
+                        tracing::debug!("Ignoring pong messages");
+                        None
+                    }
+                    axum::extract::ws::Message::Close(_) => {
+                        tracing::debug!("Close message received");
+                        None
+                    }
                 })
-                .forward(super::CommandSink(commands_tx))
-                .await?;
+            })
+            .forward(super::CommandSink(commands_tx))
+            .await?;
 
-            drop(shutdown_tx);
+        drop(shutdown_tx);
 
-            Ok(())
-        }
-        .log_error(tracing::error_span!("forward_commands")),
-    );
+        Ok(())
+    });
 
-    wait_handle.spawn_task(
-        async move {
-            events_rx
-                .map(Ok)
-                .take_until(shutdown_rx) // Stop when the websocket is closed
-                .forward(websocket_tx) // Send each event to the websocket
-                .await?;
+    wait_handle.spawn_task(tracing::error_span!("forward_events"), async move {
+        events_rx
+            .map(Ok)
+            .take_until(shutdown_rx) // Stop when the websocket is closed
+            .forward(websocket_tx) // Send each event to the websocket
+            .await?;
 
-            tracing::debug!("Closing connection");
+        tracing::debug!("Closing connection");
 
-            Ok(())
-        }
-        .log_error(tracing::error_span!("forward_events")),
-    );
+        Ok(())
+    });
 
     Ok(())
 }
 
-pub async fn run(port_channels: super::PortChannels, web_app_static_files: String) {
+pub async fn run(
+    port_channels: super::PortChannels,
+    web_app_static_files: String,
+) -> anyhow::Result<()> {
     let wait_group = crate::task::WaitGroup::new();
     let wait_handle = wait_group.clone_handle();
 
     let commands_tx = port_channels.commands_tx.clone();
-    let ws_shutdown_signal = port_channels.shutdown_signal.clone();
+    let shutdown_signal = port_channels.shutdown_signal.clone();
 
     let app = axum::Router::new()
         .fallback_service(
@@ -239,18 +236,17 @@ pub async fn run(port_channels: super::PortChannels, web_app_static_files: Strin
 
     let server_addr = server.local_addr();
 
-    let server = server.with_graceful_shutdown(ws_shutdown_signal.wait());
+    let server = server.with_graceful_shutdown(shutdown_signal.wait());
 
     tracing::info!("Listening on {}", server_addr);
 
-    server
-        .map(|result| result.context("Failed to run server"))
-        .log_error(tracing::error_span!("web"))
-        .await;
+    server.await.context("Failed to run server")?;
 
     tracing::debug!("Shutting down");
 
     wait_group.wait().await;
 
     tracing::debug!("Shut down");
+
+    Ok(())
 }

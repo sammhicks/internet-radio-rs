@@ -147,27 +147,6 @@ impl PartialPortChannels<()> {
 
 impl PartialPortChannels<ShutdownSignal> {
     pub fn event_stream(&self) -> impl futures::Stream<Item = rradio_messages::Event> {
-        #[pin_project::pin_project]
-        struct OrderedStreamSelect<A, B>(#[pin] A, #[pin] B);
-
-        impl<A: futures::Stream, B: futures::Stream<Item = A::Item>> futures::Stream
-            for OrderedStreamSelect<A, B>
-        {
-            type Item = A::Item;
-
-            fn poll_next(
-                self: std::pin::Pin<&mut Self>,
-                cx: &mut std::task::Context<'_>,
-            ) -> std::task::Poll<Option<Self::Item>> {
-                let this = self.project();
-
-                match this.0.poll_next(cx) {
-                    std::task::Poll::Ready(message) => std::task::Poll::Ready(message),
-                    std::task::Poll::Pending => this.1.poll_next(cx),
-                }
-            }
-        }
-
         let player_state_rx = self.player_state_rx.clone();
         let current_state = player_state_rx.borrow().clone();
         futures::stream::once(futures::future::ready(
@@ -194,5 +173,6 @@ impl PartialPortChannels<ShutdownSignal> {
                 },
             ),
         )
+        .take_until(self.shutdown_signal.clone().wait())
     }
 }

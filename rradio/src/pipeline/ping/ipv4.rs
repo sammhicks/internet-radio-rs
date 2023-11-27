@@ -154,7 +154,7 @@ impl Pinger {
                 continue; // Ignore unexpected packet
             }
 
-            tracing::info!(
+            tracing::debug!(
                 "Ping time to {:>16}: {:.3}ms",
                 address,
                 ping_time.as_secs_f32() * 1000.0
