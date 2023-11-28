@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use anyhow::Context;
-use futures::{Sink, StreamExt};
+use futures_util::{FutureExt, Sink, StreamExt};
 use rradio_messages::PlayerStateDiff;
 
 use crate::{pipeline::PlayerState, task::ShutdownSignal};
@@ -123,6 +123,8 @@ impl Sink<rradio_messages::Command> for CommandSink {
     }
 }
 
+pub struct NoShutdownSignal;
+
 /// The channel endpoints which ports use to communicate with the pipeline
 /// The name "partial" is because `shutdown_signal` is initially of type `()` and is replaced with the actual shutdown signal, of type [`ShutdownSignal`]
 #[derive(Clone)]
@@ -133,28 +135,28 @@ pub struct PartialPortChannels<SS> {
 }
 
 /// [`PartialPortChannels`] with a [`ShutdownSignal`] becomes an entire `PortChannels`
-pub type PortChannels = PartialPortChannels<ShutdownSignal>;
+pub type PortChannels = PartialPortChannels<futures_util::future::Shared<ShutdownSignal>>;
 
-impl PartialPortChannels<()> {
+impl PartialPortChannels<NoShutdownSignal> {
     pub fn with_shutdown_signal(self, shutdown_signal: ShutdownSignal) -> PortChannels {
         PortChannels {
             commands_tx: self.commands_tx,
             player_state_rx: self.player_state_rx,
-            shutdown_signal,
+            shutdown_signal: shutdown_signal.shared(),
         }
     }
 }
 
-impl PartialPortChannels<ShutdownSignal> {
-    pub fn event_stream(&self) -> impl futures::Stream<Item = rradio_messages::Event> {
+impl PortChannels {
+    pub fn event_stream(&self) -> impl futures_util::Stream<Item = rradio_messages::Event> {
         let player_state_rx = self.player_state_rx.clone();
         let current_state = player_state_rx.borrow().clone();
-        futures::stream::once(futures::future::ready(
+        futures_util::stream::once(futures_util::future::ready(
             rradio_messages::Event::PlayerStateChanged(player_state_to_diff(&current_state)),
         )) // Set the current state as an "everything has changed" diff
         .chain(
             // Whenever the player state changed, diff the current state with the new state and if the diff isn't empty, send it
-            futures::stream::unfold(
+            futures_util::stream::unfold(
                 (player_state_rx, current_state),
                 |(mut player_state_rx, current_state)| async move {
                     loop {
@@ -173,6 +175,6 @@ impl PartialPortChannels<ShutdownSignal> {
                 },
             ),
         )
-        .take_until(self.shutdown_signal.clone().wait())
+        .take_until(self.shutdown_signal.clone())
     }
 }

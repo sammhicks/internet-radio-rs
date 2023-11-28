@@ -1,4 +1,4 @@
-use futures::{SinkExt, TryStreamExt};
+use futures_util::{SinkExt, TryStreamExt};
 
 pub async fn run(port_channels: super::PortChannels) -> anyhow::Result<()> {
     super::tcp::run(

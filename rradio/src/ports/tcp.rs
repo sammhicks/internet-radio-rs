@@ -1,7 +1,7 @@
 //! Common code for TCP ports
 
 use anyhow::{Context, Result};
-use futures::{Sink, Stream, StreamExt, TryStreamExt};
+use futures_util::{Sink, Stream, StreamExt, TryStreamExt};
 use tokio::net::tcp;
 
 use rradio_messages::{Command, Event};
@@ -23,10 +23,10 @@ pub async fn run<EventsEncoder, Events, CommandsDecoder, Commands>(
     decode_commands: CommandsDecoder,
 ) -> anyhow::Result<()>
 where
-    EventsEncoder: FnOnce(tcp::OwnedWriteHalf) -> Events + Send + Sync + Clone + 'static,
-    Events: Sink<Event, Error = anyhow::Error> + Send + Sync + 'static,
-    CommandsDecoder: FnOnce(tcp::OwnedReadHalf) -> Commands + Send + Sync + Clone + 'static,
-    Commands: Stream<Item = Result<Command>> + Send + Sync + 'static,
+    EventsEncoder: FnOnce(tcp::OwnedWriteHalf) -> Events + Send + Clone + 'static,
+    Events: Sink<Event, Error = anyhow::Error> + Send + 'static,
+    CommandsDecoder: FnOnce(tcp::OwnedReadHalf) -> Commands + Send + Clone + 'static,
+    Commands: Stream<Item = Result<Command>> + Send + 'static,
 {
     async move {
         let addr = if cfg!(feature = "production-server") {
@@ -45,10 +45,10 @@ where
 
         tracing::info!(%socket_addr, "Listening");
 
-        let connections = futures::stream::try_unfold(listener, |listener| async {
+        let connections = futures_util::stream::try_unfold(listener, |listener| async {
             anyhow::Ok(Some((listener.accept().await?, listener)))
         })
-        .take_until(port_channels.shutdown_signal.clone().wait());
+        .take_until(port_channels.shutdown_signal.clone());
 
         tokio::pin!(connections);
 

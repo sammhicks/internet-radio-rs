@@ -3,7 +3,7 @@
 
 use anyhow::Result;
 use crossterm::event::{Event, EventStream, KeyCode, KeyEvent};
-use futures::StreamExt;
+use futures_util::StreamExt;
 use tokio::{sync::mpsc, time};
 
 use rradio_messages::{Command, StationIndex};

@@ -322,7 +322,7 @@ impl PinnedDrop for BusStream {
     }
 }
 
-impl futures::Stream for BusStream {
+impl futures_util::Stream for BusStream {
     type Item = gstreamer::Message;
 
     fn poll_next(
@@ -333,7 +333,7 @@ impl futures::Stream for BusStream {
     }
 }
 
-impl futures::stream::FusedStream for BusStream {
+impl futures_util::stream::FusedStream for BusStream {
     fn is_terminated(&self) -> bool {
         self.receiver.is_terminated()
     }

@@ -1,13 +1,10 @@
 use anyhow::Result;
-use futures::{Sink, Stream, StreamExt};
-use tokio::{
-    io::{AsyncRead, AsyncWrite, AsyncWriteExt},
-    sync::oneshot,
-};
+use futures_util::{Sink, Stream, StreamExt};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 
 use rradio_messages::{Command, Event};
 
-use crate::task::WaitGroup;
+use crate::task::{ShutdownSignal, WaitGroup};
 
 pub trait Splittable {
     type OwnedReadHalf: AsyncRead + Unpin + Send + 'static;
@@ -23,13 +20,13 @@ pub fn handle_connection<S: Splittable, EventsEncoder, Events, CommandsDecoder, 
     encode_events: EventsEncoder,
     decode_commands: CommandsDecoder,
 ) where
-    EventsEncoder: FnOnce(S::OwnedWriteHalf) -> Events + Send + Sync + 'static,
-    Events: Sink<Event, Error = anyhow::Error> + Send + Sync + 'static,
-    CommandsDecoder: FnOnce(S::OwnedReadHalf) -> Commands + Send + Sync + 'static,
-    Commands: Stream<Item = Result<Command>> + Send + Sync + 'static,
+    EventsEncoder: FnOnce(S::OwnedWriteHalf) -> Events + Send + 'static,
+    Events: Sink<Event, Error = anyhow::Error> + Send + 'static,
+    CommandsDecoder: FnOnce(S::OwnedReadHalf) -> Commands + Send + 'static,
+    Commands: Stream<Item = Result<Command>> + Send + 'static,
 {
     let (connection_rx, mut connection_tx) = connection.into_split();
-    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let (shutdown_handle, shutdown_signal) = ShutdownSignal::new();
 
     wait_group.spawn_task(tracing::error_span!("forward_commands"), {
         let commands_tx = port_channels.commands_tx.clone();
@@ -39,14 +36,14 @@ pub fn handle_connection<S: Splittable, EventsEncoder, Events, CommandsDecoder, 
 
             tracing::debug!("Disconnection");
 
-            let _ = shutdown_tx.send(());
+            shutdown_handle.signal_shutdown();
 
             Ok(())
         }
     });
 
     wait_group.spawn_task(tracing::error_span!("forward_events"), {
-        let events = port_channels.event_stream().take_until(shutdown_rx);
+        let events = port_channels.event_stream().take_until(shutdown_signal);
 
         async move {
             connection_tx

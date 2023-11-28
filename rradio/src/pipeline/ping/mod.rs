@@ -3,7 +3,7 @@ use std::{
     time::Duration,
 };
 
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use rradio_messages::{ArcStr, PingError, PingTarget, PingTimes};
 
@@ -31,10 +31,15 @@ impl From<mpsc::error::SendError<PingTimes>> for PingInterruption {
 #[derive(Clone, Copy, Debug)]
 struct FailedToPing(PingError);
 
+struct Ivp4PingRequest {
+    address: Ipv4Addr,
+    response_tx: oneshot::Sender<Result<Duration, PingError>>,
+}
+
 struct Pinger {
     gateway_address: Ipv4Addr,
     ping_count: usize,
-    ipv4_pinger: ipv4::Pinger,
+    ipv4_pinger: mpsc::Sender<Ivp4PingRequest>,
     track_urls: mpsc::UnboundedReceiver<Option<ArcStr>>,
     ping_times: mpsc::UnboundedSender<PingTimes>,
 }
@@ -68,9 +73,27 @@ impl Pinger {
     ) -> Result<Result<Duration, FailedToPing>, PingInterruption> {
         self.check_for_new_track().await?;
 
-        let ping_time_result = tokio::task::block_in_place(|| self.ipv4_pinger.ping(address));
+        tracing::trace!(%address, "Pinging {name}");
 
-        Ok(match ping_time_result {
+        let (response_tx, response_rx) = oneshot::channel();
+
+        self.ipv4_pinger
+            .send(Ivp4PingRequest {
+                address,
+                response_tx,
+            })
+            .await
+            .map_err(|_| {
+                tracing::error!("Could not send ping request");
+                PingInterruption::Finished
+            })?;
+
+        let ping_time_response = response_rx.await.map_err(|_| {
+            tracing::error!("pinger worker has died");
+            PingInterruption::Finished
+        })?;
+
+        Ok(match ping_time_response {
             Ok(ping_time) => {
                 self.ping_times.send(f(Ok(ping_time)))?;
                 Ok(ping_time)
@@ -137,33 +160,27 @@ impl Pinger {
         track_url_str: ArcStr,
         ping_remote_forever: bool,
     ) -> Result<Never, PingInterruption> {
-        tracing::debug!(
-            "Running sequence: track_url_str - {:?}, ping_remote_forever - {}",
-            track_url_str,
-            ping_remote_forever
-        );
+        tracing::debug!(?track_url_str, ping_remote_forever, "Running sequence",);
 
         let (track_url_str, track_url) = self.parse_url(track_url_str)?;
 
         let scheme = track_url.scheme();
         if let "file" | "cdda" = scheme {
-            tracing::debug!("Ignoring {}", scheme);
+            tracing::trace!("Ignoring {}", scheme);
             return Err(PingInterruption::SuspendUntilNewTrack);
         }
 
         let host = track_url.host_str().ok_or_else(|| {
-            tracing::error!("No host ({:?})", track_url_str);
+            tracing::error!(?track_url_str, "No host");
             PingInterruption::SuspendUntilNewTrack
         })?;
 
         let remote_address = self.get_remote_address(host).await?;
 
-        tracing::trace!("Remote address: {}", remote_address);
-
         let mut maybe_remote_ping = None;
 
         'retry: loop {
-            tracing::trace!("Checking gateway ping");
+            tracing::trace!(gateway_address=%self.gateway_address, "Checking gateway ping");
             let mut gateway_ping = match self
                 .ping_gateway(|gateway_ping| match (gateway_ping, maybe_remote_ping) {
                     (Err(err), _) => PingTimes::Gateway(Err(err)),
@@ -180,7 +197,7 @@ impl Pinger {
                 Err(FailedToPing(_err)) => continue 'retry,
             };
 
-            tracing::trace!("Pinging gateway and remote");
+            tracing::trace!(gateway_address=%self.gateway_address, %remote_address, "Pinging gateway and remote");
 
             let mut remote_pings_remaining = self.ping_count;
 
@@ -222,7 +239,7 @@ impl Pinger {
 
             maybe_remote_ping.take();
 
-            tracing::trace!("Finished pinging remote.");
+            tracing::trace!(%remote_address, "Finished pinging remote.");
 
             loop {
                 if self
@@ -285,20 +302,41 @@ pub fn run(
     ),
     ipv4::PermissionsError,
 > {
-    let ipv4_pinger = ipv4::Pinger::new()?;
+    let ipv4_pinger = {
+        let mut ipv4_pinger = ipv4::Pinger::new()?;
+
+        let (ping_request_tx, mut ping_request_rx) = mpsc::channel(1);
+
+        std::thread::spawn(move || {
+            while let Some(Ivp4PingRequest {
+                address,
+                response_tx,
+            }) = ping_request_rx.blocking_recv()
+            {
+                let _ = response_tx.send(ipv4_pinger.ping(address));
+            }
+        });
+
+        ping_request_tx
+    };
 
     let (track_url_tx, track_url_rx) = mpsc::unbounded_channel::<Option<ArcStr>>();
 
     let (ping_time_tx, ping_time_rx) = mpsc::unbounded_channel();
 
-    let task = Pinger {
-        gateway_address: config.gateway_address,
-        ping_count: config.remote_ping_count,
-        ipv4_pinger,
-        track_urls: track_url_rx,
-        ping_times: ping_time_tx,
-    }
-    .run(config.initial_ping_address);
+    let task = async move {
+        Pinger {
+            gateway_address: config.gateway_address,
+            ping_count: config.remote_ping_count,
+            ipv4_pinger,
+            track_urls: track_url_rx,
+            ping_times: ping_time_tx,
+        }
+        .run(config.initial_ping_address)
+        .await;
+
+        tracing::debug!("Shut down");
+    };
 
     Ok((task, track_url_tx, ping_time_rx))
 }

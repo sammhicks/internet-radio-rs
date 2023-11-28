@@ -1,33 +1,40 @@
 //! Notification of shutdown
 
-use std::sync::Arc;
-
-use tokio::sync::Semaphore;
+use futures_util::FutureExt;
+use tokio::sync::oneshot;
 
 /// A handle which notifies signals when it is dropped
-pub struct Handle(Arc<Semaphore>);
+pub struct Handle {
+    handle: oneshot::Sender<()>,
+}
 
-impl std::ops::Drop for Handle {
-    fn drop(&mut self) {
-        // Max permits is usize::MAX >> 3
-        self.0.add_permits(usize::MAX >> 4);
+impl Handle {
+    /// Signal that the tasks should shut down
+    pub fn signal_shutdown(self) {
+        let _ = self.handle.send(());
     }
 }
 
 /// A signal that the handle has been dropped
-#[derive(Clone)]
-pub struct Signal(Arc<Semaphore>);
+#[must_use = "Signals must be awaited or polled"]
+pub struct Signal {
+    signal: oneshot::Receiver<()>,
+}
 
 impl Signal {
     pub fn new() -> (Handle, Self) {
-        let semaphore = Arc::new(Semaphore::new(0));
-        let handle = Handle(semaphore.clone());
-        let signal = Signal(semaphore);
-        (handle, signal)
+        let (handle, signal) = oneshot::channel();
+        (Handle { handle }, Signal { signal })
     }
+}
 
-    /// Wait for the handle to be dropped
-    pub async fn wait(self) {
-        drop(self.0.acquire().await);
+impl std::future::Future for Signal {
+    type Output = ();
+
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        self.signal.poll_unpin(cx).map(|_| ())
     }
 }

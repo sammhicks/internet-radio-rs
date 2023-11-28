@@ -56,7 +56,9 @@ fn main() -> Result<()> {
 
     let tcp_text_task = ports::tcp_text::run(port_channels);
 
-    let runtime = tokio::runtime::Runtime::new()?; // Setup the async runtime
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?; // Setup the async runtime
 
     // Spawn pipeline task outside of shutdown signalling mechanism as it doesn't need to do a graceful shutdown
     runtime.spawn(pipeline_task);
@@ -75,7 +77,7 @@ fn main() -> Result<()> {
         keyboard_commands_task.await;
 
         // Signal that tasks should shut down
-        drop(shutdown_handle);
+        shutdown_handle.signal_shutdown();
 
         // Wait (with timeout) for tasks to shut down
         if tokio::time::timeout(std::time::Duration::from_secs(5), wait_group.wait())

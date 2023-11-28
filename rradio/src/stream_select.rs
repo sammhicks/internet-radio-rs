@@ -3,7 +3,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use futures::Stream;
+use futures_util::Stream;
 
 pub struct StreamSelect<T>(pub T);
 

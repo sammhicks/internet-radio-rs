@@ -771,7 +771,7 @@ pub fn run(
     config: Config,
 ) -> anyhow::Result<(
     impl std::future::Future<Output = ()>,
-    PartialPortChannels<()>,
+    PartialPortChannels<crate::ports::NoShutdownSignal>,
 )> {
     gstreamer::init()?;
     let (playbin, bus_stream) = Playbin::new(&config)
@@ -817,12 +817,12 @@ pub fn run(
     };
 
     let task = async move {
-        use futures::StreamExt;
+        use futures_util::StreamExt;
 
         #[cfg(feature = "ping")]
-        let ping_handle = tokio::task::spawn(ping_task);
+        let ping_handle = tokio::spawn(ping_task);
 
-        let commands = futures::stream::unfold(commands_rx, |mut commands_rx| async {
+        let commands = futures_util::stream::unfold(commands_rx, |mut commands_rx| async {
             let message = Message::Command(commands_rx.recv().await?);
             Some((message, commands_rx))
         });
@@ -833,10 +833,11 @@ pub fn run(
 
         #[cfg(feature = "ping")]
         let messages = {
-            let ping_stream = futures::stream::unfold(ping_times_rx, |mut commands_rx| async {
-                let ping_times = commands_rx.recv().await?;
-                Some((Message::PingTimes(ping_times), commands_rx))
-            });
+            let ping_stream =
+                futures_util::stream::unfold(ping_times_rx, |mut commands_rx| async {
+                    let ping_times = commands_rx.recv().await?;
+                    Some((Message::PingTimes(ping_times), commands_rx))
+                });
 
             StreamSelect((commands, bus_stream, ping_stream))
         };
@@ -885,7 +886,7 @@ pub fn run(
         PartialPortChannels {
             commands_tx,
             player_state_rx: new_state_rx,
-            shutdown_signal: (),
+            shutdown_signal: crate::ports::NoShutdownSignal,
         },
     ))
 }

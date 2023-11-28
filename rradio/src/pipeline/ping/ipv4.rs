@@ -72,7 +72,7 @@ impl Pinger {
     }
 
     pub fn ping(&mut self, address: Ipv4Addr) -> Result<Duration, PingError> {
-        tracing::debug!("Pinging {}", address);
+        tracing::trace!("Pinging {}", address);
 
         let mut packet_iter: IcmpTransportChannelIterator =
             IcmpTransportChannelIterator(icmp_packet_iter(&mut self.receiver));
@@ -114,18 +114,18 @@ impl Pinger {
                     return Err(err);
                 }
                 icmp_type => {
-                    tracing::debug!("Ignoring {:?}", icmp_type);
+                    tracing::trace!("Ignoring {:?}", icmp_type);
                     continue;
                 }
             }
 
             if packet.get_icmp_code() != IcmpCodes::NoCode {
-                tracing::debug!("Ignoring Invalid ICMP Packet");
+                tracing::trace!("Ignoring Invalid ICMP Packet");
                 continue;
             }
 
             if remote_address != address {
-                tracing::debug!(
+                tracing::trace!(
                     "Ignoring Unexpected ping response from {:<16}:",
                     remote_address
                 );

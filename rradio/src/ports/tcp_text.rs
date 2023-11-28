@@ -138,10 +138,10 @@ impl<'a> Display for DisplayDiff<&'a rradio_messages::PlayerStateDiff> {
 
 pub fn encode_events<S: AsyncWrite + Unpin>(
     stream: S,
-) -> impl futures::Sink<Event, Error = anyhow::Error> {
+) -> impl futures_util::Sink<Event, Error = anyhow::Error> {
     use std::io::Write;
 
-    futures::sink::unfold(
+    futures_util::sink::unfold(
         (stream, Vec::new()),
         |(mut stream, mut buffer), event: Event| async move {
             buffer.clear();
@@ -163,8 +163,8 @@ pub fn encode_events<S: AsyncWrite + Unpin>(
 
 fn decode_commands(
     stream: tokio::net::tcp::OwnedReadHalf,
-) -> impl futures::Stream<Item = Result<Command>> {
-    futures::stream::try_unfold(stream, |mut stream| async move {
+) -> impl futures_util::Stream<Item = Result<Command>> {
+    futures_util::stream::try_unfold(stream, |mut stream| async move {
         use tokio::io::AsyncReadExt;
 
         let mut buffer = [0; 64];
