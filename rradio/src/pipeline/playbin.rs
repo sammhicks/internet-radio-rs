@@ -90,7 +90,6 @@ pub fn gstreamer_state_to_pipeline_state(
 pub struct Playbin(gstreamer::Element);
 
 impl Playbin {
-    #[tracing::instrument]
     pub fn new(config: &crate::config::Config) -> Result<(Self, BusStream), PipelineError> {
         let playbin_element = gstreamer::ElementFactory::make("playbin")
             .build()

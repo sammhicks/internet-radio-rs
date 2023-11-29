@@ -1,5 +1,3 @@
-use std::net::SocketAddr;
-
 use anyhow::Context;
 use axum::{
     extract::{FromRef, State},
@@ -95,7 +93,7 @@ async fn handle_websocket_connection(
     wait_handle: crate::task::WaitGroupHandle,
     websocket: axum::extract::ws::WebSocket,
 ) -> anyhow::Result<()> {
-    tracing::debug!("Connection");
+    tracing::debug!("Connection Upgraded");
 
     let (websocket_tx, websocket_rx) = websocket.split();
 
@@ -148,6 +146,8 @@ async fn handle_websocket_connection(
             .forward(super::CommandSink(commands_tx))
             .await?;
 
+        tracing::debug!("Shutting down");
+
         shutdown_handle.signal_shutdown();
 
         Ok(())
@@ -170,9 +170,9 @@ async fn handle_websocket_connection(
 
 #[derive(Clone, FromRef)]
 struct AppState {
+    span: tracing::Span,
     port_channels: super::PortChannels,
     wait_handle: WaitGroupHandle,
-    remote_address: SocketAddr,
 }
 
 async fn handle_post_command(
@@ -191,13 +191,14 @@ async fn handle_post_command(
 }
 
 async fn handle_api(
+    State(span): State<tracing::Span>,
     State(port_channels): State<super::PortChannels>,
     State(wait_handle): State<WaitGroupHandle>,
     upgrade: WebSocketUpgrade,
 ) -> impl IntoResponse {
     upgrade.on_upgrade(move |websocket| {
         handle_websocket_connection(port_channels, wait_handle, websocket)
-            .log_error(tracing::error_span!("websocket_connection"))
+            .log_error(tracing::error_span!(parent: &span, "websocket_connection"))
     })
 }
 
@@ -251,16 +252,21 @@ async fn do_run(
 
         let port_channels = port_channels.clone();
 
-        let app = app.clone().with_state(AppState {
-            port_channels: port_channels.clone(),
-            wait_handle: wait_group.clone_handle(),
-            remote_address,
-        });
+        let port_channels = port_channels.clone();
+        let wait_handle = wait_group.clone_handle();
+
+        let app = app.clone();
 
         wait_group.spawn_task(
             tracing::error_span!("connection", %remote_address),
             async move {
                 tracing::debug!("Connection");
+
+                let app = app.with_state(AppState {
+                    span: tracing::Span::current(),
+                    port_channels,
+                    wait_handle,
+                });
 
                 match futures_util::future::select(
                     shutdown_signal,

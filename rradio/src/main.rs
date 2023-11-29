@@ -26,6 +26,7 @@ fn main() -> Result<()> {
             }
             "-V" | "--version" => {
                 println!("{} v{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+                println!("rradio-messages v{}", rradio_messages::VERSION);
                 return Ok(());
             }
             _ => return Err(anyhow::Error::msg(format!("Unhandled argument {arg:?}"))),
@@ -37,6 +38,8 @@ fn main() -> Result<()> {
     log_filter_reload_handle
         .reload(Some(tracing_subscriber::EnvFilter::new(&config.log_level))) // Filter logs as specified by config
         .context("Failed to reload logger filter")?;
+
+    tracing::debug!(target: concat!(module_path!(), "::config"), "{config:?}");
 
     let (shutdown_handle, shutdown_signal) = task::ShutdownSignal::new();
 
