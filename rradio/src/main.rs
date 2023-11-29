@@ -36,7 +36,7 @@ fn main() -> Result<()> {
     let config = config::Config::from_file(&config_path); // See config::Config::default() for default config
 
     log_filter_reload_handle
-        .reload(Some(tracing_subscriber::EnvFilter::new(&config.log_level))) // Filter logs as specified by config
+        .reload(config.log_level.clone().filter) // Filter logs as specified by config
         .context("Failed to reload logger filter")?;
 
     tracing::debug!(target: concat!(module_path!(), "::config"), "{config:?}");
@@ -95,11 +95,11 @@ fn main() -> Result<()> {
 }
 
 fn setup_logging() -> tracing_subscriber::reload::Handle<
-    Option<tracing_subscriber::EnvFilter>,
+    tracing_subscriber::filter::Targets,
     tracing_subscriber::Registry,
 > {
     let (log_filter, reload_handle) =
-        tracing_subscriber::reload::Layer::new(None::<tracing_subscriber::EnvFilter>);
+        tracing_subscriber::reload::Layer::new(config::LogLevelFilter::default().filter);
 
     tracing_subscriber::registry() // Register logging
         .with(log_filter) // Only output some of the logs

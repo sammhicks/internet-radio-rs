@@ -1,18 +1,68 @@
 //! A description of the rradio configuration file
 
+use std::{collections::BTreeMap, fmt};
+
 use tokio::time::Duration;
 
 use rradio_messages::{arcstr, ArcStr};
+use tracing_subscriber::filter::Targets;
 
-fn remove_whitespace<'de, D: serde::Deserializer<'de>, T: From<String>>(
-    deserializer: D,
-) -> Result<T, D::Error> {
-    use serde::Deserialize;
-    let mut s = String::deserialize(deserializer)?;
+#[derive(Clone)]
+pub struct LogLevelFilter {
+    pub filter: Targets,
+}
 
-    s.retain(|c| !c.is_whitespace());
+impl<'de> serde::Deserialize<'de> for LogLevelFilter {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = toml::Value::deserialize(deserializer)?;
 
-    Ok(s.into())
+        Ok(Self {
+            filter: if let Some(log_level_filter) = value.as_str() {
+                log_level_filter
+                    .parse()
+                    .map_err(<D::Error as serde::de::Error>::custom)?
+            } else {
+                let log_level_filter = BTreeMap::<String, String>::deserialize(value)
+                    .map_err(<D::Error as serde::de::Error>::custom)?;
+
+                Targets::new().with_targets::<String, tracing::level_filters::LevelFilter>(
+                    log_level_filter
+                        .into_iter()
+                        .map(|(target, level)| {
+                            Ok((
+                                target,
+                                level.parse().map_err(|err| {
+                                    <D::Error as serde::de::Error>::custom(format!(
+                                        "{err}, got {level:?}"
+                                    ))
+                                })?,
+                            ))
+                        })
+                        .collect::<Result<Vec<_>, _>>()?,
+                )
+            },
+        })
+    }
+}
+
+impl fmt::Display for LogLevelFilter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.filter.fmt(f)
+    }
+}
+
+impl fmt::Debug for LogLevelFilter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.to_string().fmt(f)
+    }
+}
+
+impl Default for LogLevelFilter {
+    fn default() -> Self {
+        Self {
+            filter: Targets::new().with_default(tracing::Level::WARN),
+        }
+    }
 }
 
 #[cfg(feature = "cd")]
@@ -168,9 +218,7 @@ pub struct Config {
     #[serde(with = "humantime_serde")]
     pub smart_goto_previous_track_duration: Duration,
 
-    /// Controls the logging level. See the [Log Specification](https://docs.rs/tracing-subscriber/0.3.8/tracing_subscriber/struct.EnvFilter.html)
-    #[serde(deserialize_with = "remove_whitespace")]
-    pub log_level: ArcStr,
+    pub log_level: LogLevelFilter,
 
     /// Notification sounds
     #[serde(rename = "Notifications")]
@@ -227,7 +275,7 @@ impl Default for Config {
             pause_before_playing_increment: Duration::from_secs(1),
             max_pause_before_playing: Duration::from_secs(5),
             smart_goto_previous_track_duration: Duration::from_secs(2),
-            log_level: arcstr::literal!("info"),
+            log_level: LogLevelFilter::default(),
             notifications: Notifications::default(),
             #[cfg(feature = "cd")]
             cd_config: cd::Config::default(),

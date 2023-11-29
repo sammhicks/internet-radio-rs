@@ -14,6 +14,12 @@ use crate::{
     tag::Tag,
 };
 
+macro_rules! submodule_path {
+    ($name:path) => {
+        concat!(module_path!(), "::", stringify!($name))
+    };
+}
+
 enum Error {
     Station(rradio_messages::StationError),
     Pipeline,
@@ -551,7 +557,7 @@ impl Controller {
         match message.view() {
             MessageView::Buffering(buffering) => {
                 tracing::trace!(
-                    parent: &tracing::trace_span!("buffering"),
+                    target: submodule_path!(buffering),
                     "{}",
                     buffering.percent()
                 );
@@ -578,7 +584,7 @@ impl Controller {
 
                 for (i, (name, value)) in tag.tags().as_ref().iter().enumerate() {
                     let tag = Tag::from_value(name, &value);
-                    tracing::trace!(parent: &tracing::trace_span!("tag"), "{} - {:?}", i, tag);
+                    tracing::trace!(target: submodule_path!(tag), "{} - {:?}", i, tag);
 
                     match tag {
                         Ok(Tag::Title(title)) => new_tags.title = Some(title),
@@ -616,7 +622,7 @@ impl Controller {
                     self.broadcast_state_change();
 
                     tracing::debug!(
-                        parent: &tracing::debug_span!("state_change"),
+                        target: submodule_path!(state_change),
                         "{:?}",
                         new_state
                     );
@@ -630,7 +636,7 @@ impl Controller {
                 Ok(())
             }
             MessageView::Eos(..) => {
-                tracing::debug!(parent: &tracing::debug_span!("end_of_stream"), "");
+                tracing::debug!(target: submodule_path!(end_of_stream), "");
 
                 if let Some(current_playlist) = &self.current_playlist {
                     if self.published_state.track_duration.is_some() {

@@ -74,6 +74,12 @@ Options:
     + `"debug"`
     + `"trace"`
   + You can also specify per-module logging, see [tracing](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/struct.EnvFilter.html)
+  + Alternatively, you can create a table of target-level pairs:
+
+        [log_level]
+        "rradio" = "info"
+        "rradio::pipeline::controller" = "debug"
+
 + Notifications
   + Default: None
   + Values:
