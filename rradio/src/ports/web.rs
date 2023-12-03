@@ -5,7 +5,7 @@ use axum::{
     routing::{get, get_service, post},
 };
 use futures_util::{SinkExt, StreamExt, TryStreamExt};
-use tower::Service;
+use tower::ServiceExt;
 
 use rradio_messages::Event;
 
@@ -273,7 +273,7 @@ async fn do_run(
                     hyper::server::conn::http1::Builder::new()
                         .serve_connection(
                             hyper_util::rt::TokioIo::new(socket),
-                            hyper::service::service_fn(move |request| app.clone().call(request)),
+                            hyper::service::service_fn(move |request| app.clone().oneshot(request)),
                         )
                         .with_upgrades(),
                 )
