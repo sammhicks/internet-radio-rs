@@ -218,6 +218,11 @@ pub struct Config {
     #[serde(with = "humantime_serde")]
     pub smart_goto_previous_track_duration: Duration,
 
+    pub maximum_error_recovery_attempts: usize,
+
+    #[serde(with = "humantime_serde")]
+    pub error_recovery_attempt_count_reset_time: Option<Duration>,
+
     pub log_level: LogLevelFilter,
 
     /// Notification sounds
@@ -275,6 +280,8 @@ impl Default for Config {
             pause_before_playing_increment: Duration::from_secs(1),
             max_pause_before_playing: Duration::from_secs(5),
             smart_goto_previous_track_duration: Duration::from_secs(2),
+            maximum_error_recovery_attempts: 5,
+            error_recovery_attempt_count_reset_time: Some(Duration::from_secs(30)),
             log_level: LogLevelFilter::default(),
             notifications: Notifications::default(),
             #[cfg(feature = "cd")]

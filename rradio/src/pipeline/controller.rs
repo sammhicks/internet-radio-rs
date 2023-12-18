@@ -118,6 +118,7 @@ struct Controller {
     station_resume_info: BTreeMap<StationIndex, StationResumeInfo>,
     new_state_tx: watch::Sender<PlayerState>,
     queued_seek: Option<Duration>,
+    error_recovery_attempts_remaining: usize,
     #[cfg(feature = "ping")]
     ping_requests_tx: tokio::sync::mpsc::UnboundedSender<Option<ArcStr>>,
 }
@@ -356,6 +357,8 @@ impl Controller {
             .and_then(|index| self.station_resume_info.remove(index));
 
         self.clear_playlist();
+
+        self.error_recovery_attempts_remaining = self.config.maximum_error_recovery_attempts;
 
         self.published_state.current_station =
             Arc::new(rradio_messages::CurrentStation::PlayingStation {
@@ -718,7 +721,47 @@ impl Controller {
                     "gstreamer error"
                 );
 
+                let latest_error_time = self
+                    .published_state
+                    .latest_error
+                    .as_ref()
+                    .as_ref()
+                    .map(|latest_error| latest_error.timestamp);
+
                 self.broadcast_error(format!("gstreamer error: error={error:?} code={code:?} error_message={error_message:?} debug_message={debug_message:?}"));
+
+                if self
+                    .config
+                    .error_recovery_attempt_count_reset_time
+                    .zip(latest_error_time)
+                    .is_some_and(
+                        |(error_recovery_attempt_count_reset_time, latest_error_time)| {
+                            (latest_error_time + error_recovery_attempt_count_reset_time)
+                                < chrono::Utc::now()
+                        },
+                    )
+                {
+                    tracing::info!("Resetting error_recovery_attempts_remaining");
+                    self.error_recovery_attempts_remaining =
+                        self.config.maximum_error_recovery_attempts;
+                }
+
+                tracing::warn!(
+                    "{} error recovery attempts remaining",
+                    self.error_recovery_attempts_remaining
+                );
+
+                self.error_recovery_attempts_remaining = self
+                    .error_recovery_attempts_remaining
+                    .checked_sub(1)
+                    .ok_or_else(|| {
+                        tracing::error!(
+                            "More than {} errors produced, aborting.",
+                            self.config.maximum_error_recovery_attempts
+                        );
+
+                        PipelineError
+                    })?;
 
                 {
                     let (error, kind): (Box<dyn std::fmt::Debug>, &'static str) =
@@ -810,6 +853,8 @@ pub fn run(
     let (ping_task, ping_requests_tx, ping_times_rx) =
         super::ping::run(config.ping_config.clone())?;
 
+    let error_retries_remaining = config.maximum_error_recovery_attempts;
+
     let mut controller = Controller {
         config,
         playbin,
@@ -818,6 +863,7 @@ pub fn run(
         station_resume_info: BTreeMap::new(),
         new_state_tx,
         queued_seek: None,
+        error_recovery_attempts_remaining: error_retries_remaining,
         #[cfg(feature = "ping")]
         ping_requests_tx,
     };

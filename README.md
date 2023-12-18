@@ -17,6 +17,11 @@ However, there are a couple of exceptions
     input_timeout = "2s"
     volume_offset = 5
     buffering_duration = "40s"
+
+    maximum_error_recovery_attempts = 5
+    error_recovery_attempt_count_reset_time = "30s"
+
+
     log_level = "rradio=info"
 
     [Notifications]
@@ -64,6 +69,12 @@ Options:
 + smart_goto_previous_track_duration
   + Default: `"2s"`
   + The amount of time at the start of a track where winding back will take you to the previous track, rather than seeking to the start of the current track
++ maximum_error_recovery_attempts
+  + Default: `5`
+  + The number of error recovery attempts before aborting
++ error_recovery_attempt_count_reset_time
+  + Default: `"30s"`
+  + The amount of time to wait before resetting the number of error recovery attempts
 + log_level
   + Default: `"warn"`
   + Options:
