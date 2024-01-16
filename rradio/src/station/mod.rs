@@ -17,10 +17,14 @@ mod cd;
 #[cfg(feature = "cd")]
 pub use cd::eject as eject_cd;
 
-#[derive(Debug, PartialEq)]
-pub struct Credentials {
-    username: String,
-    password: String,
+#[cfg(feature = "smb")]
+mod smb;
+
+#[cfg(feature = "usb")]
+mod usb;
+
+trait TypeName {
+    const TYPE_NAME: &'static str;
 }
 
 #[derive(Clone)]
@@ -29,6 +33,22 @@ pub struct PlaylistMetadata(Arc<dyn Any + Send + Sync>);
 impl PlaylistMetadata {
     fn new(metadata: impl Any + Send + Sync + 'static) -> Self {
         Self(Arc::new(metadata))
+    }
+
+    fn get<T: Any + TypeName + Clone>(&self) -> Option<T> {
+        self.0
+            .downcast_ref()
+            .or_else(|| {
+                tracing::error!(
+                    "Metadata is not {} ({:?}), but is {:?}",
+                    T::TYPE_NAME,
+                    std::any::TypeId::of::<T>(),
+                    &(*self.0).type_id()
+                );
+
+                None
+            })
+            .cloned()
     }
 }
 
@@ -92,6 +112,8 @@ pub enum Station {
         index: StationIndex,
         device: String,
     },
+    #[cfg(feature = "smb")]
+    Smb(smb::Station),
     #[cfg(feature = "usb")]
     Usb {
         index: StationIndex,
@@ -156,6 +178,8 @@ impl Station {
                     "m3u" => playlist_error(parse_m3u::from_file(&path, index)),
                     "pls" => playlist_error(parse_pls::from_file(&path, index)),
                     "upnp" => playlist_error(parse_upnp::from_file(&path, index)),
+                    #[cfg(feature = "smb")]
+                    "smb" => playlist_error(smb::from_file(&path, index)),
                     extension => Err(Error::BadStationFile(
                         format!("Unsupported format: \"{extension}\"").into(),
                     )),
@@ -174,6 +198,8 @@ impl Station {
             Station::UrlList { index, .. } => index.as_ref(),
             #[cfg(feature = "cd")]
             Station::CD { index, .. } => Some(index),
+            #[cfg(feature = "smb")]
+            Self::Smb(station) => Some(station.index()),
             #[cfg(feature = "usb")]
             Station::Usb { index, .. } => Some(index),
             Station::UPnP(station) => Some(station.index()),
@@ -185,6 +211,8 @@ impl Station {
             Station::UrlList { title, .. } => title.as_deref(),
             #[cfg(feature = "cd")]
             Station::CD { .. } => None,
+            #[cfg(feature = "smb")]
+            Self::Smb(station) => Some(station.title()),
             #[cfg(feature = "usb")]
             Station::Usb { .. } => None,
             Station::UPnP(station) => station.title(),
@@ -196,6 +224,8 @@ impl Station {
             Station::UrlList { .. } => StationType::UrlList,
             #[cfg(feature = "cd")]
             Station::CD { .. } => StationType::CD,
+            #[cfg(feature = "smb")]
+            Self::Smb(..) => StationType::UPnP,
             #[cfg(feature = "usb")]
             Station::Usb { .. } => StationType::Usb,
             Station::UPnP(..) => StationType::UPnP,
@@ -229,13 +259,15 @@ impl Station {
                 metadata: PlaylistMetadata::default(),
                 handle: PlaylistHandle::default(),
             }),
+            #[cfg(feature = "smb")]
+            Self::Smb(station) => station.into_playlist(metadata).map_err(Error::MountError),
             #[cfg(feature = "usb")]
             Station::Usb {
                 index,
                 device,
                 path,
             } => {
-                let (tracks, metadata, handle) = mount::usb(&device, &path, metadata)?;
+                let (tracks, metadata, handle) = usb::load(&device, &path, metadata)?;
                 Ok(Playlist {
                     station_index: Some(index),
                     station_title: None,

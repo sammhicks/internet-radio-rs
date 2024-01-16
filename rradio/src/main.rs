@@ -1,4 +1,5 @@
 #![warn(clippy::pedantic)]
+#![allow(clippy::struct_field_names)]
 
 use anyhow::{Context, Result};
 use tracing_subscriber::prelude::*;

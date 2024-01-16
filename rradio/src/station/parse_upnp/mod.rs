@@ -235,6 +235,10 @@ struct Metadata {
     tracks: Vec<Track>,
 }
 
+impl super::TypeName for Metadata {
+    const TYPE_NAME: &'static str = "UPnP Metadata";
+}
+
 impl Metadata {
     fn into_playlist(self) -> super::Playlist {
         let Metadata {
@@ -285,10 +289,7 @@ impl Station {
         self,
         metadata: Option<&super::PlaylistMetadata>,
     ) -> Result<super::Playlist> {
-        if let Some(metadata) = metadata
-            .and_then(|super::PlaylistMetadata(metadata)| metadata.downcast_ref::<Metadata>())
-            .cloned()
-        {
+        if let Some(metadata) = metadata.and_then(super::PlaylistMetadata::get::<Metadata>) {
             return Ok(metadata.into_playlist());
         }
 
