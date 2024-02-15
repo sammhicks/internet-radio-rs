@@ -1726,6 +1726,7 @@ dependencies = [
  "hyper 1.0.1",
  "hyper-util",
  "libc",
+ "mime_guess",
  "pin-project",
  "pls",
  "pnet",
@@ -1749,7 +1750,7 @@ dependencies = [
 
 [[package]]
 name = "rradio-messages"
-version = "0.37.0"
+version = "0.38.0"
 dependencies = [
  "anyhow",
  "arcstr",

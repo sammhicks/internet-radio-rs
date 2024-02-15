@@ -316,7 +316,8 @@ impl Controller {
             rradio_messages::StationType::UrlList => return None,
             rradio_messages::StationType::UPnP
             | rradio_messages::StationType::CD
-            | rradio_messages::StationType::Usb => (),
+            | rradio_messages::StationType::Usb
+            | rradio_messages::StationType::SambaShare => (),
         }
 
         let station_resume_info = StationResumeInfo {

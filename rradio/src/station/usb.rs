@@ -151,7 +151,6 @@ fn album_directory(
     album: &str,
 ) -> std::io::Result<Option<Vec<Track>>> {
     tracing::debug!("Creating playlist from {}", directory_path.display());
-    let handled_extensions = ["mp3", "wma", "aac", "ogg", "wav"];
 
     let mut tracks = Vec::new();
 
@@ -159,10 +158,10 @@ fn album_directory(
         let item = item?;
         if item.file_type()?.is_file() {
             let file_path = item.path();
-            if let Some((name, extension)) = file_path.file_stem().zip(file_path.extension()) {
-                if handled_extensions
+            if let Some(name) = file_path.file_stem() {
+                if mime_guess::from_path(&file_path)
                     .iter()
-                    .any(|handled_extension| handled_extension == &extension)
+                    .any(|mime_type| mime_type.type_() == "audio")
                 {
                     let title = name.to_string_lossy();
                     tracing::debug!("Track: {}", title);

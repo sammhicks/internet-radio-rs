@@ -306,6 +306,7 @@ pub enum StationType {
     UPnP,
     CD,
     Usb,
+    SambaShare,
 }
 
 impl fmt::Display for StationType {
@@ -315,6 +316,7 @@ impl fmt::Display for StationType {
             Self::UPnP => "UPnP",
             Self::CD => "CD",
             Self::Usb => "USB",
+            Self::SambaShare => "Samba",
         })
     }
 }

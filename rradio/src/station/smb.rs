@@ -25,10 +25,9 @@ impl fmt::Debug for Credentials {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum SortBy {
-    #[default]
     Name,
     Random,
 }
@@ -40,7 +39,9 @@ struct PlaylistDescription {
     share: String,
     #[serde(flatten)]
     credentials: Credentials,
-    sort_by: SortBy,
+    playlist: Option<String>,
+    #[serde(default)]
+    sort_by: Option<SortBy>,
     #[serde(default)]
     limit_track_count: Option<usize>,
 }
@@ -51,7 +52,8 @@ pub struct Station {
     title: String,
     share: String,
     credentials: Credentials,
-    sort_by: SortBy,
+    playlist: Option<String>,
+    sort_by: Option<SortBy>,
     limit_track_count: Option<usize>,
 }
 
@@ -61,6 +63,7 @@ impl Station {
             title,
             share,
             credentials,
+            playlist,
             sort_by,
             limit_track_count,
         } = toml::from_str(
@@ -74,6 +77,7 @@ impl Station {
             title,
             share,
             credentials,
+            playlist,
             sort_by,
             limit_track_count,
         })
@@ -120,6 +124,42 @@ impl super::TypeName for Metadata {
     const TYPE_NAME: &'static str = "SMB Metadata";
 }
 
+fn playlist_files(
+    root_directory: &Path,
+    playlist_path: String,
+) -> Result<Vec<String>, rradio_messages::MountError> {
+    let playlist_file =
+        std::fs::read_to_string(root_directory.join(&playlist_path)).map_err(|err| {
+            tracing::error!(
+                ?root_directory,
+                playlist_path,
+                "Could not open playlist: {err}"
+            );
+            rradio_messages::MountError::TracksNotFound
+        })?;
+
+    let playlist_folder = std::path::Path::new(&playlist_path)
+        .parent()
+        .unwrap_or(std::path::Path::new(""));
+
+    let playlist_files = playlist_file
+        .lines()
+        .map(str::trim)
+        .filter_map(|line| {
+            (!line.is_empty() && !line.starts_with('#')).then(|| {
+                playlist_folder
+                    .join(line.replace('\\', "/"))
+                    .to_string_lossy()
+                    .into_owned()
+            })
+        })
+        .collect();
+
+    tracing::warn!(?playlist_files, "Playlist");
+
+    Ok(playlist_files)
+}
+
 fn all_files(root_directory: &Path) -> Vec<String> {
     let mut directories = vec![PathBuf::new()];
     let mut files = Vec::new();
@@ -159,17 +199,9 @@ fn all_files(root_directory: &Path) -> Vec<String> {
             }
 
             if entry_type.is_file() {
-                let entry_name = entry.file_name();
-
-                let Some(extension) = Path::new(&entry_name).extension() else {
-                    continue;
-                };
-
-                let handled_extensions = ["mp3", "wma", "aac", "ogg", "wav"];
-
-                if handled_extensions
+                if mime_guess::from_path(entry.file_name())
                     .iter()
-                    .any(|&handled_extension| extension == handled_extension)
+                    .any(|mime_type| mime_type.type_() == "audio")
                 {
                     let file_path_from_root_directory =
                         PathBuf::from_iter([directory.as_path(), entry.file_name().as_ref()]);
@@ -210,6 +242,7 @@ impl Station {
             title,
             share,
             credentials: Credentials { username, password },
+            playlist,
             sort_by,
             limit_track_count,
         } = self;
@@ -231,16 +264,16 @@ impl Station {
                     PlaylistMetadata::new(metadata),
                 )
             } else {
-                let mut track_paths = all_files(handle.mounted_directory());
+                let mut track_paths = if let Some(playlist) = playlist {
+                    playlist_files(handle.mounted_directory(), playlist)?
+                } else {
+                    all_files(handle.mounted_directory())
+                };
 
                 match sort_by {
-                    SortBy::Name => track_paths.sort(),
-                    SortBy::Random => match limit_track_count {
-                        Some(limit_track_count) => {
-                            track_paths.partial_shuffle(&mut rand::thread_rng(), limit_track_count);
-                        }
-                        None => track_paths.shuffle(&mut rand::thread_rng()),
-                    },
+                    None => (),
+                    Some(SortBy::Name) => track_paths.sort(),
+                    Some(SortBy::Random) => track_paths.shuffle(&mut rand::thread_rng()),
                 }
 
                 if let Some(limit_track_count) = limit_track_count {
@@ -261,7 +294,7 @@ impl Station {
         Ok(super::Playlist {
             station_index: Some(index),
             station_title: Some(title),
-            station_type: rradio_messages::StationType::UPnP,
+            station_type: rradio_messages::StationType::SambaShare,
             tracks,
             metadata,
             handle: PlaylistHandle::new(handle),
