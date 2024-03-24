@@ -4,9 +4,9 @@
 use anyhow::{Context, Result};
 use tracing_subscriber::prelude::*;
 
+mod audio_pipeline;
 mod config;
 mod keyboard_commands;
-mod pipeline;
 mod ports;
 mod station;
 mod stream_select;
@@ -56,7 +56,8 @@ fn main() -> Result<()> {
 
     let (shutdown_handle, shutdown_signal) = task::ShutdownSignal::new();
 
-    let (pipeline, port_channels_without_shutdown_signal) = pipeline::run(config.clone())?;
+    let (audio_pipeline_task, port_channels_without_shutdown_signal) =
+        audio_pipeline::run(config.clone())?;
 
     let port_channels = port_channels_without_shutdown_signal.with_shutdown_signal(shutdown_signal);
 
@@ -76,8 +77,8 @@ fn main() -> Result<()> {
         .enable_all()
         .build()?; // Setup the async runtime
 
-    // Spawn pipeline task outside of shutdown signalling mechanism as it doesn't need to do a graceful shutdown
-    runtime.spawn(pipeline);
+    // Spawn audio pipeline task outside of shutdown signalling mechanism as it doesn't need to do a graceful shutdown
+    runtime.spawn(audio_pipeline_task);
 
     runtime.block_on(async {
         let wait_group = task::WaitGroup::new();

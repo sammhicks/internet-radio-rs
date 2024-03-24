@@ -7,7 +7,7 @@ use anyhow::Context;
 use futures_util::{FutureExt, Sink, StreamExt};
 use rradio_messages::PlayerStateDiff;
 
-use crate::{pipeline::PlayerState, task::ShutdownSignal};
+use crate::{audio_pipeline::PlayerState, task::ShutdownSignal};
 
 mod stream;
 
