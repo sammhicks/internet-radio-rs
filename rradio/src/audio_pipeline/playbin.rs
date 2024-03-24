@@ -2,7 +2,7 @@
 
 use std::{convert::TryInto, pin::Pin, time::Duration};
 
-use glib::{object::ObjectExt, Cast};
+use glib::object::{Cast, ObjectExt};
 use gstreamer::prelude::{ElementExt, ElementExtManual};
 use gstreamer_audio::prelude::StreamVolumeExt;
 

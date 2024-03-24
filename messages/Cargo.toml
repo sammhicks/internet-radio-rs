@@ -11,7 +11,7 @@ async = ["dep:futures-util", "dep:tokio"]
 
 [dependencies]
 arcstr = { version = "1.1.5", default-features = false, features = ["serde", "std"] }
-base64 = "0.21.5"
+base64 = "0.22.0"
 chrono = { version = "0.4.31", default-features = false, features = ["serde"] }
 futures-util = { version = "0.3.29", features = ["sink"], optional = true }
 postcard = { version = "1.0.8", default-features = false, features = ["use-std"] }
