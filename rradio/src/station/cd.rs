@@ -2,11 +2,7 @@
 
 use std::fmt::Debug;
 
-use super::Track;
-
 use rradio_messages::{arcstr, CdError};
-
-type Result<T> = std::result::Result<T, rradio_messages::CdError>;
 
 trait Parameter {
     fn into_raw(self) -> libc::c_ulong;
@@ -287,76 +283,115 @@ fn ioctl_error(err: std::io::Error) -> CdError {
     }
 }
 
-pub fn tracks(device: &str) -> Result<Vec<Track>> {
-    let mut device = std::fs::File::open(device).map_err(|err| CdError::FailedToOpenDevice {
-        code: err.raw_os_error(),
-        message: arcstr::format!("{err}"),
-    })?;
-
-    match device.ioctl(CDROM_DRIVE_STATUS).map_err(ioctl_error)? {
-        0 => return Err(CdError::NoCdInfo),         // CDS_NO_INFO
-        1 => return Err(CdError::NoCd),             // CDS_NO_DISC
-        2 => return Err(CdError::CdTrayIsOpen),     // CDS_TRAY_OPEN
-        3 => return Err(CdError::CdTrayIsNotReady), // CDS_DRIVE_NOT_READY
-        4 => tracing::debug!("CD drive OK"),        // CDS_DISC_OK
-        n => return Err(CdError::UnknownDriveStatus(n as isize)),
-    }
-
-    match device.ioctl(CDROM_DISC_STATUS).map_err(ioctl_error)? {
-        0 => return Err(CdError::NoCdInfo),         // CDS_NO_INFO
-        1 => return Err(CdError::NoCd),             // CDS_NO_DISC
-        2 => return Err(CdError::CdTrayIsOpen),     // CDS_TRAY_OPEN
-        3 => return Err(CdError::CdTrayIsNotReady), // CDS_DRIVE_NOT_READY
-        100 => tracing::debug!("Audio CD"),         // CDS_AUDIO
-        101 => return Err(CdError::CdIsData1),      // CDS_DATA_1
-        102 => return Err(CdError::CdIsData2),      // CDS_DATA_2
-        103 => return Err(CdError::CdIsXA21),       // CDS_XA_2_1
-        104 => return Err(CdError::CdIsXA22),       // CDS_XA_2_2
-        105 => tracing::debug!("Mixed CD"),         // CDS_MIXED
-        n => return Err(CdError::UnknownDriveStatus(n as isize)),
-    }
-
-    let mut toc = CdToc::default();
-
-    device
-        .ioctl_with_parameter(CDROMREADTOCHDR, &mut toc)
-        .map_err(ioctl_error)?;
-
-    tracing::debug!("CD toc: {:?}", toc);
-
-    (toc.cdth_trk0..=toc.cdth_trk1)
-        .filter_map(|track_index| cd_track(&mut device, track_index, toc.cdth_trk1).transpose())
-        .collect()
+pub struct Track {
+    title: rradio_messages::ArcStr,
+    url: rradio_messages::ArcStr,
 }
 
-fn cd_track(device: &mut std::fs::File, track_index: u8, track_count: u8) -> Result<Option<Track>> {
-    let mut toc_entry = CdTocEntry {
-        cdte_track: track_index,
-        cdte_format: LbaMsf::Msf,
-        ..CdTocEntry::default()
-    };
-
-    device
-        .ioctl_with_parameter(CDROMREADTOCENTRY, &mut toc_entry)
-        .map_err(ioctl_error)?;
-
-    tracing::debug!("{:?}", toc_entry);
-
-    if (0b0100 & toc_entry.cdte_adr_ctrl.ctrl()) > 0 {
-        // This is a data track
-        Ok(None)
-    } else {
-        Ok(Some(Track {
-            title: Some(rradio_messages::arcstr::format!(
-                "Track {} of {}",
-                track_index,
-                track_count
-            )),
+impl From<Track> for super::Track {
+    fn from(Track { title, url }: Track) -> Self {
+        Self {
+            title: Some(title),
             album: None,
             artist: None,
-            url: rradio_messages::arcstr::format!("cdda://{}", track_index),
+            url,
             is_notification: false,
-        }))
+        }
+    }
+}
+
+impl Track {
+    fn new(
+        device: &mut std::fs::File,
+        track_index: u8,
+        track_count: u8,
+    ) -> Result<Option<Self>, CdError> {
+        let mut toc_entry = CdTocEntry {
+            cdte_track: track_index,
+            cdte_format: LbaMsf::Msf,
+            ..CdTocEntry::default()
+        };
+
+        device
+            .ioctl_with_parameter(CDROMREADTOCENTRY, &mut toc_entry)
+            .map_err(ioctl_error)?;
+
+        tracing::debug!("{:?}", toc_entry);
+
+        if (0b0100 & toc_entry.cdte_adr_ctrl.ctrl()) > 0 {
+            // This is a data track
+            Ok(None)
+        } else {
+            Ok(Some(Track {
+                title: rradio_messages::arcstr::format!("Track {} of {}", track_index, track_count),
+                url: rradio_messages::arcstr::format!("cdda://{}", track_index),
+            }))
+        }
+    }
+}
+
+pub struct Loader<'a> {
+    pub device: &'a str,
+}
+
+impl<'a> super::StationLoader for Loader<'a> {
+    type Metadata = ();
+    type Handle = ();
+
+    type Track = Track;
+    type Error = CdError;
+
+    const STATION_TYPE: rradio_messages::StationType = rradio_messages::StationType::CD;
+
+    async fn load_station_parts(
+        self,
+        _: Option<()>,
+        _: impl FnOnce(super::PartialInfo),
+    ) -> Result<(Option<super::StationTitle>, Vec<Track>, (), ()), CdError> {
+        let mut device =
+            std::fs::File::open(self.device).map_err(|err| CdError::FailedToOpenDevice {
+                code: err.raw_os_error(),
+                message: arcstr::format!("{err}"),
+            })?;
+
+        match device.ioctl(CDROM_DRIVE_STATUS).map_err(ioctl_error)? {
+            0 => return Err(CdError::NoCdInfo),         // CDS_NO_INFO
+            1 => return Err(CdError::NoCd),             // CDS_NO_DISC
+            2 => return Err(CdError::CdTrayIsOpen),     // CDS_TRAY_OPEN
+            3 => return Err(CdError::CdTrayIsNotReady), // CDS_DRIVE_NOT_READY
+            4 => tracing::debug!("CD drive OK"),        // CDS_DISC_OK
+            n => return Err(CdError::UnknownDriveStatus(n as isize)),
+        }
+
+        match device.ioctl(CDROM_DISC_STATUS).map_err(ioctl_error)? {
+            0 => return Err(CdError::NoCdInfo),         // CDS_NO_INFO
+            1 => return Err(CdError::NoCd),             // CDS_NO_DISC
+            2 => return Err(CdError::CdTrayIsOpen),     // CDS_TRAY_OPEN
+            3 => return Err(CdError::CdTrayIsNotReady), // CDS_DRIVE_NOT_READY
+            100 => tracing::debug!("Audio CD"),         // CDS_AUDIO
+            101 => return Err(CdError::CdIsData1),      // CDS_DATA_1
+            102 => return Err(CdError::CdIsData2),      // CDS_DATA_2
+            103 => return Err(CdError::CdIsXA21),       // CDS_XA_2_1
+            104 => return Err(CdError::CdIsXA22),       // CDS_XA_2_2
+            105 => tracing::debug!("Mixed CD"),         // CDS_MIXED
+            n => return Err(CdError::UnknownDriveStatus(n as isize)),
+        }
+
+        let mut toc = CdToc::default();
+
+        device
+            .ioctl_with_parameter(CDROMREADTOCHDR, &mut toc)
+            .map_err(ioctl_error)?;
+
+        tracing::debug!("CD toc: {:?}", toc);
+
+        let tracks = (toc.cdth_trk0..=toc.cdth_trk1)
+            .filter_map(|track_index| {
+                Track::new(&mut device, track_index, toc.cdth_trk1).transpose()
+            })
+            .collect::<Result<_, _>>()?;
+
+        Ok((None, tracks, (), ()))
     }
 }
 

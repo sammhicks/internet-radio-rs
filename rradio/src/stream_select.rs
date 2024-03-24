@@ -5,6 +5,7 @@ use std::{
 
 use futures_util::Stream;
 
+/// A stream which pulls values from a number of other streams
 pub struct StreamSelect<T>(pub T);
 
 macro_rules! impl_stream_select {

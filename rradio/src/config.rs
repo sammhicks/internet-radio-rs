@@ -1,6 +1,6 @@
 //! A description of the rradio configuration file
 
-use std::{collections::BTreeMap, fmt};
+use std::{collections::BTreeMap, fmt, sync::Arc};
 
 use tokio::time::Duration;
 
@@ -69,7 +69,7 @@ impl Default for LogLevelFilter {
 pub mod cd {
     use rradio_messages::{arcstr, ArcStr};
 
-    #[derive(Clone, Debug, serde::Deserialize)]
+    #[derive(Debug, serde::Deserialize)]
     #[serde(default)]
     pub struct Config {
         pub station: ArcStr,
@@ -92,7 +92,7 @@ pub mod usb {
 
     use rradio_messages::{arcstr, ArcStr};
 
-    #[derive(Clone, Debug, serde::Deserialize)]
+    #[derive(Debug, serde::Deserialize)]
     #[serde(default)]
     pub struct Config {
         pub station: ArcStr,
@@ -117,7 +117,7 @@ pub mod ping {
 
     use rradio_messages::{arcstr, ArcStr};
 
-    #[derive(Clone, Debug, serde::Deserialize)]
+    #[derive(Debug, serde::Deserialize)]
     #[serde(default)]
     pub struct Config {
         pub remote_ping_count: usize,
@@ -164,7 +164,7 @@ pub mod ping {
 pub mod web {
     use rradio_messages::{arcstr, ArcStr};
 
-    #[derive(Clone, Debug, serde::Deserialize)]
+    #[derive(Debug, serde::Deserialize)]
     #[serde(default)]
     pub struct Config {
         pub web_app_path: ArcStr,
@@ -180,7 +180,7 @@ pub mod web {
 }
 
 /// Notifications allow rradio to play sounds to notify the user of events
-#[derive(Clone, Debug, Default, serde::Deserialize)]
+#[derive(Debug, Default, serde::Deserialize)]
 #[serde(default)]
 pub struct Notifications {
     pub ready: Option<ArcStr>,
@@ -190,7 +190,7 @@ pub struct Notifications {
 }
 
 /// A description of the rradio configuration file
-#[derive(Clone, Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 #[serde(default)]
 pub struct Config {
     /// Where to find stations
@@ -239,7 +239,7 @@ pub struct Config {
 
     #[cfg(feature = "ping")]
     #[serde(rename = "ping")]
-    pub ping_config: ping::Config,
+    pub ping_config: Arc<ping::Config>,
 
     #[cfg(feature = "web")]
     #[serde(rename = "web")]
@@ -247,7 +247,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn from_file(path: impl AsRef<std::path::Path> + Copy) -> Self {
+    pub fn from_file(path: impl AsRef<std::path::Path> + Copy) -> Arc<Self> {
         std::fs::read_to_string(path)
             .map_err(|err| {
                 tracing::error!(
@@ -257,7 +257,7 @@ impl Config {
                 );
             })
             .and_then(|config| {
-                toml::from_str(&config).map_err(|err| {
+                toml::from_str(&config).map(Arc::new).map_err(|err| {
                     tracing::error!(
                         "Failed to parse config file {:?}: {}",
                         path.as_ref().display(),
@@ -289,7 +289,7 @@ impl Default for Config {
             #[cfg(feature = "usb")]
             usb_config: usb::Config::default(),
             #[cfg(feature = "ping")]
-            ping_config: ping::Config::default(),
+            ping_config: Arc::new(ping::Config::default()),
             #[cfg(feature = "web")]
             web_config: web::Config::default(),
         }

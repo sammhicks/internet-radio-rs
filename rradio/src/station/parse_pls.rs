@@ -1,29 +1,58 @@
-use anyhow::{Error, Result};
+pub struct Track(pls::PlaylistElement);
 
-use rradio_messages::{ArcStr, StationIndex};
+impl From<Track> for super::Track {
+    fn from(
+        Track(pls::PlaylistElement {
+            path,
+            title,
+            len: _,
+        }): Track,
+    ) -> Self {
+        Self {
+            title: title.map(Into::into),
+            album: None,
+            artist: None,
+            url: path.into(),
+            is_notification: false,
+        }
+    }
+}
 
-use super::{Station, Track};
+/// [`super::StationLoader`] for a [PLS playlist](https://en.wikipedia.org/wiki/PLS_(file_format))
+pub struct Loader {
+    pub path: std::path::PathBuf,
+}
 
-/// Parse a [PLS playlist](https://en.wikipedia.org/wiki/PLS_(file_format))
-pub fn from_file(path: &std::path::Path, index: StationIndex) -> Result<Station> {
-    let mut reader = std::fs::File::open(path)?;
-    let maybe_tracks = pls::parse(&mut reader)
-        .map(|entries| {
-            entries
-                .into_iter()
-                .map(|entry| Track {
-                    title: entry.title.map(ArcStr::from),
-                    album: None,
-                    artist: None,
-                    url: entry.path.into(),
-                    is_notification: false,
+impl super::StationLoader for Loader {
+    type Metadata = ();
+    type Handle = ();
+    type Track = Track;
+    type Error = super::BadStationFile;
+
+    const STATION_TYPE: rradio_messages::StationType = rradio_messages::StationType::UrlList;
+
+    async fn load_station_parts(
+        self,
+        _: Option<()>,
+        _: impl FnOnce(super::PartialInfo),
+    ) -> Result<(Option<super::StationTitle>, Vec<Track>, (), ()), super::BadStationFile> {
+        use anyhow::Context;
+
+        let Self { path } = self;
+
+        Ok((
+            None,
+            std::fs::File::open(&path)
+                .context(format!("Failed to read {}", path.display()))
+                .and_then(|mut data| {
+                    pls::parse(&mut data).context(format!("Failed to parse {}", path.display()))
                 })
-                .collect()
-        })
-        .map_err(Error::new);
-    Ok(Station::UrlList {
-        index: Some(index),
-        title: None,
-        tracks: maybe_tracks?,
-    })
+                .map_err(|error| super::BadStationFile { error })?
+                .into_iter()
+                .map(Track)
+                .collect(),
+            (),
+            (),
+        ))
+    }
 }

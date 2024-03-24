@@ -9,7 +9,7 @@ use super::playbin::{IgnorePipelineError, PipelineError, PipelineState, Playbin}
 use crate::{
     config::Config,
     ports::PartialPortChannels,
-    station::{PlaylistMetadata, Station, Track},
+    station::{Handle as StationHandle, Metadata as StationMetadata, Station, Track},
     stream_select::StreamSelect,
     tag::Tag,
 };
@@ -51,8 +51,8 @@ struct PlaylistState {
     pause_before_playing: Option<std::time::Duration>,
     tracks: Arc<[Track]>,
     current_track_index: usize,
-    playlist_metadata: crate::station::PlaylistMetadata,
-    _playlist_handle: crate::station::PlaylistHandle,
+    playlist_metadata: crate::station::Metadata,
+    _playlist_handle: crate::station::Handle,
 }
 
 impl PlaylistState {
@@ -87,6 +87,26 @@ impl PlaylistState {
     }
 }
 
+#[derive(Debug)]
+enum NewStationRequest {
+    WithIndex {
+        index: StationIndex,
+    },
+    WithTracks {
+        title: String,
+        tracks: Vec<rradio_messages::SetPlaylistTrack>,
+    },
+}
+
+impl NewStationRequest {
+    fn station_index(&self) -> Option<&StationIndex> {
+        match self {
+            NewStationRequest::WithIndex { index } => Some(index),
+            NewStationRequest::WithTracks { .. } => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct PlayerState {
     pub pipeline_state: PipelineState,
@@ -107,11 +127,11 @@ pub struct PlayerState {
 struct StationResumeInfo {
     track_index: usize,
     track_position: Duration,
-    metadata: PlaylistMetadata,
+    metadata: StationMetadata,
 }
 
 struct Controller {
-    config: Config,
+    config: Arc<Config>,
     playbin: Playbin,
     current_playlist: Option<PlaylistState>,
     published_state: PlayerState,
@@ -295,9 +315,9 @@ impl Controller {
         self.new_state_tx.send(self.published_state.clone()).ok();
     }
 
-    fn create_resume_info(
+    fn resume_info_of_current_station(
         &self,
-        new_station_index: &StationIndex,
+        new_station_index: Option<&StationIndex>,
     ) -> Option<(StationIndex, StationResumeInfo)> {
         let CurrentStation::PlayingStation {
             index: Some(current_station_index),
@@ -308,7 +328,7 @@ impl Controller {
             return None;
         };
 
-        if new_station_index == current_station_index {
+        if new_station_index == Some(current_station_index) {
             return None;
         }
 
@@ -330,9 +350,9 @@ impl Controller {
     }
 
     #[tracing::instrument(skip(self))]
-    fn save_resume_info(&mut self, new_station_index: &StationIndex) {
+    fn save_resume_info(&mut self, new_station_index: Option<&StationIndex>) {
         let Some((current_station_index, station_resume_info)) =
-            self.create_resume_info(new_station_index)
+            self.resume_info_of_current_station(new_station_index)
         else {
             return;
         };
@@ -348,40 +368,65 @@ impl Controller {
     }
 
     #[tracing::instrument(skip(self))]
-    async fn play_station(&mut self, new_station: Station) -> Result<(), Error> {
-        if let Some(index) = new_station.index() {
-            self.save_resume_info(index);
-        }
-
-        let resume_info = new_station
-            .index()
-            .and_then(|index| self.station_resume_info.remove(index));
-
-        self.clear_playlist();
+    async fn play_station(&mut self, request: NewStationRequest) -> Result<(), Error> {
+        self.save_resume_info(request.station_index());
 
         self.error_recovery_attempts_remaining = self.config.maximum_error_recovery_attempts;
 
-        self.published_state.current_station =
-            Arc::new(rradio_messages::CurrentStation::PlayingStation {
-                index: new_station.index().cloned(),
-                title: new_station.title().map(ArcStr::from),
-                source_type: new_station.station_type(),
-                tracks: None,
-            });
+        self.clear_playlist();
 
-        self.set_is_muted(false).ok();
+        let (playlist, resume_info) = match request {
+            NewStationRequest::WithIndex { index } => {
+                let resume_info = self.station_resume_info.remove(&index);
 
-        self.broadcast_state_change();
+                (
+                    crate::station::load_station_with_index(
+                        &self.config.clone(),
+                        index.clone(),
+                        resume_info
+                            .as_ref()
+                            .map(|resume_info| &resume_info.metadata),
+                        |crate::station::Info { title, source_type }| {
+                            self.published_state.current_station =
+                                Arc::new(rradio_messages::CurrentStation::PlayingStation {
+                                    index: Some(index),
+                                    title: title.map(From::from),
+                                    source_type,
+                                    tracks: None,
+                                });
 
-        let playlist = new_station
-            .into_playlist(
-                resume_info
-                    .as_ref()
-                    .map(|resume_info| &resume_info.metadata),
-            )
-            .await?;
+                            self.broadcast_state_change();
+                        },
+                    )
+                    .await?,
+                    resume_info,
+                )
+            }
+            NewStationRequest::WithTracks { title, tracks } => {
+                self.clear_playlist();
 
-        tracing::debug!("Station tracks: {:?}", playlist.tracks);
+                (
+                    Station {
+                        index: None,
+                        title: Some(title),
+                        r#type: rradio_messages::StationType::UrlList,
+                        tracks: tracks
+                            .into_iter()
+                            .map(|rradio_messages::SetPlaylistTrack { title, url }| Track {
+                                title: Some(title.into()),
+                                album: None,
+                                artist: None,
+                                url: url.into(),
+                                is_notification: false,
+                            })
+                            .collect(),
+                        metadata: StationMetadata::default(),
+                        handle: StationHandle::default(),
+                    },
+                    None,
+                )
+            }
+        };
 
         let playlist_tracks = if playlist.tracks.len() > 1 {
             let prefix_notification = self
@@ -403,16 +448,10 @@ impl Controller {
             prefix_notification
                 .chain(playlist.tracks)
                 .chain(suffix_notification)
-                .collect()
+                .collect::<Arc<[Track]>>()
         } else {
-            Arc::<[Track]>::from(playlist.tracks)
+            playlist.tracks.into()
         };
-
-        tracing::trace!(
-            "Resume Info for {:?}: {:?}",
-            playlist.station_index,
-            resume_info
-        );
 
         self.current_playlist = Some(PlaylistState {
             pause_before_playing: None,
@@ -426,9 +465,9 @@ impl Controller {
 
         self.published_state.current_station =
             Arc::new(rradio_messages::CurrentStation::PlayingStation {
-                index: playlist.station_index,
-                title: playlist.station_title.map(ArcStr::from),
-                source_type: playlist.station_type,
+                index: playlist.index,
+                title: playlist.title.map(ArcStr::from),
+                source_type: playlist.r#type,
                 tracks: Some(playlist_tracks),
             });
 
@@ -473,7 +512,7 @@ impl Controller {
         tracing::debug!("Processing Command");
         match command {
             Command::SetChannel(index) => {
-                self.play_station(Station::load(&self.config, index)?)
+                self.play_station(NewStationRequest::WithIndex { index })
                     .await?;
                 Ok(())
             }
@@ -503,12 +542,9 @@ impl Controller {
             Command::VolumeDown => self.change_volume(-1),
             Command::SetVolume(volume) => self.set_volume(volume),
             Command::SetPlaylist { title, tracks } => {
-                self.play_station(Station::UrlList {
-                    index: None,
-                    title: Some(title),
-                    tracks: tracks.into_iter().map(Track::from).collect(),
-                })
-                .await?;
+                self.play_station(NewStationRequest::WithTracks { title, tracks })
+                    .await?;
+
                 Ok(())
             }
             Command::Eject => {
@@ -818,7 +854,7 @@ enum Message {
 /// Initialise the gstreamer pipeline, and process incoming commands
 #[allow(clippy::too_many_lines)]
 pub fn run(
-    config: Config,
+    config: Arc<Config>,
 ) -> anyhow::Result<(
     impl std::future::Future<Output = ()>,
     PartialPortChannels<crate::ports::NoShutdownSignal>,

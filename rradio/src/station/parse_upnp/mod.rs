@@ -1,12 +1,8 @@
 use std::path::{Path, PathBuf};
 
-use rradio_messages::StationIndex;
-
 use anyhow::{Context, Result};
 use rand::{prelude::SliceRandom, Rng};
 use url::Url;
-
-use super::Track;
 
 mod container;
 mod root_description;
@@ -222,50 +218,25 @@ impl TracksBuilder {
 
         self
     }
-
-    fn tracks(self) -> Vec<Track> {
-        self.items.into_iter().map(Track::from).collect()
-    }
 }
 
 #[derive(Clone)]
-struct Metadata {
-    station_index: Option<StationIndex>,
+pub struct Metadata {
     station_title: Option<String>,
-    tracks: Vec<Track>,
+    tracks: Vec<container::Item>,
 }
 
 impl super::TypeName for Metadata {
     const TYPE_NAME: &'static str = "UPnP Metadata";
 }
 
-impl Metadata {
-    fn into_playlist(self) -> super::Playlist {
-        let Metadata {
-            station_index,
-            station_title,
-            tracks,
-        } = self.clone();
-
-        super::Playlist {
-            station_index,
-            station_title,
-            station_type: rradio_messages::StationType::UPnP,
-            tracks,
-            metadata: super::PlaylistMetadata::new(self),
-            handle: super::PlaylistHandle::default(),
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct Station {
-    index: StationIndex,
     envelope: Envelope,
 }
 
 impl Station {
-    pub fn from_file(path: &std::path::Path, index: StationIndex) -> Result<Self> {
+    fn from_file(path: &std::path::Path) -> Result<Self> {
         tracing::trace!("Parsing upnp playlist");
 
         let file = std::fs::read_to_string(path)
@@ -274,57 +245,82 @@ impl Station {
         let envelope = toml::from_str(&file)
             .with_context(|| format!(r#"Failed to parse "{}""#, path.display()))?;
 
-        Ok(Self { index, envelope })
+        Ok(Self { envelope })
     }
 
-    pub fn index(&self) -> &StationIndex {
-        &self.index
-    }
-
-    pub fn title(&self) -> Option<&str> {
-        self.envelope.container().station_title.as_deref()
-    }
-
-    pub async fn into_playlist(
+    async fn into_playlist(
         self,
-        metadata: Option<&super::PlaylistMetadata>,
-    ) -> Result<super::Playlist> {
-        if let Some(metadata) = metadata.and_then(super::PlaylistMetadata::get::<Metadata>) {
-            return Ok(metadata.into_playlist());
-        }
+        metadata: Option<Metadata>,
+    ) -> Result<(
+        Option<super::StationTitle>,
+        Vec<container::Item>,
+        Metadata,
+        (),
+    )> {
+        let new_metadata = if let Some(metadata) = metadata {
+            metadata
+        } else {
+            let station_title = self.envelope.container().station_title.clone();
+            let tracks =
+                RootContainerBuilder::new(self.envelope.container().root_description_url.clone())
+                    .await?
+                    .with_container_path(&self.envelope.container().container)
+                    .await?
+                    .tracks(&self.envelope)
+                    .await?
+                    .filter_upnp_class(self.envelope.container().filter_upnp_class.as_deref())
+                    .sort_tracks(self.envelope.container().sort_by)
+                    .limit_track_count(self.envelope.container().limit_track_count)
+                    .items;
 
-        let station_index = Some(self.index);
-        let station_title = self.envelope.container().station_title.clone();
-        let tracks =
-            RootContainerBuilder::new(self.envelope.container().root_description_url.clone())
-                .await?
-                .with_container_path(&self.envelope.container().container)
-                .await?
-                .tracks(&self.envelope)
-                .await?
-                .filter_upnp_class(self.envelope.container().filter_upnp_class.as_deref())
-                .sort_tracks(self.envelope.container().sort_by)
-                .limit_track_count(self.envelope.container().limit_track_count)
-                .tracks();
-
-        let metadata = Metadata {
-            station_index: station_index.clone(),
-            station_title: station_title.clone(),
-            tracks: tracks.clone(),
+            Metadata {
+                station_title: station_title.clone(),
+                tracks: tracks.clone(),
+            }
         };
 
-        Ok(super::Playlist {
-            station_index,
-            station_title,
-            station_type: rradio_messages::StationType::UPnP,
-            tracks,
-            metadata: super::PlaylistMetadata::new(metadata),
-            handle: super::PlaylistHandle::default(),
-        })
+        Ok((
+            new_metadata
+                .station_title
+                .clone()
+                .map(|station_title| super::StationTitle { station_title }),
+            new_metadata.tracks.clone(),
+            new_metadata,
+            (),
+        ))
     }
 }
 
-/// Parse a `UPnP` Station
-pub fn from_file(path: &std::path::Path, index: StationIndex) -> Result<super::Station> {
-    Station::from_file(path, index).map(super::Station::UPnP)
+pub struct Loader {
+    pub path: std::path::PathBuf,
+}
+
+impl super::StationLoader for Loader {
+    type Metadata = Metadata;
+    type Handle = ();
+    type Track = container::Item;
+    type Error = rradio_messages::StationError;
+
+    const STATION_TYPE: rradio_messages::StationType = rradio_messages::StationType::UPnP;
+
+    async fn load_station_parts(
+        self,
+        metadata: Option<Metadata>,
+        publish_station_info: impl FnOnce(super::PartialInfo),
+    ) -> std::result::Result<
+        (Option<super::StationTitle>, Vec<Self::Track>, Metadata, ()),
+        rradio_messages::StationError,
+    > {
+        let Self { path } = self;
+
+        let station = Station::from_file(&path).map_err(|error| super::BadStationFile { error })?;
+
+        publish_station_info(super::PartialInfo {
+            title: station.envelope.container().station_title.as_deref(),
+        });
+
+        station.into_playlist(metadata).await.map_err(|err| {
+            rradio_messages::StationError::UPnPError(rradio_messages::arcstr::format!("{err:#}"))
+        })
+    }
 }

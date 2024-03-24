@@ -256,7 +256,7 @@ impl Pinger {
         }
     }
 
-    async fn run(mut self, initial_ping_address: ArcStr) {
+    async fn run(mut self, initial_ping_address: &str) {
         let initial_url_str = rradio_messages::arcstr::format!("http://{}", initial_ping_address);
         let mut track_url_str = {
             let interruption = self.run_sequence(initial_url_str, true).await.unwrap_err();
@@ -293,7 +293,7 @@ impl Pinger {
 }
 
 pub fn run(
-    config: crate::config::ping::Config,
+    config: std::sync::Arc<crate::config::ping::Config>,
 ) -> Result<
     (
         impl std::future::Future<Output = ()>,
@@ -332,7 +332,7 @@ pub fn run(
             track_urls: track_url_rx,
             ping_times: ping_time_tx,
         }
-        .run(config.initial_ping_address)
+        .run(&config.initial_ping_address)
         .await;
 
         tracing::debug!("Shut down");

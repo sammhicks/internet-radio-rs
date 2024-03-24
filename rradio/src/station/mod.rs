@@ -1,7 +1,7 @@
 //! A radio station in rradio
 use std::{any::Any, fmt, sync::Arc};
 
-use rradio_messages::{arcstr, ArcStr, StationIndex, StationType};
+use rradio_messages::{arcstr, StationIndex, StationType};
 pub use rradio_messages::{StationError as Error, Track};
 
 mod parse_m3u;
@@ -27,10 +27,14 @@ trait TypeName {
     const TYPE_NAME: &'static str;
 }
 
-#[derive(Clone)]
-pub struct PlaylistMetadata(Arc<dyn Any + Send + Sync>);
+impl TypeName for () {
+    const TYPE_NAME: &'static str = "()";
+}
 
-impl PlaylistMetadata {
+#[derive(Clone)]
+pub struct Metadata(Arc<dyn Any + Send + Sync>);
+
+impl Metadata {
     fn new(metadata: impl Any + Send + Sync + 'static) -> Self {
         Self(Arc::new(metadata))
     }
@@ -52,7 +56,7 @@ impl PlaylistMetadata {
     }
 }
 
-impl fmt::Debug for PlaylistMetadata {
+impl fmt::Debug for Metadata {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("PlaylistMetadata")
             .field(&(*self.0).type_id())
@@ -60,22 +64,15 @@ impl fmt::Debug for PlaylistMetadata {
     }
 }
 
-impl Default for PlaylistMetadata {
+impl Default for Metadata {
     fn default() -> Self {
         Self(Arc::new(()))
     }
 }
 
-pub struct PlaylistHandle(Box<dyn Any + Send + Sync>);
+pub struct Handle(Box<dyn Any + Send + Sync>);
 
-impl PlaylistHandle {
-    #[cfg(feature = "mount")]
-    fn new(handle: impl Any + Send + Sync + 'static) -> Self {
-        Self(Box::new(handle))
-    }
-}
-
-impl fmt::Debug for PlaylistHandle {
+impl fmt::Debug for Handle {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("PlaylistHandle")
             .field(&(*self.0).type_id())
@@ -84,202 +81,176 @@ impl fmt::Debug for PlaylistHandle {
     }
 }
 
-impl Default for PlaylistHandle {
+impl Default for Handle {
     fn default() -> Self {
         Self(Box::new(()))
     }
 }
 
-pub struct Playlist {
-    pub station_index: Option<StationIndex>,
-    pub station_title: Option<String>,
-    pub station_type: rradio_messages::StationType,
-    pub tracks: Vec<Track>,
-    pub metadata: PlaylistMetadata,
-    pub handle: PlaylistHandle,
-}
-
-/// A station description
 #[derive(Debug)]
-pub enum Station {
-    UrlList {
-        index: Option<StationIndex>,
-        title: Option<String>,
-        tracks: Vec<Track>,
-    },
-    #[cfg(feature = "cd")]
-    CD {
-        index: StationIndex,
-        device: String,
-    },
-    #[cfg(feature = "smb")]
-    Smb(smb::Station),
-    #[cfg(feature = "usb")]
-    Usb {
-        index: StationIndex,
-        device: String,
-        path: std::path::PathBuf,
-    },
-    UPnP(parse_upnp::Station),
+pub struct Station {
+    pub index: Option<StationIndex>,
+    pub title: Option<String>,
+    pub r#type: rradio_messages::StationType,
+    pub tracks: Vec<Track>,
+    pub metadata: Metadata,
+    pub handle: Handle,
 }
 
-/// Convert an [`std::io::Error`] into a [`rradio_messages::StationError::StationsDirectoryIoError`]
-fn stations_directory_io_error<T>(
-    directory: &ArcStr,
-    result: std::io::Result<T>,
-) -> Result<T, Error> {
-    result.map_err(|err| Error::StationsDirectoryIoError {
-        directory: directory.clone(),
-        err: arcstr::format!("{err}"),
-    })
+// impl Station {
+//     pub fn from_url_list()
+// }
+
+struct BadStationFile {
+    error: anyhow::Error,
 }
 
-/// Convert an [`anyhow::Error`] into a [`rradio_messages::StationError::BadStationFile`]
-fn playlist_error<T>(result: anyhow::Result<T>) -> Result<T, Error> {
-    result.map_err(|err| rradio_messages::StationError::BadStationFile(format!("{err:#}").into()))
+impl<E: std::error::Error + Send + Sync + 'static> From<E> for BadStationFile {
+    fn from(error: E) -> Self {
+        Self {
+            error: error.into(),
+        }
+    }
 }
 
-impl Station {
-    /// Load the station with the given index from the given directory, if the index exists
-    pub fn load(config: &crate::config::Config, index: StationIndex) -> Result<Self, Error> {
-        let directory = &config.stations_directory;
-
-        #[cfg(feature = "cd")]
-        if index.as_str() == config.cd_config.station {
-            return Ok(Self::CD {
-                index,
-                device: config.cd_config.device.to_string(),
-            });
-        }
-
-        #[cfg(feature = "usb")]
-        if index.as_str() == config.usb_config.station {
-            return Ok(Self::Usb {
-                index,
-                device: config.usb_config.device.to_string(),
-                path: config.usb_config.path.clone(),
-            });
-        }
-
-        for entry in stations_directory_io_error(directory, std::fs::read_dir(directory.as_str()))?
-        {
-            let entry = stations_directory_io_error(directory, entry)?;
-            let name = entry.file_name();
-
-            if name.to_string_lossy().starts_with(index.as_str()) {
-                let path = entry.path();
-                return match entry
-                    .path()
-                    .extension()
-                    .ok_or_else(|| Error::BadStationFile("File has no extension".into()))?
-                    .to_string_lossy()
-                    .as_ref()
-                {
-                    "m3u" => playlist_error(parse_m3u::from_file(&path, index)),
-                    "pls" => playlist_error(parse_pls::from_file(&path, index)),
-                    "upnp" => playlist_error(parse_upnp::from_file(&path, index)),
-                    #[cfg(feature = "smb")]
-                    "smb" => playlist_error(smb::from_file(&path, index)),
-                    extension => Err(Error::BadStationFile(
-                        format!("Unsupported format: \"{extension}\"").into(),
-                    )),
-                };
-            }
-        }
-
-        Err(rradio_messages::StationError::StationNotFound {
-            index,
-            directory: directory.clone(),
-        })
+impl From<BadStationFile> for Error {
+    fn from(BadStationFile { error }: BadStationFile) -> Self {
+        rradio_messages::StationError::BadStationFile(format!("{error:#}").into())
     }
+}
 
-    pub fn index(&self) -> Option<&StationIndex> {
-        match self {
-            Station::UrlList { index, .. } => index.as_ref(),
-            #[cfg(feature = "cd")]
-            Station::CD { index, .. } => Some(index),
-            #[cfg(feature = "smb")]
-            Self::Smb(station) => Some(station.index()),
-            #[cfg(feature = "usb")]
-            Station::Usb { index, .. } => Some(index),
-            Station::UPnP(station) => Some(station.index()),
-        }
-    }
+struct PartialInfo<'a> {
+    pub title: Option<&'a str>,
+}
 
-    pub fn title(&self) -> Option<&str> {
-        match self {
-            Station::UrlList { title, .. } => title.as_deref(),
-            #[cfg(feature = "cd")]
-            Station::CD { .. } => None,
-            #[cfg(feature = "smb")]
-            Self::Smb(station) => Some(station.title()),
-            #[cfg(feature = "usb")]
-            Station::Usb { .. } => None,
-            Station::UPnP(station) => station.title(),
-        }
-    }
+pub struct Info<'a> {
+    pub title: Option<&'a str>,
+    pub source_type: StationType,
+}
 
-    pub fn station_type(&self) -> StationType {
-        match self {
-            Station::UrlList { .. } => StationType::UrlList,
-            #[cfg(feature = "cd")]
-            Station::CD { .. } => StationType::CD,
-            #[cfg(feature = "smb")]
-            Self::Smb(..) => StationType::UPnP,
-            #[cfg(feature = "usb")]
-            Station::Usb { .. } => StationType::Usb,
-            Station::UPnP(..) => StationType::UPnP,
-        }
-    }
+struct StationTitle {
+    station_title: String,
+}
 
-    #[allow(clippy::unnecessary_wraps)]
-    pub async fn into_playlist(
+trait StationLoader: Sized {
+    type Metadata: Any + TypeName + Clone + Send + Sync + 'static;
+    type Handle: Send + Sync + 'static;
+    type Track: Into<rradio_messages::Track>;
+    type Error: Into<Error>;
+
+    const STATION_TYPE: StationType;
+
+    async fn load_station_parts(
         self,
-        metadata: Option<&PlaylistMetadata>,
-    ) -> Result<Playlist, Error> {
-        match self {
-            Station::UrlList {
-                index,
-                title,
-                tracks,
-            } => Ok(Playlist {
-                station_index: index,
-                station_title: title,
-                station_type: StationType::UrlList,
-                tracks,
-                metadata: PlaylistMetadata::default(),
-                handle: PlaylistHandle::default(),
-            }),
-            #[cfg(feature = "cd")]
-            Station::CD { index, device } => Ok(Playlist {
-                station_index: Some(index),
-                station_title: None,
-                station_type: StationType::CD,
-                tracks: cd::tracks(&device)?,
-                metadata: PlaylistMetadata::default(),
-                handle: PlaylistHandle::default(),
-            }),
-            #[cfg(feature = "smb")]
-            Self::Smb(station) => station.into_playlist(metadata).map_err(Error::MountError),
-            #[cfg(feature = "usb")]
-            Station::Usb {
-                index,
-                device,
-                path,
-            } => {
-                let (tracks, metadata, handle) = usb::load(&device, &path, metadata)?;
-                Ok(Playlist {
-                    station_index: Some(index),
-                    station_title: None,
-                    station_type: StationType::Usb,
-                    tracks,
-                    metadata,
-                    handle,
-                })
-            }
-            Station::UPnP(station) => station.into_playlist(metadata).await.map_err(|err| {
-                rradio_messages::StationError::UPnPError(arcstr::format!("{err:#}"))
-            }),
+        metadata: Option<Self::Metadata>,
+        publish_station_info: impl FnOnce(PartialInfo),
+    ) -> Result<
+        (
+            Option<StationTitle>,
+            Vec<Self::Track>,
+            Self::Metadata,
+            Self::Handle,
+        ),
+        Self::Error,
+    >;
+
+    async fn load_station(
+        self,
+        index: StationIndex,
+        metadata: Option<&Metadata>,
+        publish_station_info: impl FnOnce(Info),
+    ) -> Result<Station, Error> {
+        self.load_station_parts(
+            metadata.as_ref().and_then(|metadata| metadata.get()),
+            |PartialInfo { title }| {
+                publish_station_info(Info {
+                    title,
+                    source_type: Self::STATION_TYPE,
+                });
+            },
+        )
+        .await
+        .map(|(station_title, tracks, metadata, handle)| Station {
+            index: Some(index),
+            title: station_title.map(|StationTitle { station_title }| station_title),
+            r#type: Self::STATION_TYPE,
+            tracks: tracks.into_iter().map(Into::into).collect(),
+            metadata: Metadata::new(metadata),
+            handle: Handle(Box::new(handle)),
+        })
+        .map_err(Into::into)
+    }
+}
+
+pub async fn load_station_with_index(
+    config: &crate::config::Config,
+    index: StationIndex,
+    metadata: Option<&Metadata>,
+    publish_station_info: impl FnOnce(Info),
+) -> Result<Station, Error> {
+    #[cfg(feature = "cd")]
+    if index.as_str() == config.cd_config.station {
+        return cd::Loader {
+            device: &config.cd_config.device,
+        }
+        .load_station(index, metadata, publish_station_info)
+        .await;
+    }
+
+    let directory = &config.stations_directory;
+
+    for entry in
+        std::fs::read_dir(directory.as_str()).map_err(|err| Error::StationsDirectoryIoError {
+            directory: directory.clone(),
+            err: arcstr::format!("{err}"),
+        })?
+    {
+        let entry = entry.map_err(|err| Error::StationsDirectoryIoError {
+            directory: directory.clone(),
+            err: arcstr::format!("{err}"),
+        })?;
+
+        let name = entry.file_name();
+
+        if name.to_string_lossy().starts_with(index.as_str()) {
+            let path = entry.path();
+            return match entry
+                .path()
+                .extension()
+                .ok_or_else(|| Error::BadStationFile("File has no extension".into()))?
+                .to_string_lossy()
+                .as_ref()
+            {
+                "m3u" => {
+                    parse_m3u::Loader { path }
+                        .load_station(index, metadata, publish_station_info)
+                        .await
+                }
+                "pls" => {
+                    parse_pls::Loader { path }
+                        .load_station(index, metadata, publish_station_info)
+                        .await
+                }
+                "upnp" => {
+                    parse_upnp::Loader { path }
+                        .load_station(index, metadata, publish_station_info)
+                        .await
+                }
+                #[cfg(feature = "smb")]
+                "smb" => {
+                    smb::Loader { path }
+                        .load_station(index, metadata, publish_station_info)
+                        .await
+                }
+                extension => Err(Error::BadStationFile(
+                    format!("Unsupported format: \"{extension}\"").into(),
+                )),
+            };
         }
     }
+
+    Err(rradio_messages::StationError::StationNotFound {
+        index,
+        directory: directory.clone(),
+    })
 }

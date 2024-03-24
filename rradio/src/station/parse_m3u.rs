@@ -1,18 +1,56 @@
-use anyhow::{Context, Result};
-
-use rradio_messages::StationIndex;
-
-use super::{Station, Track};
-
-/// Parse an [M3U playlist](https://en.wikipedia.org/wiki/M3U)
-pub fn from_file(path: &std::path::Path, index: StationIndex) -> Result<Station> {
-    let playlist_text = std::fs::read_to_string(path)
-        .with_context(|| format!("Failed to read {}", path.display()))?;
-
-    from_str(&playlist_text, index)
+pub struct Track {
+    title: Option<rradio_messages::ArcStr>,
+    url: String,
 }
 
-fn from_str(src: &str, index: StationIndex) -> Result<Station> {
+impl From<Track> for super::Track {
+    fn from(Track { title, url }: Track) -> Self {
+        Self {
+            title,
+            album: None,
+            artist: None,
+            url: url.into(),
+            is_notification: false,
+        }
+    }
+}
+
+/// [`super::StationLoader`] for an [M3U playlist](https://en.wikipedia.org/wiki/M3U)
+pub struct Loader {
+    pub path: std::path::PathBuf,
+}
+
+impl super::StationLoader for Loader {
+    type Metadata = ();
+    type Handle = ();
+    type Track = Track;
+    type Error = super::BadStationFile;
+
+    const STATION_TYPE: rradio_messages::StationType = rradio_messages::StationType::UrlList;
+
+    async fn load_station_parts(
+        self,
+        _: Option<()>,
+        _: impl FnOnce(super::PartialInfo),
+    ) -> Result<(Option<super::StationTitle>, Vec<Track>, (), ()), super::BadStationFile> {
+        let Self { path } = self;
+
+        let playlist_text =
+            std::fs::read_to_string(&path).map_err(|error| super::BadStationFile {
+                error: anyhow::Error::new(error)
+                    .context(format!("Failed to read {}", path.display())),
+            })?;
+
+        let (station_title, tracks) =
+            from_str(&playlist_text).map_err(|error| super::BadStationFile { error })?;
+
+        Ok((station_title, tracks, (), ()))
+    }
+}
+
+fn from_str(src: &str) -> anyhow::Result<(Option<super::StationTitle>, Vec<Track>)> {
+    use anyhow::Context;
+
     let lines = src.lines().map(str::trim).filter(|line| !line.is_empty());
 
     if src.starts_with("#EXTM3U") {
@@ -24,7 +62,10 @@ fn from_str(src: &str, index: StationIndex) -> Result<Station> {
             let (line_num, line) = lines.next()?;
 
             if let Some(playlist) = line.strip_prefix("#PLAYLIST:") {
-                title = Some(String::from(playlist.trim()));
+                title = Some(super::StationTitle {
+                    station_title: playlist.trim().into(),
+                });
+
                 continue;
             }
 
@@ -45,108 +86,67 @@ fn from_str(src: &str, index: StationIndex) -> Result<Station> {
                     Err(err) => return Some(Err(err)),
                 };
 
-                return Some(Ok(Track {
-                    title,
-                    album: None,
-                    artist: None,
-                    url,
-                    is_notification: false,
-                }));
+                return Some(Ok(Track { title, url }));
             }
 
             if !line.starts_with('#') {
                 return Some(Ok(Track {
                     title: None,
-                    album: None,
-                    artist: None,
                     url: line.into(),
-                    is_notification: false,
                 }));
             }
         })
-        .collect::<Result<_>>()?;
+        .collect::<anyhow::Result<_>>()?;
 
-        Ok(Station::UrlList {
-            index: Some(index),
-            title,
-            tracks,
-        })
+        Ok((title, tracks))
     } else {
         let tracks = lines
             .filter(|line| !line.starts_with('#'))
             .map(|url| Track {
                 title: None,
-                album: None,
-                artist: None,
                 url: url.into(),
-                is_notification: false,
             })
             .collect();
 
-        Ok(Station::UrlList {
-            index: Some(index),
-            title: None,
-            tracks,
-        })
+        Ok((None, tracks))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use rradio_messages::{StationIndex, Track};
-
-    use super::{from_str, Station};
-
-    const INDEX: &str = "42";
+    use super::{from_str, Track};
 
     fn verify_track(title: Option<&str>, url: &str, track: &Track) {
         assert_eq!(track.title.as_deref(), title);
-        assert_eq!(track.album, None);
-        assert_eq!(track.artist, None);
         assert_eq!(track.url.as_str(), url);
-        assert!(!track.is_notification);
     }
 
     fn verify_station<const N: usize>(
-        station: Station,
+        (title, tracks): (Option<super::super::StationTitle>, Vec<Track>),
         test_title: Option<&str>,
         test_tracks: [fn(&Track); N],
     ) {
-        if let Station::UrlList {
-            index,
-            title,
-            tracks,
-        } = station
-        {
-            assert_eq!(
-                index.as_ref().map(rradio_messages::StationIndex::as_str),
-                Some(INDEX)
-            );
-            assert_eq!(title.as_deref(), test_title);
+        assert_eq!(
+            title.as_ref().map(|title| title.station_title.as_str()),
+            test_title
+        );
 
-            assert_eq!(tracks.len(), test_tracks.len());
+        assert_eq!(tracks.len(), test_tracks.len());
 
-            for (track, test_track) in tracks.iter().zip(IntoIterator::into_iter(test_tracks)) {
-                test_track(track);
-            }
-        } else {
-            panic!("Expected UrlList, found {:?}", station);
+        for (track, test_track) in tracks.iter().zip(IntoIterator::into_iter(test_tracks)) {
+            test_track(track);
         }
     }
 
     #[test]
     fn empty_file() {
-        verify_station(
-            from_str("", StationIndex::new(INDEX.into())).unwrap(),
-            None,
-            [],
-        );
+        verify_station(from_str("").unwrap(), None, []);
     }
 
     #[test]
     fn m3u_file() {
         verify_station(
-            from_str("a\nb\n\nc\n", StationIndex::new(INDEX.into())).unwrap(),
+            from_str("a\nb\n\nc\n").unwrap(),
             None,
             [
                 |track| verify_track(None, "a", track),
@@ -161,7 +161,6 @@ mod tests {
         verify_station(
             from_str(
                 "#EXTM3U\n#PLAYLIST: P\n#EXTINF:-1, A\na\n#EXTINF:-1, B\n\nb\n\n#EXTINF:-1, C\nc\n",
-                StationIndex::new(INDEX.into()),
             )
             .unwrap(),
             Some("P"),
@@ -176,11 +175,7 @@ mod tests {
     #[test]
     fn extm3u_file_extinf_missing() {
         verify_station(
-            from_str(
-                "#EXTM3U\n#EXTINF:-1, A\na\n\n\nb\n\n#EXTINF:-1, C\nc\n",
-                StationIndex::new(INDEX.into()),
-            )
-            .unwrap(),
+            from_str("#EXTM3U\n#EXTINF:-1, A\na\n\n\nb\n\n#EXTINF:-1, C\nc\n").unwrap(),
             None,
             [
                 |track| verify_track(Some("A"), "a", track),

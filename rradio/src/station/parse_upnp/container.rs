@@ -58,7 +58,7 @@ struct ItemDerive {
     urls: Vec<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Item {
     pub upnp_class: String,
     pub track_number: usize,

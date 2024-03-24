@@ -16,25 +16,37 @@ mod task;
 fn main() -> Result<()> {
     let log_filter_reload_handle = setup_logging();
 
-    let mut config_path = String::from(option_env!("RRADIO_CONFIG_PATH").unwrap_or("config.toml"));
+    let config_file_path = {
+        let mut config_file_path_from_args = None;
 
-    let mut args = std::env::args().skip(1);
+        let mut args = std::env::args().skip(1);
 
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "-c" | "--config" => {
-                config_path = args.next().context("No config specified")?;
+        while let Some(arg) = args.next() {
+            match arg.as_str() {
+                "-c" | "--config" => {
+                    if let Some(existing_config_file_path) = config_file_path_from_args
+                        .replace(args.next().context("No config specified")?)
+                    {
+                        anyhow::bail!(
+                            "configuration file already specified as {existing_config_file_path:?}"
+                        );
+                    }
+                }
+                "-V" | "--version" => {
+                    println!("{} v{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+                    println!("rradio-messages v{}", rradio_messages::VERSION);
+                    return Ok(());
+                }
+                _ => return Err(anyhow::Error::msg(format!("Unhandled argument {arg:?}"))),
             }
-            "-V" | "--version" => {
-                println!("{} v{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
-                println!("rradio-messages v{}", rradio_messages::VERSION);
-                return Ok(());
-            }
-            _ => return Err(anyhow::Error::msg(format!("Unhandled argument {arg:?}"))),
         }
-    }
 
-    let config = config::Config::from_file(&config_path); // See config::Config::default() for default config
+        config_file_path_from_args.unwrap_or_else(|| {
+            String::from(option_env!("RRADIO_CONFIG_PATH").unwrap_or("config.toml"))
+        })
+    };
+
+    let config = config::Config::from_file(&config_file_path); // See config::Config::default() for default config
 
     log_filter_reload_handle
         .reload(config.log_level.clone().filter) // Filter logs as specified by config
@@ -44,9 +56,9 @@ fn main() -> Result<()> {
 
     let (shutdown_handle, shutdown_signal) = task::ShutdownSignal::new();
 
-    let (pipeline_task, port_channels) = pipeline::run(config.clone())?;
+    let (pipeline, port_channels_without_shutdown_signal) = pipeline::run(config.clone())?;
 
-    let port_channels = port_channels.with_shutdown_signal(shutdown_signal);
+    let port_channels = port_channels_without_shutdown_signal.with_shutdown_signal(shutdown_signal);
 
     #[cfg(feature = "web")]
     let web_task = ports::web::run(
@@ -65,7 +77,7 @@ fn main() -> Result<()> {
         .build()?; // Setup the async runtime
 
     // Spawn pipeline task outside of shutdown signalling mechanism as it doesn't need to do a graceful shutdown
-    runtime.spawn(pipeline_task);
+    runtime.spawn(pipeline);
 
     runtime.block_on(async {
         let wait_group = task::WaitGroup::new();

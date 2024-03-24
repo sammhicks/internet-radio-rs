@@ -1,12 +1,13 @@
 use std::{
     ffi::OsString,
+    iter::FromIterator,
     path::{Path, PathBuf},
 };
 
 use rand::{seq::SliceRandom, Rng};
-use rradio_messages::Track;
+use rradio_messages::ArcStr;
 
-use super::{mount::Mount, PlaylistHandle, PlaylistMetadata};
+use super::mount::{Handle, Mount};
 
 struct UsbMount<'a> {
     device: &'a str,
@@ -32,39 +33,29 @@ impl super::TypeName for SelectedDirectories {
     const TYPE_NAME: &'static str = "SelectedDirectories";
 }
 
-pub fn load(
-    device: &str,
-    path: &Path,
-    metadata: Option<&PlaylistMetadata>,
-) -> Result<(Vec<Track>, PlaylistMetadata, PlaylistHandle), rradio_messages::MountError> {
-    let handle = UsbMount { device }.mount()?;
-
-    let mut directory = std::path::PathBuf::from(handle.mounted_directory());
-    directory.push(path);
-
-    let (tracks, selected_directories) = random_music_directory(
-        &directory,
-        metadata.and_then(PlaylistMetadata::get::<SelectedDirectories>),
-    )
-    .map_err(|err| {
-        rradio_messages::MountError::ErrorFindingTracks(rradio_messages::arcstr::format!("{err}"))
-    })?
-    .ok_or(rradio_messages::MountError::TracksNotFound)?;
-    Ok((
-        tracks,
-        PlaylistMetadata::new(selected_directories),
-        PlaylistHandle::new(handle),
-    ))
+pub struct Track {
+    title: ArcStr,
+    album: ArcStr,
+    artist: ArcStr,
+    url: ArcStr,
 }
 
-fn filter_directory(
-    item: std::io::Result<std::fs::DirEntry>,
-) -> std::io::Result<Option<std::fs::DirEntry>> {
-    let item = item?;
-    if item.file_type()?.is_dir() {
-        Ok(Some(item))
-    } else {
-        Ok(None)
+impl From<Track> for super::Track {
+    fn from(
+        Track {
+            title,
+            album,
+            artist,
+            url,
+        }: Track,
+    ) -> Self {
+        Self {
+            title: Some(title),
+            album: Some(album),
+            artist: Some(artist),
+            url,
+            is_notification: false,
+        }
     }
 }
 
@@ -72,6 +63,17 @@ fn random_subdirectories(
     directory_path: &Path,
     rng: &mut impl Rng,
 ) -> std::io::Result<Vec<std::fs::DirEntry>> {
+    fn filter_directory(
+        item: std::io::Result<std::fs::DirEntry>,
+    ) -> std::io::Result<Option<std::fs::DirEntry>> {
+        let item = item?;
+        if item.file_type()?.is_dir() {
+            Ok(Some(item))
+        } else {
+            Ok(None)
+        }
+    }
+
     let mut subdirectories = std::fs::read_dir(directory_path)?
         .filter_map(|item| filter_directory(item).transpose())
         .collect::<std::io::Result<Vec<_>>>()?;
@@ -81,44 +83,46 @@ fn random_subdirectories(
     Ok(subdirectories)
 }
 
-pub fn random_music_directory(
+fn album_directory(
     directory_path: &Path,
-    selected_directories: Option<SelectedDirectories>,
-) -> std::io::Result<Option<(Vec<Track>, SelectedDirectories)>> {
-    match selected_directories {
-        Some(selected_directories) => {
-            let SelectedDirectories { album, artist } = &selected_directories;
+    artist: &str,
+    album: &str,
+) -> std::io::Result<Option<Vec<Track>>> {
+    tracing::debug!("Creating playlist from {}", directory_path.display());
 
-            let mut directory_path = PathBuf::from(directory_path);
-            directory_path.push(artist);
-            directory_path.push(album);
+    let mut tracks = Vec::new();
 
-            let artist = artist.to_string_lossy();
-            let album = album.to_string_lossy();
+    for item in std::fs::read_dir(directory_path)? {
+        let item = item?;
+        if item.file_type()?.is_file() {
+            let file_path = item.path();
+            if let Some(name) = file_path.file_stem() {
+                if mime_guess::from_path(&file_path)
+                    .iter()
+                    .any(|mime_type| mime_type.type_() == "audio")
+                {
+                    let title = name.to_string_lossy();
+                    tracing::debug!("Track: {}", title);
 
-            album_directory(&directory_path, &artist, &album)
-                .map(|tracks| tracks.map(|tracks| (tracks, selected_directories)))
-        }
-        None => random_artist_directory(directory_path, &mut rand::thread_rng()),
-    }
-}
-
-fn random_artist_directory(
-    directory_path: &Path,
-    rng: &mut impl Rng,
-) -> std::io::Result<Option<(Vec<Track>, SelectedDirectories)>> {
-    tracing::debug!("Searching {}", directory_path.display());
-    for directory in random_subdirectories(directory_path, rng)? {
-        let artist_directory_name = directory.file_name();
-        let artist = artist_directory_name.to_string_lossy().into_owned();
-        if let Some(playlist) =
-            random_album_directory(&directory.path(), artist_directory_name, &artist, rng)?
-        {
-            return Ok(Some(playlist));
+                    tracks.push(Track {
+                        title: title.into(),
+                        album: album.into(),
+                        artist: artist.into(),
+                        url: rradio_messages::arcstr::format!(
+                            "file://{}",
+                            file_path.to_string_lossy()
+                        ),
+                    });
+                }
+            }
         }
     }
 
-    Ok(None)
+    Ok(if tracks.is_empty() {
+        None
+    } else {
+        Some(tracks)
+    })
 }
 
 fn random_album_directory(
@@ -145,45 +149,87 @@ fn random_album_directory(
     Ok(None)
 }
 
-fn album_directory(
+fn random_artist_directory(
     directory_path: &Path,
-    artist: &str,
-    album: &str,
-) -> std::io::Result<Option<Vec<Track>>> {
-    tracing::debug!("Creating playlist from {}", directory_path.display());
-
-    let mut tracks = Vec::new();
-
-    for item in std::fs::read_dir(directory_path)? {
-        let item = item?;
-        if item.file_type()?.is_file() {
-            let file_path = item.path();
-            if let Some(name) = file_path.file_stem() {
-                if mime_guess::from_path(&file_path)
-                    .iter()
-                    .any(|mime_type| mime_type.type_() == "audio")
-                {
-                    let title = name.to_string_lossy();
-                    tracing::debug!("Track: {}", title);
-
-                    tracks.push(Track {
-                        title: Some(title.into()),
-                        album: Some(album.into()),
-                        artist: Some(artist.into()),
-                        url: rradio_messages::arcstr::format!(
-                            "file://{}",
-                            file_path.to_string_lossy()
-                        ),
-                        is_notification: false,
-                    });
-                }
-            }
+    rng: &mut impl Rng,
+) -> std::io::Result<Option<(Vec<Track>, SelectedDirectories)>> {
+    tracing::debug!("Searching {}", directory_path.display());
+    for directory in random_subdirectories(directory_path, rng)? {
+        let artist_directory_name = directory.file_name();
+        let artist = artist_directory_name.to_string_lossy().into_owned();
+        if let Some(playlist) =
+            random_album_directory(&directory.path(), artist_directory_name, &artist, rng)?
+        {
+            return Ok(Some(playlist));
         }
     }
 
-    Ok(if tracks.is_empty() {
-        None
-    } else {
-        Some(tracks)
-    })
+    Ok(None)
+}
+
+fn random_music_directory(
+    directory_path: &Path,
+    selected_directories: Option<SelectedDirectories>,
+) -> std::io::Result<Option<(Vec<Track>, SelectedDirectories)>> {
+    match selected_directories {
+        Some(selected_directories) => {
+            let SelectedDirectories { album, artist } = &selected_directories;
+
+            let mut directory_path = PathBuf::from(directory_path);
+            directory_path.push(artist);
+            directory_path.push(album);
+
+            let artist = artist.to_string_lossy();
+            let album = album.to_string_lossy();
+
+            album_directory(&directory_path, &artist, &album)
+                .map(|tracks| tracks.map(|tracks| (tracks, selected_directories)))
+        }
+        None => random_artist_directory(directory_path, &mut rand::thread_rng()),
+    }
+}
+
+pub struct Loader<'a> {
+    pub device: &'a str,
+    pub path: &'a Path,
+}
+
+impl<'a> super::StationLoader for Loader<'a> {
+    type Metadata = SelectedDirectories;
+    type Handle = Handle;
+    type Track = Track;
+    type Error = rradio_messages::MountError;
+
+    const STATION_TYPE: rradio_messages::StationType = rradio_messages::StationType::Usb;
+
+    async fn load_station_parts(
+        self,
+        metadata: Option<SelectedDirectories>,
+        _: impl FnOnce(super::PartialInfo),
+    ) -> Result<
+        (
+            Option<super::StationTitle>,
+            Vec<Track>,
+            SelectedDirectories,
+            Handle,
+        ),
+        Self::Error,
+    > {
+        let handle = UsbMount {
+            device: self.device,
+        }
+        .mount()?;
+
+        let directory = PathBuf::from_iter([handle.mounted_directory(), self.path]);
+
+        let (tracks, selected_directories) = random_music_directory(&directory, metadata)
+            .map_err(|err| {
+                rradio_messages::MountError::ErrorFindingTracks(rradio_messages::arcstr::format!(
+                    "{err}"
+                ))
+            })?
+            .ok_or(rradio_messages::MountError::TracksNotFound)?;
+
+        Ok((None, tracks, selected_directories, handle))
+    }
 }
