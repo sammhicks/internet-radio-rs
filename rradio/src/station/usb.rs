@@ -194,6 +194,18 @@ pub struct Loader<'a> {
     pub path: &'a Path,
 }
 
+impl<'a> Loader<'a> {
+    pub fn from_config_if_selected(
+        config: &'a crate::config::usb::Config,
+        index: &rradio_messages::StationIndex,
+    ) -> Option<Self> {
+        (index.as_str() == config.station).then_some(Self {
+            device: &config.device,
+            path: &config.path,
+        })
+    }
+}
+
 impl<'a> super::StationLoader for Loader<'a> {
     type Metadata = SelectedDirectories;
     type Handle = Handle;

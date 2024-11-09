@@ -189,12 +189,17 @@ pub async fn load_station_with_index(
     publish_station_info: impl FnOnce(Info),
 ) -> Result<Station, Error> {
     #[cfg(feature = "cd")]
-    if index.as_str() == config.cd_config.station {
-        return cd::Loader {
-            device: &config.cd_config.device,
-        }
-        .load_station(index, metadata, publish_station_info)
-        .await;
+    if let Some(loader) = cd::Loader::from_config_if_selected(&config.cd_config, &index) {
+        return loader
+            .load_station(index, metadata, publish_station_info)
+            .await;
+    }
+
+    #[cfg(feature = "usb")]
+    if let Some(loader) = usb::Loader::from_config_if_selected(&config.usb_config, &index) {
+        return loader
+            .load_station(index, metadata, publish_station_info)
+            .await;
     }
 
     let directory = &config.stations_directory;

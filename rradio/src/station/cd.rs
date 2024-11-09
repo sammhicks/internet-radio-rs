@@ -334,6 +334,17 @@ pub struct Loader<'a> {
     pub device: &'a str,
 }
 
+impl<'a> Loader<'a> {
+    pub fn from_config_if_selected(
+        config: &'a crate::config::cd::Config,
+        index: &rradio_messages::StationIndex,
+    ) -> Option<Self> {
+        (index.as_str() == config.station).then_some(Self {
+            device: &config.device,
+        })
+    }
+}
+
 impl<'a> super::StationLoader for Loader<'a> {
     type Metadata = ();
     type Handle = ();
