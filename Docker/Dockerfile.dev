@@ -1,0 +1,5 @@
+FROM rust
+
+RUN apt-get update && apt-get install --assume-yes libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libclang-dev
+RUN rustup component add clippy rustfmt
+RUN cargo install cross --git https://github.com/cross-rs/cross
